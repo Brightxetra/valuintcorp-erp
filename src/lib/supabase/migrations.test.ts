@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 010", () => {
+  it("keeps production ERP migrations in order through 011", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -19,6 +19,7 @@ describe("Supabase migration contract", () => {
       "008_demo_sandbox_and_deploy_readiness.sql",
       "009_business_logo_profile.sql",
       "010_fixed_assets.sql",
+      "011_authenticated_api_privileges.sql",
     ]);
   });
 
@@ -59,5 +60,12 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("create or replace function public.post_fixed_asset_disposal");
     expect(migration).toContain("create or replace function public.reverse_fixed_asset_document");
     expect(migration).toContain("'fixed_asset'");
+  });
+
+  it("includes authenticated API privileges for deployed Supabase projects", () => {
+    const migration = readFileSync(join(migrationsDir, "011_authenticated_api_privileges.sql"), "utf8");
+
+    expect(migration).toContain("grant usage on schema public to authenticated");
+    expect(migration).toContain("grant select, insert, update, delete on all tables in schema public to authenticated");
   });
 });

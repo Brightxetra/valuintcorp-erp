@@ -1763,7 +1763,7 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
 }
 
 export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { refreshWorkspace, request, demoMode } = useErpWorkspace(initialWorkspace);
+  const { refreshWorkspace, request, demoMode, setActiveBusinessId } = useErpWorkspace(initialWorkspace);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -1774,7 +1774,7 @@ export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: 
     setSuccess(null);
 
     try {
-      await request<{ businessId: string }>("/api/erp/businesses", {
+      const body = await request<{ businessId: string }>("/api/erp/businesses", {
         method: "POST",
         businessId: null,
         body: JSON.stringify({
@@ -1785,6 +1785,12 @@ export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: 
           taxId: String(formData.get("taxId")),
         }),
       });
+
+      if (body.businessId) {
+        setActiveBusinessId(body.businessId);
+        await syncServerSession(body.businessId);
+      }
+
       await refreshWorkspace();
       setSuccess(demoMode ? "Demo mode aktif; bisnis demo digunakan." : "Bisnis dibuat, template diterapkan, dan bootstrap awal dijalankan.");
     } catch (caught) {

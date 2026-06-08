@@ -24,6 +24,7 @@ import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/componen
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { syncServerSession } from "@/lib/erp/client-api";
 
 type SettingsCategory =
   | "business"
@@ -946,6 +947,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
       if (body.businessId) {
         setActiveBusinessId(body.businessId);
+        await syncServerSession(body.businessId);
         await refreshWorkspace();
       }
 

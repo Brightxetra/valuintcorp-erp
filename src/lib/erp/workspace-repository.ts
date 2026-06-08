@@ -692,8 +692,25 @@ function mapActivities(rows: Row[]): ErpWorkspace["activities"] {
   }));
 }
 
-function tableError(results: Array<{ error: { message: string } | null }>) {
-  return results.find((result) => result.error)?.error ?? null;
+type QueryError = { message: string; code?: string } | null;
+type QueryResult = { error: QueryError };
+
+function isMissingOptionalTableError(error: NonNullable<QueryError>) {
+  const message = error.message.toLowerCase();
+
+  return (
+    error.code === "PGRST205" ||
+    (message.includes("schema cache") && message.includes("could not find")) ||
+    (message.includes("relation") && message.includes("does not exist"))
+  );
+}
+
+function tableError(requiredResults: QueryResult[], optionalResults: QueryResult[] = []) {
+  const requiredError = requiredResults.find((result) => result.error)?.error;
+
+  if (requiredError) return requiredError;
+
+  return optionalResults.find((result) => result.error && !isMissingOptionalTableError(result.error))?.error ?? null;
 }
 
 export async function loadSupabaseWorkspace(
@@ -883,45 +900,49 @@ export async function loadSupabaseWorkspace(
       .limit(40),
   ]);
 
-  const error = tableError([
-    business,
-    periods,
-    taxProfiles,
-    locations,
-    featureFlags,
-    templates,
-    transactionSources,
-    memberInvites,
-    customers,
-    suppliers,
-    products,
-    warehouses,
-    salesInvoices,
-    purchaseBills,
-    payments,
-    paymentAllocations,
-    stockMovements,
-    stockTransfers,
-    stockAdjustments,
-    employees,
-    attendance,
-    payrollRuns,
-    journals,
-    importBatches,
-    rawImportBatches,
-    rawTransactions,
-    rawTransactionLines,
-    rawPayments,
-    settlementRecords,
-    dailyTransactionSummaries,
-    fixedAssets,
-    fixedAssetDepreciationRuns,
-    fixedAssetDepreciationLines,
-    fixedAssetDisposals,
-    attachments,
-    demoSandbox,
-    activities,
-  ]);
+  const error = tableError(
+    [
+      business,
+      periods,
+      taxProfiles,
+      customers,
+      suppliers,
+      products,
+      warehouses,
+      salesInvoices,
+      purchaseBills,
+      payments,
+      paymentAllocations,
+      stockMovements,
+      stockTransfers,
+      stockAdjustments,
+      employees,
+      attendance,
+      payrollRuns,
+      journals,
+      importBatches,
+      attachments,
+      activities,
+    ],
+    [
+      locations,
+      featureFlags,
+      templates,
+      transactionSources,
+      memberInvites,
+      rawImportBatches,
+      rawTransactions,
+      rawTransactionLines,
+      rawPayments,
+      settlementRecords,
+      dailyTransactionSummaries,
+      fixedAssets,
+      fixedAssetDepreciationRuns,
+      fixedAssetDepreciationLines,
+      fixedAssetDisposals,
+      demoSandbox,
+    ],
+  );
 
   if (error) {
     throw new Error(error.message);
