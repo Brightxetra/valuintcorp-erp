@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f1f5f9;
+  --foreground: #020617;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media print {
+  .no-print,
+  .screen-only {
+    display: none !important;
+  }
+
+  /* Hide sidebar and header when printing */
+  aside,
+  header {
+    display: none !important;
+  }
+
+  /* Hide mobile nav */
+  nav.fixed.bottom-0 {
+    display: none !important;
+  }
+
+  /* Print only the report content */
+  body {
+    background: white !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Make main content full width when printing */
+  main {
+    margin: 0 !important;
+    padding: 20px !important;
+  }
+
+  /* Page setup for better printing */
+  @page {
+    size: A4;
+    margin: 1.5cm;
+  }
+
+  /* Print-specific report styling */
+  .print-content {
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  .print-header {
+    display: block !important;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  .print-footer {
+    display: block !important;
+    margin-top: 30px;
+    padding-top: 10px;
+  }
+
+  /* Table styling for print */
+  .print-content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10pt;
+    page-break-inside: avoid;
+  }
+
+  .print-content table th,
+  .print-content table td {
+    border: 1px solid #333;
+    padding: 6px 8px;
+  }
+
+  .print-content table th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold;
+  }
+
+  .print-content table tfoot {
+    border-top: 2px solid #333;
+    font-weight: bold;
+  }
+
+  /* Prevent page breaks inside table rows */
+  .print-content tr {
+    page-break-inside: avoid;
+  }
+
+  /* Section styling */
+  .print-content > div {
+    margin-bottom: 20px;
+    page-break-inside: avoid;
+  }
+
+  /* Section headers */
+  .print-content h3 {
+    font-weight: bold;
+    border: 1px solid #333;
+    padding: 4px 8px;
+    margin: 0;
+  }
+}
