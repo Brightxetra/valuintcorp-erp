@@ -2,7 +2,7 @@
 
 ## Deployment
 
-- Apply migrations `001` through `010` in order on a clean Supabase project before enabling production traffic.
+- Apply migrations `001` through `011` in order on a clean Supabase project before enabling production traffic.
 - Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_DEMO_MODE=false`, `NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true`, `SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments`, and `CRON_SECRET`.
 - Confirm `/login` creates a Supabase browser session and `/api/auth/session` writes the server session cookie.
 - Confirm `src/proxy.ts` redirects protected routes to `/login?next=...` when the cookie is missing.

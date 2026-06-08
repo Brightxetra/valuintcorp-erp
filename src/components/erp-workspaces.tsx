@@ -1869,10 +1869,23 @@ export function LoginWorkspace() {
 
     try {
       const supabase = createBrowserSupabaseClient();
+      const verificationUrl =
+        typeof window === "undefined" ? undefined : new URL("/login", window.location.origin);
+      const nextParam =
+        typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+
+      if (verificationUrl && nextParam) {
+        verificationUrl.searchParams.set("next", nextParam);
+      }
+
       const result =
         mode === "login"
           ? await supabase.auth.signInWithPassword({ email, password })
-          : await supabase.auth.signUp({ email, password });
+          : await supabase.auth.signUp({
+              email,
+              password,
+              options: verificationUrl ? { emailRedirectTo: verificationUrl.toString() } : undefined,
+            });
 
       if (result.error) {
         throw result.error;
