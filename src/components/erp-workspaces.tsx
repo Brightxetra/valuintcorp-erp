@@ -1923,7 +1923,7 @@ export function LoginWorkspace() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md items-center px-4">
-      <Panel title="Masuk ke Valuintcorp ERP" description="Supabase Auth dipakai untuk akun normal dan akun demo sandbox. Demo fallback hanya aktif saat env Supabase kosong atau NEXT_PUBLIC_DEMO_MODE=true.">
+      <Panel title="Masuk ke Valuintcorp ERP" description="Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.">
         <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
           <button
             type="button"
@@ -1941,8 +1941,8 @@ export function LoginWorkspace() {
           </button>
         </div>
         <form action={submitAuth} className="space-y-3">
-          <TextField name="email" label="Email" type="email" defaultValue="ayu@rasarapi.test" required />
-          <TextField name="password" label="Password" type="password" defaultValue="password-demo" required />
+          <TextField name="email" label="Email" type="email" autoComplete="email" required />
+          <TextField name="password" label="Password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
           <ActionState error={error} success={success} />
           <ActionButton className="w-full" disabled={pending}>
             {supabaseEnabled ? (mode === "login" ? "Masuk" : "Daftar") : "Masuk demo fallback"}
