@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 012", () => {
+  it("keeps production ERP migrations in order through 013", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -21,6 +21,7 @@ describe("Supabase migration contract", () => {
       "010_fixed_assets.sql",
       "011_authenticated_api_privileges.sql",
       "012_harden_supabase_security_lints.sql",
+      "013_optimize_rls_policy_performance.sql",
     ]);
   });
 
@@ -79,5 +80,18 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("revoke execute on function public.require_posting_role(uuid, text[]) from public, anon, authenticated");
     expect(migration).toContain("grant execute on function public.require_posting_role(uuid, text[]) to service_role");
     expect(migration).toContain("to_regprocedure('public.rls_auto_enable()')");
+  });
+
+  it("includes Supabase RLS performance lint optimization", () => {
+    const migration = readFileSync(join(migrationsDir, "013_optimize_rls_policy_performance.sql"), "utf8");
+
+    expect(migration).toContain("for select to authenticated");
+    expect(migration).toContain("using ((select auth.uid()) is not null)");
+    expect(migration).toContain("drop policy if exists \"demo users can read own account\"");
+    expect(migration).toContain("policy_rule.manage_policy || ' insert'");
+    expect(migration).toContain("policy_rule.manage_policy || ' update'");
+    expect(migration).toContain("policy_rule.manage_policy || ' delete'");
+    expect(migration).toContain("'sales_invoices', 'members can read sales invoices'");
+    expect(migration).toContain("'fixed_assets', 'members can read fixed assets'");
   });
 });
