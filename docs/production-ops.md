@@ -30,6 +30,7 @@
 - Alert on repeated 4xx/5xx from `/api/demo/bootstrap` and `/api/ops/demo-reset`.
 - Track response time and error rate for `/api/erp/workspace`, `/api/erp/imports/commit`, `/api/erp/summaries/post`, `/api/erp/reconciliation`, and `/api/exports/financials`.
 - Track workspace response size; raw transactions should only be fetched from paginated raw endpoints.
+- Review Supabase Query Performance Statements after real production usage; do not add indexes for Supabase dashboard/internal statements. Current baseline is in `docs/supabase-query-performance.md`.
 
 ## Performance Benchmark
 
@@ -39,6 +40,7 @@
 - Summary posting should create journal entries per location/source/day, not per receipt.
 - Reconciliation must compare raw total, summary total, settlement total, and journal total for the filtered period.
 - Escalate to partitioning/read replicas/background workers when summary queries or posting jobs exceed pilot SLOs.
+- Consider a new performance migration only when app queries show `mean_time > 100 ms`, high `rows_read`, low cache hit rate, rising `total_time`, or a non-null Supabase index advisor recommendation.
 
 ## Pilot Seed Data
 
