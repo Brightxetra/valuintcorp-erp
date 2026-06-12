@@ -1,0 +1,118 @@
+-- Harden Supabase security lints without changing business logic.
+-- RLS policies still gate rows; these grants only control callable API/RPC surfaces.
+
+alter function public.ensure_journal_entry_complete() set search_path = public;
+alter function public.ensure_journal_line_consistency() set search_path = public;
+alter function public.ensure_payroll_run_consistency() set search_path = public;
+alter function public.ensure_stock_movement_consistency() set search_path = public;
+alter function public.current_stock_quantity(uuid, uuid, uuid) set search_path = public;
+alter function public.document_status(numeric, numeric) set search_path = public;
+alter function public.touch_updated_at() set search_path = public;
+alter function public.is_period_locked(uuid, date) set search_path = public;
+alter function public.ensure_journal_balanced() set search_path = public;
+alter function public.prevent_locked_period_changes() set search_path = public;
+alter function public.idempotency_key_for_raw_transaction(uuid, uuid, text, text, date) set search_path = public;
+alter function public.ensure_raw_transaction_line_consistency() set search_path = public;
+alter function public.ensure_fixed_asset_business() set search_path = public;
+alter function public.ensure_attachment_owner_business() set search_path = public;
+alter function public.ensure_transaction_source_mapping_business() set search_path = public;
+
+revoke execute on function public.accept_member_invite(uuid) from public, anon, authenticated;
+revoke execute on function public.account_id_for_code(uuid, text) from public, anon, authenticated;
+revoke execute on function public.apply_industry_template(jsonb) from public, anon, authenticated;
+revoke execute on function public.audit_row_change() from public, anon, authenticated;
+revoke execute on function public.create_business_with_owner(text, text, text, text, text) from public, anon, authenticated;
+revoke execute on function public.create_posted_journal(uuid, date, text, text, uuid, text, jsonb) from public, anon, authenticated;
+revoke execute on function public.ensure_fixed_asset_accounts(uuid) from public, anon, authenticated;
+revoke execute on function public.ensure_fixed_asset_accounts_on_business() from public, anon, authenticated;
+revoke execute on function public.has_business_role(uuid, text[]) from public, anon, authenticated;
+revoke execute on function public.is_business_member(uuid) from public, anon, authenticated;
+revoke execute on function public.member_role(uuid) from public, anon, authenticated;
+revoke execute on function public.next_document_no(uuid, text) from public, anon, authenticated;
+revoke execute on function public.post_daily_summary(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_fixed_asset(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_fixed_asset_depreciation_run(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_fixed_asset_disposal(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_payment(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_purchase_bill(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_sales_invoice(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_stock_adjustment(jsonb) from public, anon, authenticated;
+revoke execute on function public.post_stock_transfer(jsonb) from public, anon, authenticated;
+revoke execute on function public.refresh_raw_import_batch_counts(uuid) from public, anon, authenticated;
+revoke execute on function public.require_posting_role(uuid, text[]) from public, anon, authenticated;
+revoke execute on function public.reverse_fixed_asset_document(jsonb) from public, anon, authenticated;
+revoke execute on function public.rollback_daily_summary(jsonb) from public, anon, authenticated;
+revoke execute on function public.run_payroll(jsonb) from public, anon, authenticated;
+revoke execute on function public.set_report_period_lock(jsonb) from public, anon, authenticated;
+revoke execute on function public.summarize_raw_import_batch(jsonb) from public, anon, authenticated;
+revoke execute on function public.update_fixed_asset(jsonb) from public, anon, authenticated;
+revoke execute on function public.upload_raw_transactions(jsonb) from public, anon, authenticated;
+revoke execute on function public.validate_raw_import_batch(jsonb) from public, anon, authenticated;
+revoke execute on function public.void_document(jsonb) from public, anon, authenticated;
+
+do $$
+begin
+  if to_regprocedure('public.rls_auto_enable()') is not null then
+    execute 'revoke execute on function public.rls_auto_enable() from public, anon, authenticated';
+    execute 'grant execute on function public.rls_auto_enable() to service_role';
+  end if;
+end;
+$$;
+
+grant execute on function public.accept_member_invite(uuid) to authenticated;
+grant execute on function public.apply_industry_template(jsonb) to authenticated;
+grant execute on function public.create_business_with_owner(text, text, text, text, text) to authenticated;
+grant execute on function public.has_business_role(uuid, text[]) to authenticated;
+grant execute on function public.is_business_member(uuid) to authenticated;
+grant execute on function public.member_role(uuid) to authenticated;
+grant execute on function public.post_daily_summary(jsonb) to authenticated;
+grant execute on function public.post_fixed_asset(jsonb) to authenticated;
+grant execute on function public.post_fixed_asset_depreciation_run(jsonb) to authenticated;
+grant execute on function public.post_fixed_asset_disposal(jsonb) to authenticated;
+grant execute on function public.post_payment(jsonb) to authenticated;
+grant execute on function public.post_purchase_bill(jsonb) to authenticated;
+grant execute on function public.post_sales_invoice(jsonb) to authenticated;
+grant execute on function public.post_stock_adjustment(jsonb) to authenticated;
+grant execute on function public.post_stock_transfer(jsonb) to authenticated;
+grant execute on function public.reverse_fixed_asset_document(jsonb) to authenticated;
+grant execute on function public.rollback_daily_summary(jsonb) to authenticated;
+grant execute on function public.run_payroll(jsonb) to authenticated;
+grant execute on function public.set_report_period_lock(jsonb) to authenticated;
+grant execute on function public.summarize_raw_import_batch(jsonb) to authenticated;
+grant execute on function public.update_fixed_asset(jsonb) to authenticated;
+grant execute on function public.upload_raw_transactions(jsonb) to authenticated;
+grant execute on function public.validate_raw_import_batch(jsonb) to authenticated;
+grant execute on function public.void_document(jsonb) to authenticated;
+
+grant execute on function public.accept_member_invite(uuid) to service_role;
+grant execute on function public.account_id_for_code(uuid, text) to service_role;
+grant execute on function public.apply_industry_template(jsonb) to service_role;
+grant execute on function public.audit_row_change() to service_role;
+grant execute on function public.create_business_with_owner(text, text, text, text, text) to service_role;
+grant execute on function public.create_posted_journal(uuid, date, text, text, uuid, text, jsonb) to service_role;
+grant execute on function public.ensure_fixed_asset_accounts(uuid) to service_role;
+grant execute on function public.ensure_fixed_asset_accounts_on_business() to service_role;
+grant execute on function public.has_business_role(uuid, text[]) to service_role;
+grant execute on function public.is_business_member(uuid) to service_role;
+grant execute on function public.member_role(uuid) to service_role;
+grant execute on function public.next_document_no(uuid, text) to service_role;
+grant execute on function public.post_daily_summary(jsonb) to service_role;
+grant execute on function public.post_fixed_asset(jsonb) to service_role;
+grant execute on function public.post_fixed_asset_depreciation_run(jsonb) to service_role;
+grant execute on function public.post_fixed_asset_disposal(jsonb) to service_role;
+grant execute on function public.post_payment(jsonb) to service_role;
+grant execute on function public.post_purchase_bill(jsonb) to service_role;
+grant execute on function public.post_sales_invoice(jsonb) to service_role;
+grant execute on function public.post_stock_adjustment(jsonb) to service_role;
+grant execute on function public.post_stock_transfer(jsonb) to service_role;
+grant execute on function public.refresh_raw_import_batch_counts(uuid) to service_role;
+grant execute on function public.require_posting_role(uuid, text[]) to service_role;
+grant execute on function public.reverse_fixed_asset_document(jsonb) to service_role;
+grant execute on function public.rollback_daily_summary(jsonb) to service_role;
+grant execute on function public.run_payroll(jsonb) to service_role;
+grant execute on function public.set_report_period_lock(jsonb) to service_role;
+grant execute on function public.summarize_raw_import_batch(jsonb) to service_role;
+grant execute on function public.update_fixed_asset(jsonb) to service_role;
+grant execute on function public.upload_raw_transactions(jsonb) to service_role;
+grant execute on function public.validate_raw_import_batch(jsonb) to service_role;
+grant execute on function public.void_document(jsonb) to service_role;

@@ -60,6 +60,7 @@ supabase/migrations/008_demo_sandbox_and_deploy_readiness.sql
 supabase/migrations/009_business_logo_profile.sql
 supabase/migrations/010_fixed_assets.sql
 supabase/migrations/011_authenticated_api_privileges.sql
+supabase/migrations/012_harden_supabase_security_lints.sql
 ```
 
 Required env vars for Supabase-backed API authorization:

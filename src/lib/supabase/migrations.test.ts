@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 011", () => {
+  it("keeps production ERP migrations in order through 012", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -20,6 +20,7 @@ describe("Supabase migration contract", () => {
       "009_business_logo_profile.sql",
       "010_fixed_assets.sql",
       "011_authenticated_api_privileges.sql",
+      "012_harden_supabase_security_lints.sql",
     ]);
   });
 
@@ -67,5 +68,16 @@ describe("Supabase migration contract", () => {
 
     expect(migration).toContain("grant usage on schema public to authenticated");
     expect(migration).toContain("grant select, insert, update, delete on all tables in schema public to authenticated");
+  });
+
+  it("includes Supabase security lint hardening", () => {
+    const migration = readFileSync(join(migrationsDir, "012_harden_supabase_security_lints.sql"), "utf8");
+
+    expect(migration).toContain("alter function public.ensure_journal_entry_complete() set search_path = public");
+    expect(migration).toContain("revoke execute on function public.post_sales_invoice(jsonb) from public, anon, authenticated");
+    expect(migration).toContain("grant execute on function public.post_sales_invoice(jsonb) to authenticated");
+    expect(migration).toContain("revoke execute on function public.require_posting_role(uuid, text[]) from public, anon, authenticated");
+    expect(migration).toContain("grant execute on function public.require_posting_role(uuid, text[]) to service_role");
+    expect(migration).toContain("to_regprocedure('public.rls_auto_enable()')");
   });
 });

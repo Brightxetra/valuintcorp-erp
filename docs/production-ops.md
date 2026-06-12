@@ -2,8 +2,9 @@
 
 ## Deployment
 
-- Apply migrations `001` through `011` in order on a clean Supabase project before enabling production traffic.
+- Apply migrations `001` through `012` in order on a clean Supabase project before enabling production traffic.
 - Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_DEMO_MODE=false`, `NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true`, `SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments`, and `CRON_SECRET`.
+- Enable Supabase Auth leaked password protection before accepting production sign-ups.
 - Confirm `/login` creates a Supabase browser session and `/api/auth/session` writes the server session cookie.
 - Confirm `src/proxy.ts` redirects protected routes to `/login?next=...` when the cookie is missing.
 - Create a tenant from `/onboarding`, apply an industry template, create one location, and verify `/api/erp/workspace` does not include unbounded raw transaction rows.
