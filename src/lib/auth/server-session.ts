@@ -66,14 +66,40 @@ export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext 
 
   if (userError || !userData.user) return null;
 
-  const membershipQuery = supabase
+  const baseMembershipQuery = supabase
     .from("business_members")
     .select("business_id, role, businesses(id, legal_name, display_name, industry)")
     .eq("auth_user_id", userData.user.id)
     .order("created_at", { ascending: true });
+
   const { data: memberships, error: membershipError } = requestedBusinessId
-    ? await membershipQuery.eq("business_id", requestedBusinessId)
-    : await membershipQuery.limit(1);
+    ? await baseMembershipQuery.eq("business_id", requestedBusinessId)
+    : await baseMembershipQuery.limit(1);
+
+  if (requestedBusinessId && !membershipError && Array.isArray(memberships) && memberships.length === 0) {
+    const { data: fallbackMemberships, error: fallbackError } = await supabase
+      .from("business_members")
+      .select("business_id, role, businesses(id, legal_name, display_name, industry)")
+      .eq("auth_user_id", userData.user.id)
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    if (!fallbackError && Array.isArray(fallbackMemberships) && fallbackMemberships.length > 0) {
+      const fallbackMembership = fallbackMemberships[0] as MembershipRow;
+      const fallbackRole = (fallbackMembership.role ?? "staff") as BusinessRole;
+
+      return {
+        businessId: String(fallbackMembership.business_id),
+        role: fallbackRole,
+        userId: userData.user.id,
+        userEmail: userData.user.email ?? undefined,
+        userName:
+          typeof userData.user.user_metadata?.name === "string"
+            ? userData.user.user_metadata.name
+            : userData.user.email ?? undefined,
+      };
+    }
+  }
 
   if (membershipError || !Array.isArray(memberships) || memberships.length === 0) {
     return null;

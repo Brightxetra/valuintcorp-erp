@@ -825,15 +825,6 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                       Pengaturan akun & bisnis
                     </Link>
 
-                    <Link
-                      href="/login"
-                      onClick={() => setAccountMenuOpen(false)}
-                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      <User className="size-4" aria-hidden />
-                      Buka halaman login
-                    </Link>
-
                     <button
                       type="button"
                       onClick={() => {
@@ -842,7 +833,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"
                     >
                       <LogOut className="size-4" aria-hidden />
-                      Keluar / ganti akun
+                      Keluar
                     </button>
                   </div>
                 </div>

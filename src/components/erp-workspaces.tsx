@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -1856,6 +1856,49 @@ export function LoginWorkspace() {
   const [success, setSuccess] = useState<string | null>(null);
   const demoFallback = shouldUseDemoFallbackBrowser();
   const supabaseEnabled = !demoFallback;
+
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+
+    let cancelled = false;
+
+    async function redirectActiveSession() {
+      try {
+        const supabase = createBrowserSupabaseClient();
+        const { data } = await supabase.auth.getSession();
+
+        if (!data.session) return;
+
+        setPending(true);
+        await syncServerSession();
+
+        const params = new URLSearchParams(window.location.search);
+        const requestedNext = params.get("next");
+        const nextPath = requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/login")
+          ? requestedNext
+          : "/dashboard";
+        const businessResult = await loadBusinessOptions();
+
+        if (cancelled) return;
+
+        if (businessResult.defaultBusinessId) {
+          await syncServerSession(businessResult.defaultBusinessId);
+          router.replace(nextPath);
+          return;
+        }
+
+        router.replace("/onboarding");
+      } catch {
+        if (!cancelled) setPending(false);
+      }
+    }
+
+    void redirectActiveSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router, supabaseEnabled]);
 
   async function submitAuth(formData: FormData) {
     setPending(true);
