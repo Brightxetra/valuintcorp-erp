@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 013", () => {
+  it("keeps production ERP migrations in order through 014", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -22,6 +22,7 @@ describe("Supabase migration contract", () => {
       "011_authenticated_api_privileges.sql",
       "012_harden_supabase_security_lints.sql",
       "013_optimize_rls_policy_performance.sql",
+      "014_private_authz_helpers.sql",
     ]);
   });
 
@@ -93,5 +94,19 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("policy_rule.manage_policy || ' delete'");
     expect(migration).toContain("'sales_invoices', 'members can read sales invoices'");
     expect(migration).toContain("'fixed_assets', 'members can read fixed assets'");
+  });
+
+  it("moves authz helpers out of the exposed public RPC surface", () => {
+    const migration = readFileSync(join(migrationsDir, "014_private_authz_helpers.sql"), "utf8");
+
+    expect(migration).toContain("create schema if not exists app_private");
+    expect(migration).toContain("create or replace function app_private.member_role");
+    expect(migration).toContain("create or replace function app_private.is_business_member");
+    expect(migration).toContain("create or replace function app_private.has_business_role");
+    expect(migration).toContain("role := app_private.member_role(target_business_id)");
+    expect(migration).toContain("pg_policy policy");
+    expect(migration).toContain("app_private.has_business_role");
+    expect(migration).toContain("revoke execute on function public.has_business_role(uuid, text[]) from public, anon, authenticated");
+    expect(migration).toContain("revoke execute on function public.accept_member_invite(uuid) from public, anon, authenticated");
   });
 });
