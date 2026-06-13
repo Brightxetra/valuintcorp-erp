@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 014", () => {
+  it("keeps production ERP migrations in order through 015", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -23,6 +23,7 @@ describe("Supabase migration contract", () => {
       "012_harden_supabase_security_lints.sql",
       "013_optimize_rls_policy_performance.sql",
       "014_private_authz_helpers.sql",
+      "015_add_foreign_key_performance_indexes.sql",
     ]);
   });
 
@@ -108,5 +109,17 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("app_private.has_business_role");
     expect(migration).toContain("revoke execute on function public.has_business_role(uuid, text[]) from public, anon, authenticated");
     expect(migration).toContain("revoke execute on function public.accept_member_invite(uuid) from public, anon, authenticated");
+  });
+
+  it("adds explicit foreign key performance indexes without dropping workload indexes", () => {
+    const migration = readFileSync(join(migrationsDir, "015_add_foreign_key_performance_indexes.sql"), "utf8");
+
+    expect(migration).toContain("create index if not exists sales_invoice_lines_sales_invoice_id_fk_idx");
+    expect(migration).toContain("create index if not exists purchase_bill_lines_purchase_bill_id_fk_idx");
+    expect(migration).toContain("create index if not exists journal_lines_journal_entry_id_fk_idx");
+    expect(migration).toContain("create index if not exists stock_movements_item_id_fk_idx");
+    expect(migration).toContain("create index if not exists raw_transaction_lines_raw_transaction_id_fk_idx");
+    expect(migration).toContain("create index if not exists fixed_asset_depreciation_lines_asset_id_fk_idx");
+    expect(migration).not.toContain("drop index");
   });
 });
