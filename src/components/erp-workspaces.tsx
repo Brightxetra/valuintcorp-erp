@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowLeft,
   Banknote,
   BookOpenCheck,
   Boxes,
@@ -46,6 +47,9 @@ import {
   shouldUseDemoFallbackBrowser,
   syncServerSession,
 } from "@/lib/erp/client-api";
+
+const MARKETING_SITE_URL =
+  process.env.NEXT_PUBLIC_MARKETING_SITE_URL ?? "https://valuintcorp.vercel.app";
 
 function statusTone(status: ErpDocumentStatus): "emerald" | "amber" | "gray" | "red" | "cyan" {
   if (status === "paid") return "emerald";
@@ -2011,50 +2015,59 @@ export function LoginWorkspace() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md items-center px-4">
-      <Panel title="Masuk ke Valuintcorp ERP" description="Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.">
-        <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => switchAuthMode("login")}
-            className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
-          >
-            Login
-          </button>
-          <button
-            type="button"
-            onClick={() => switchAuthMode("register")}
-            className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
-          >
-            Register
-          </button>
-        </div>
-        <form action={submitAuth} className="space-y-3">
-          <TextField name="email" label="Email" type="email" autoComplete="email" required />
-          <TextField name="password" label="Password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
-          {captchaEnabled ? (
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
-              <HCaptcha
-                ref={captchaRef}
-                sitekey={hcaptchaSiteKey!}
-                onVerify={(token) => {
-                  setCaptchaToken(token);
-                  setError(null);
-                }}
-                onExpire={() => setCaptchaToken(null)}
-                onChalExpired={() => setCaptchaToken(null)}
-                onError={() => {
-                  setCaptchaToken(null);
-                  setError("Verifikasi hCaptcha gagal. Coba ulangi.");
-                }}
-              />
-            </div>
-          ) : null}
-          <ActionState error={error} success={success} />
-          <ActionButton className="w-full" disabled={pending}>
-            {supabaseEnabled ? (mode === "login" ? "Masuk" : "Daftar") : "Masuk demo fallback"}
-          </ActionButton>
-        </form>
-      </Panel>
+      <div className="w-full">
+        <a
+          href={MARKETING_SITE_URL}
+          className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-950"
+        >
+          <ArrowLeft className="size-4" aria-hidden />
+          Kembali ke website
+        </a>
+        <Panel title="Masuk ke Valuintcorp ERP" description="Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.">
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => switchAuthMode("login")}
+              className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              onClick={() => switchAuthMode("register")}
+              className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
+            >
+              Register
+            </button>
+          </div>
+          <form action={submitAuth} className="space-y-3">
+            <TextField name="email" label="Email" type="email" autoComplete="email" required />
+            <TextField name="password" label="Password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
+            {captchaEnabled ? (
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                <HCaptcha
+                  ref={captchaRef}
+                  sitekey={hcaptchaSiteKey!}
+                  onVerify={(token) => {
+                    setCaptchaToken(token);
+                    setError(null);
+                  }}
+                  onExpire={() => setCaptchaToken(null)}
+                  onChalExpired={() => setCaptchaToken(null)}
+                  onError={() => {
+                    setCaptchaToken(null);
+                    setError("Verifikasi hCaptcha gagal. Coba ulangi.");
+                  }}
+                />
+              </div>
+            ) : null}
+            <ActionState error={error} success={success} />
+            <ActionButton className="w-full" disabled={pending}>
+              {supabaseEnabled ? (mode === "login" ? "Masuk" : "Daftar") : "Masuk demo fallback"}
+            </ActionButton>
+          </form>
+        </Panel>
+      </div>
     </div>
   );
 }
