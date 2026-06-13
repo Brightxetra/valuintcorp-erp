@@ -61,6 +61,9 @@ supabase/migrations/009_business_logo_profile.sql
 supabase/migrations/010_fixed_assets.sql
 supabase/migrations/011_authenticated_api_privileges.sql
 supabase/migrations/012_harden_supabase_security_lints.sql
+supabase/migrations/013_optimize_rls_policy_performance.sql
+supabase/migrations/014_private_authz_helpers.sql
+supabase/migrations/015_add_foreign_key_performance_indexes.sql
 ```
 
 Required env vars for Supabase-backed API authorization:
@@ -68,12 +71,15 @@ Required env vars for Supabase-backed API authorization:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_HCAPTCHA_SITE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments
 CRON_SECRET=
 NEXT_PUBLIC_DEMO_MODE=false
 NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true
 ```
+
+`NEXT_PUBLIC_HCAPTCHA_SITE_KEY` is the public hCaptcha site key used by the login/register form. Keep the hCaptcha secret only in Supabase Auth Attack Protection, not in this app's env vars.
 
 Create a tenant from `/onboarding` after the authenticated owner signs in, or call `create_business_with_owner(legal_name, display_name, industry, owner_name, tax_id)`. Migration 005 seeds the owner role, chart of accounts, current report period, tax profile, default warehouse, and bootstrap activity. Migration 006 adds horizontal UMKM scale primitives: locations, industry templates, feature flags, transaction sources, raw transactions, settlement records, and daily summaries. Migration 007 adds pending invites, source mappings, tenant-isolated Storage policies, and attachment owner validation. Browser UI API calls attach both `Authorization: Bearer <access_token>` and `x-business-id: <business_uuid>` through the ERP provider, while `/api/auth/session` mirrors the access token into a short-lived server cookie for guarded initial renders.
 
