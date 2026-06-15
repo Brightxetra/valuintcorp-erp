@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import {
   Plus,
   Search,
@@ -12,30 +11,20 @@ import {
   Calendar,
   Briefcase,
   Building,
-  CreditCard,
-  HeartPulse,
   FileText,
-  ChevronRight,
-  MoreVertical,
   Edit,
-  Trash2,
   Eye,
   AlertCircle,
 } from "lucide-react";
 import {
   ActionButton,
-  Panel,
   StatusPill,
-  DataTable,
-  FilterBar,
   EmptyState,
-  TextField,
-  SelectField,
 } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import type { Employee } from "@/lib/domain/types";
-import { getStatusLabel, getContractTypeLabel, getPtkpLabel } from "@/lib/translations";
+import { getContractTypeLabel } from "@/lib/translations";
 import { money } from "@/lib/format";
 
 type TabType = "data" | "gaji" | "bpjs" | "absensi" | "riwayat";
@@ -51,11 +40,6 @@ interface EmployeeProfileProps {
 
 export function EmployeeProfileModal({ employee, workspace, onClose }: EmployeeProfileProps) {
   const [activeTab, setActiveTab] = useState<TabType>("data");
-
-  // Cari data tambahan
-  const salaryPayable = workspace.journals.find(
-    (j) => j.source === "payroll" && j.referenceId === employee.id
-  );
 
   const tabs = [
     { id: "data" as TabType, label: "📋 Data Diri", count: 0 },
@@ -113,8 +97,8 @@ export function EmployeeProfileModal({ employee, workspace, onClose }: EmployeeP
           {activeTab === "data" && <DataDiriTab employee={employee} />}
           {activeTab === "gaji" && <GajiTab employee={employee} workspace={workspace} />}
           {activeTab === "bpjs" && <BPJSTab employee={employee} />}
-          {activeTab === "absensi" && <AbsensiTab employee={employee} />}
-          {activeTab === "riwayat" && <RiwayatTab employee={employee} />}
+          {activeTab === "absensi" && <AbsensiTab />}
+          {activeTab === "riwayat" && <RiwayatTab />}
         </div>
       </div>
     </div>
@@ -422,7 +406,7 @@ function BPJSTab({ employee }: { employee: Employee }) {
 }
 
 // TAB: ABSENSI
-function AbsensiTab({ employee }: { employee: Employee }) {
+function AbsensiTab() {
   // Contoh data absensi
   const bulanIni = [
     { tanggal: "2026-06-01", status: "hadir", jam: "08:00" },
@@ -501,7 +485,7 @@ function AbsensiTab({ employee }: { employee: Employee }) {
 }
 
 // TAB: RIWAYAT
-function RiwayatTab({ employee }: { employee: Employee }) {
+function RiwayatTab() {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 p-4">

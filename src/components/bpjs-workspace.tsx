@@ -7,18 +7,13 @@ import {
   ChevronRight,
   Calculator,
   Download,
-  Info,
   AlertTriangle,
-  TrendingUp,
   Users,
   Check,
 } from "lucide-react";
 import {
   ActionButton,
   Panel,
-  StatusPill,
-  SelectField,
-  TextField,
   EmptyState,
 } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
@@ -244,7 +239,7 @@ function calculateBPJS(grossSalary: number): Omit<BPJSCalculation, "employeeId" 
 // ============================================
 export function BPJSWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
   const { workspace } = useErpWorkspace(initialWorkspace);
-  const [selectedPeriod, setSelectedPeriod] = useState("Juni 2026");
+  const selectedPeriod = "Juni 2026";
   const [showDetail, setShowDetail] = useState(true);
 
   const activeEmployees = workspace.employees.filter((e) => e.status === "active");

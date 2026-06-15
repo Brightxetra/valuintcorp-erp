@@ -76,64 +76,21 @@ function buildReconciliation(workspace: Pick<ErpWorkspace, "dailyTransactionSumm
     });
 }
 
-function numberValue(row: Record<string, unknown>, key: string) {
-  return Number(row[key] ?? 0);
-}
-
-function mapSummary(row: Record<string, unknown>): DailyTransactionSummary {
+function mapRollupRow(row: Record<string, unknown>) {
   return {
-    id: String(row.id),
+    summaryId: String(row.summary_id),
     businessId: String(row.business_id),
     locationId: String(row.location_id),
-    source: String(row.source) as DailyTransactionSummary["source"],
     date: String(row.date),
-    status: String(row.status) as DailyTransactionSummary["status"],
-    transactionCount: numberValue(row, "transaction_count"),
-    grossAmount: numberValue(row, "gross_amount"),
-    discountAmount: numberValue(row, "discount_amount"),
-    netAmount: numberValue(row, "net_amount"),
-    taxAmount: numberValue(row, "tax_amount"),
-    paymentBreakdown:
-      row.payment_breakdown && typeof row.payment_breakdown === "object"
-        ? (row.payment_breakdown as DailyTransactionSummary["paymentBreakdown"])
-        : {},
-    postedJournalEntryId: typeof row.posted_journal_entry_id === "string" ? row.posted_journal_entry_id : undefined,
-    createdAt: String(row.created_at),
-  };
-}
-
-function mapRaw(row: Record<string, unknown>): RawTransaction {
-  return {
-    id: String(row.id),
-    businessId: String(row.business_id),
-    locationId: String(row.location_id),
-    batchId: typeof row.batch_id === "string" ? row.batch_id : undefined,
     source: String(row.source) as RawTransaction["source"],
-    externalId: String(row.external_id),
-    transactionDate: String(row.transaction_date),
-    status: String(row.status) as RawTransaction["status"],
-    grossAmount: numberValue(row, "gross_amount"),
-    discountAmount: numberValue(row, "discount_amount"),
-    netAmount: numberValue(row, "net_amount"),
-    taxAmount: numberValue(row, "tax_amount"),
-    paymentMethod: String(row.payment_method ?? "cash") as RawTransaction["paymentMethod"],
-    customerName: typeof row.customer_name === "string" ? row.customer_name : undefined,
-    createdAt: String(row.created_at),
-  };
-}
-
-function mapSettlement(row: Record<string, unknown>): SettlementRecord {
-  return {
-    id: String(row.id),
-    businessId: String(row.business_id),
-    locationId: typeof row.location_id === "string" ? row.location_id : undefined,
-    source: String(row.source) as SettlementRecord["source"],
-    settlementDate: String(row.settlement_date),
-    method: String(row.method ?? "cash") as SettlementRecord["method"],
-    grossAmount: numberValue(row, "gross_amount"),
-    feeAmount: numberValue(row, "fee_amount"),
-    netAmount: numberValue(row, "net_amount"),
-    status: String(row.status ?? "pending") as SettlementRecord["status"],
+    status: String(row.status),
+    rawTotal: Number(row.raw_total ?? 0),
+    summaryTotal: Number(row.summary_total ?? 0),
+    settlementTotal: Number(row.settlement_total ?? 0),
+    journalTotal: Number(row.journal_total ?? 0),
+    rawDelta: Number(row.raw_delta ?? 0),
+    settlementDelta: Number(row.settlement_delta ?? 0),
+    journalDelta: Number(row.journal_delta ?? 0),
   };
 }
 
@@ -148,85 +105,16 @@ export async function GET(request: Request) {
     return withDemoHeader(json({ rows: buildReconciliation(getDemoErpStore(), params) }), context);
   }
 
-  const supabase = createRequestSupabaseClient(request);
-  let summariesQuery = supabase
-    .from("daily_transaction_summaries")
-    .select("*")
-    .eq("business_id", context.businessId)
-    .order("date", { ascending: false })
-    .limit(500);
-  let rawQuery = supabase.from("raw_transactions").select("*").eq("business_id", context.businessId).limit(10_000);
-  let settlementQuery = supabase.from("settlement_records").select("*").eq("business_id", context.businessId).limit(5_000);
-
-  if (params.locationId) {
-    summariesQuery = summariesQuery.eq("location_id", params.locationId);
-    rawQuery = rawQuery.eq("location_id", params.locationId);
-    settlementQuery = settlementQuery.eq("location_id", params.locationId);
-  }
-  if (params.source) {
-    summariesQuery = summariesQuery.eq("source", params.source);
-    rawQuery = rawQuery.eq("source", params.source);
-    settlementQuery = settlementQuery.eq("source", params.source);
-  }
-  if (params.dateFrom) {
-    summariesQuery = summariesQuery.gte("date", params.dateFrom);
-    rawQuery = rawQuery.gte("transaction_date", params.dateFrom);
-    settlementQuery = settlementQuery.gte("settlement_date", params.dateFrom);
-  }
-  if (params.dateTo) {
-    summariesQuery = summariesQuery.lte("date", params.dateTo);
-    rawQuery = rawQuery.lte("transaction_date", params.dateTo);
-    settlementQuery = settlementQuery.lte("settlement_date", params.dateTo);
-  }
-
-  const [summaries, rawTransactions, settlements] = await Promise.all([summariesQuery, rawQuery, settlementQuery]);
-  const firstError = summaries.error ?? rawTransactions.error ?? settlements.error;
-
-  if (firstError) return withDemoHeader(json({ error: firstError.message }, 422), context);
-
-  const summaryRows = (Array.isArray(summaries.data) ? summaries.data : []).map((row) => mapSummary(row as Record<string, unknown>));
-  const rawRows = (Array.isArray(rawTransactions.data) ? rawTransactions.data : []).map((row) => mapRaw(row as Record<string, unknown>));
-  const settlementRows = (Array.isArray(settlements.data) ? settlements.data : []).map((row) => mapSettlement(row as Record<string, unknown>));
-  const summaryIds = summaryRows.map((summary) => summary.id);
-  const journals =
-    summaryIds.length > 0
-      ? await supabase
-          .from("journal_entries")
-          .select("id, business_id, reference_id, status, journal_lines(debit, credit)")
-          .eq("business_id", context.businessId)
-          .in("reference_id", summaryIds)
-      : { data: [], error: null };
-
-  if (journals.error) return withDemoHeader(json({ error: journals.error.message }, 422), context);
-
-  const journalRows = (Array.isArray(journals.data) ? journals.data : []).map((row) => {
-    const journal = row as Record<string, unknown>;
-    const lines = Array.isArray(journal.journal_lines) ? journal.journal_lines : [];
-
-    return {
-      id: String(journal.id),
-      businessId: String(journal.business_id),
-      referenceId: typeof journal.reference_id === "string" ? journal.reference_id : undefined,
-      status: String(journal.status),
-      lines: lines.map((line) => ({
-        debit: Number((line as Record<string, unknown>).debit ?? 0),
-        credit: Number((line as Record<string, unknown>).credit ?? 0),
-      })),
-    };
+  const { data, error } = await createRequestSupabaseClient(request).rpc("reconciliation_rollup", {
+    target_business_id: context.businessId,
+    target_location_id: params.locationId ?? null,
+    target_source: params.source ?? null,
+    target_date_from: params.dateFrom ?? null,
+    target_date_to: params.dateTo ?? null,
+    result_limit: 500,
   });
 
-  return withDemoHeader(
-    json({
-      rows: buildReconciliation(
-        {
-          dailyTransactionSummaries: summaryRows,
-          rawTransactions: rawRows,
-          settlementRecords: settlementRows,
-          journals: journalRows as ErpWorkspace["journals"],
-        },
-        params,
-      ),
-    }),
-    context,
-  );
+  if (error) return withDemoHeader(json({ error: error.message }, 422), context);
+
+  return withDemoHeader(json({ rows: (Array.isArray(data) ? data : []).map((row) => mapRollupRow(row as Record<string, unknown>)) }), context);
 }

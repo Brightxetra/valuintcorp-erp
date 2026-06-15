@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { PageHeader } from "@/components/ui";
-import { Plus, Wallet, Search, Check, AlertCircle, ChevronRight, X, DollarSign, Building, ArrowUpRight, ArrowDownLeft, Filter } from "lucide-react";
-import { money } from "@/lib/format";
+import { Wallet, Search, Check, AlertCircle, X, Building, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import type { ErpWorkspace } from "@/lib/erp/types";
 
 function formatDate(date: string): string {
@@ -51,7 +50,7 @@ interface KasEntry {
 }
 
 export function KasWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { workspace, setWorkspace } = useErpWorkspace(initialWorkspace);
+  const { workspace } = useErpWorkspace(initialWorkspace);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showNewModal, setShowNewModal] = useState(false);

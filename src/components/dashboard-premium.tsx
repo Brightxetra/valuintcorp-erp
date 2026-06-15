@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -26,7 +26,6 @@ import {
 import { cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace, ErpTask } from "@/lib/erp/types";
-import { outstandingPurchase, outstandingSales } from "@/lib/erp/operations";
 import { money, percent, shortDate } from "@/lib/format";
 import { erpApiDownload } from "@/lib/erp/client-api";
 
@@ -100,7 +99,7 @@ function useWidgetConfig(defaultWidgets: Widget[]) {
 // PREMIUM METRIC CARD
 // ============================================================================
 
-function PremiumMetricCard({
+export function PremiumMetricCard({
   label,
   value,
   trend,
@@ -551,7 +550,7 @@ function WidgetCustomizer({ widgets, onToggle }: { widgets: Widget[]; onToggle: 
 // ============================================================================
 
 export function DashboardPremium({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { workspace, loading, error, demoMode, activeBusinessId } = useErpWorkspace(initialWorkspace);
+  const { workspace, loading, demoMode, activeBusinessId } = useErpWorkspace(initialWorkspace);
   const { widgets, toggleWidget } = useWidgetConfig(DEFAULT_WIDGETS);
   const router = useRouter();
 

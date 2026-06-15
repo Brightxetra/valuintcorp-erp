@@ -12,38 +12,11 @@ import {
   Clock,
   AlertCircle,
   ChevronRight,
-  Download,
-  Printer,
   X,
-  User,
-  Phone,
-  MapPin,
-  Calendar,
   DollarSign,
-  Package,
 } from "lucide-react";
 import { money } from "@/lib/format";
 import type { ErpWorkspace } from "@/lib/erp/types";
-
-// ============================================================================
-// TYPES
-// ============================================================================
-
-interface Customer {
-  id: string;
-  name: string;
-  phone?: string;
-  address?: string;
-  email?: string;
-}
-
-interface Product {
-  id: string;
-  sku: string;
-  name: string;
-  sellingPrice: number;
-  unit: string;
-}
 
 // ============================================================================
 // HELPER FUNCTIONS

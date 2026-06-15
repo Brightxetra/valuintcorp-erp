@@ -5,11 +5,8 @@ import Link from "next/link";
 import {
   Calculator,
   ChevronRight,
-  Plus,
-  ArrowLeft,
   Check,
   Users,
-  Eye,
   Download,
   Calendar,
   AlertCircle,
@@ -17,16 +14,11 @@ import {
 import {
   ActionButton,
   Panel,
-  StatusPill,
-  SelectField,
-  TextField,
   EmptyState,
 } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import type { PayrollRun } from "@/lib/domain/types";
-import { money, percent } from "@/lib/format";
-import { getStatusLabel } from "@/lib/translations";
+import { money } from "@/lib/format";
 
 // ============================================
 // KOMPONEN KARTU RINGKASAN GAJI
@@ -66,7 +58,6 @@ function PayrollSummaryCard({ title, value, subtitle, icon: Icon, tone = "emeral
 // KOMPONEN DETAIL GAJI KARYAWAN
 // ============================================
 interface EmployeePayrollDetailProps {
-  employeeId: string;
   employeeName: string;
   employeeRole: string;
   baseSalary: number;
@@ -74,7 +65,6 @@ interface EmployeePayrollDetailProps {
 }
 
 function EmployeePayrollDetail({
-  employeeId,
   employeeName,
   employeeRole,
   baseSalary,
@@ -373,7 +363,6 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
                 return (
                   <EmployeePayrollDetail
                     key={id}
-                    employeeId={employee.id}
                     employeeName={employee.name}
                     employeeRole={employee.role}
                     baseSalary={employee.baseSalary}

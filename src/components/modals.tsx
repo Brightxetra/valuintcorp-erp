@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, CheckCircle, Info, X, AlertCircle } from "lucide-react";
 import { cn } from "@/components/ui";
 
@@ -18,12 +18,6 @@ export interface Toast {
     onClick: () => void;
   };
   duration?: number;
-}
-
-interface ToastContextValue {
-  toasts: Toast[];
-  addToast: (toast: Omit<Toast, "id">) => void;
-  removeToast: (id: string) => void;
 }
 
 let toastListeners: ((toasts: Toast[]) => void)[] = [];
@@ -265,6 +259,8 @@ export function VoidDocumentModal({
   loading = false,
 }: VoidDocumentModalProps) {
   const [reason, setReason] = useState("");
+
+  if (!open) return null;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("id-ID", {

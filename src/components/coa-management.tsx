@@ -4,21 +4,15 @@ import { useState } from "react";
 import {
   Plus,
   Pencil,
-  Trash2,
   ChevronRight,
   ChevronDown,
   Search,
-  Filter,
-  Download,
-  Upload,
   Building,
   CreditCard,
   Landmark,
   TrendingUp,
   TrendingDown,
-  ArrowRight,
   X,
-  Check,
 } from "lucide-react";
 import { cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
@@ -154,7 +148,7 @@ export function COAManagement({ initialWorkspace }: { initialWorkspace: ErpWorks
           const Icon = config.icon;
           const accounts = accountsByType[type] || [];
           const isExpanded = expandedTypes.has(type);
-          const totalBalance = accounts.reduce((sum, acc) => sum + 0, 0);
+          const totalBalance = 0;
 
           return (
             <div key={type} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">

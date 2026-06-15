@@ -14,7 +14,6 @@ import {
   Banknote,
   FileText,
   HeartPulse,
-  Wallet,
   ScrollText,
   PieChart,
   Truck,

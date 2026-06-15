@@ -13,25 +13,15 @@ import {
   X,
   Boxes,
   ArrowRight,
-  TrendingUp,
   AlertTriangle,
   Filter,
 } from "lucide-react";
-import { money } from "@/lib/format";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { valueInventory } from "@/lib/inventory/valuation";
 
 // ============================================================================
 // TYPES
 // ============================================================================
-
-interface StockPosition {
-  itemId: string;
-  warehouseId: string;
-  quantity: number;
-  value: number;
-  averageCost: number;
-}
 
 interface StockAlert {
   productId: string;
@@ -45,11 +35,6 @@ interface StockAlert {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-function formatDate(date: string): string {
-  const d = new Date(date);
-  return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
-}
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("id-ID", {
@@ -152,7 +137,6 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   // Filter positions
   const filteredPositions = positions.filter((pos) => {
     const product = workspace.products.find((p) => p.id === pos.itemId);
-    const warehouse = workspace.warehouses.find((w) => w.id === pos.warehouseId);
 
     const matchesSearch =
       searchQuery === "" ||

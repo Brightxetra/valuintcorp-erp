@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import {
   ScrollText,
   ChevronRight,
   Plus,
   ChevronDown,
-  ChevronUp,
   Search,
   Eye,
   Edit,
@@ -17,7 +15,6 @@ import {
   FolderClosed,
   Banknote,
   CreditCard,
-  ArrowRightLeft,
   Building,
   TrendingUp,
   PieChart,
@@ -25,10 +22,6 @@ import {
 import {
   ActionButton,
   Panel,
-  StatusPill,
-  EmptyState,
-  TextField,
-  SelectField,
 } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
@@ -281,7 +274,7 @@ function SummaryByType({ accounts }: SummaryByTypeProps) {
 // WORKSPACE UTAMA
 // ============================================
 export function AkunWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { workspace } = useErpWorkspace(initialWorkspace);
+  useErpWorkspace(initialWorkspace);
   const [search, setSearch] = useState("");
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(["1-1000", "2-1000", "3-1000", "4-1000", "5-1000", "6-1000"]));
   const [selectedAccount, setSelectedAccount] = useState<AccountNode | null>(null);

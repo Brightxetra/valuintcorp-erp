@@ -1,9 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
 import Link from "next/link";
 import {
-  Home,
   ReceiptText,
   ShoppingCart,
   Package,
@@ -18,20 +16,15 @@ import {
   Clock,
   DollarSign,
   ArrowRight,
-  Plus,
-  Eye,
   Banknote,
-  Building2,
 } from "lucide-react";
 import {
-  ActionButton,
   Panel,
   StatusPill,
   EmptyState,
 } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import { outstandingSales, outstandingPurchase } from "@/lib/erp/operations";
 import { money, percent } from "@/lib/format";
 import { getStatusLabel } from "@/lib/translations";
 
@@ -218,7 +211,6 @@ export function RecentInvoices({ workspace }: { workspace: ErpWorkspace }) {
   return (
     <div className="divide-y divide-slate-100">
       {recentInvoices.map((invoice) => {
-        const outstanding = outstandingSales(invoice);
         const customer = workspace.customers.find((c) => c.id === invoice.customerId);
         const statusTone =
           invoice.status === "paid"
@@ -294,14 +286,6 @@ export function DashboardWorkspace({ initialWorkspace }: { initialWorkspace: Erp
   const { workspace, loading, error, demoMode } = useErpWorkspace(initialWorkspace);
 
   const marginRate = workspace.metrics.revenue > 0 ? workspace.metrics.grossMargin / workspace.metrics.revenue : 0;
-
-  // Hitung piutang & hutang jatuh tempo
-  const overdueInvoices = workspace.salesInvoices.filter(
-    (inv) => inv.status === "posted" || inv.status === "partially_paid"
-  );
-  const overdueBills = workspace.purchaseBills.filter(
-    (bill) => bill.status === "posted" || bill.status === "partially_paid"
-  );
 
   return (
     <div className="space-y-6">

@@ -13,13 +13,8 @@ import {
   X,
   FileText,
   Filter,
-  RefreshCw,
-  Lock,
-  Unlock,
 } from "lucide-react";
-import { money } from "@/lib/format";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import type { JournalEntry } from "@/lib/domain/types";
 
 // ============================================================================
 // HELPER FUNCTIONS

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 015", () => {
+  it("keeps production ERP migrations in order through 016", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -24,6 +24,7 @@ describe("Supabase migration contract", () => {
       "013_optimize_rls_policy_performance.sql",
       "014_private_authz_helpers.sql",
       "015_add_foreign_key_performance_indexes.sql",
+      "016_reconciliation_rollup_rpc.sql",
     ]);
   });
 
@@ -121,5 +122,15 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("create index if not exists raw_transaction_lines_raw_transaction_id_fk_idx");
     expect(migration).toContain("create index if not exists fixed_asset_depreciation_lines_asset_id_fk_idx");
     expect(migration).not.toContain("drop index");
+  });
+
+  it("adds bounded reconciliation rollup RPC", () => {
+    const migration = readFileSync(join(migrationsDir, "016_reconciliation_rollup_rpc.sql"), "utf8");
+
+    expect(migration).toContain("create or replace function public.reconciliation_rollup");
+    expect(migration).toContain("limit least(greatest(coalesce(result_limit, 500), 1), 500)");
+    expect(migration).toContain("from public.raw_transactions raw");
+    expect(migration).toContain("from public.settlement_records settlement");
+    expect(migration).toContain("grant execute on function public.reconciliation_rollup");
   });
 });

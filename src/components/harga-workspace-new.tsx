@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { PageHeader } from "@/components/ui";
 import {
@@ -9,7 +9,6 @@ import {
   Search,
   Check,
   AlertCircle,
-  ChevronRight,
   X,
   DollarSign,
   Tag,
@@ -17,26 +16,10 @@ import {
   Edit,
   Copy,
 } from "lucide-react";
-import { money } from "@/lib/format";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import { valueInventory } from "@/lib/inventory/valuation";
 
 // ============================================================================
 // TYPES
-// ============================================================================
-
-interface PriceList {
-  id: string;
-  productId: string;
-  price: number;
-  type: "selling" | "purchase" | "special";
-  validFrom?: string;
-  validTo?: string;
-  notes?: string;
-}
-
-// ============================================================================
-// HELPER FUNCTIONS
 // ============================================================================
 
 function formatCurrency(amount: number): string {
@@ -45,11 +28,6 @@ function formatCurrency(amount: number): string {
     currency: "IDR",
     minimumFractionDigits: 0,
   }).format(amount);
-}
-
-function formatDate(date: string): string {
-  const d = new Date(date);
-  return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 // ============================================================================
@@ -140,14 +118,8 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
     return matchesSearch && matchesCategory && matchesType;
   });
 
-  // Get stock positions (must be before statistics calculation)
-  const positions = useMemo(() => {
-    return valueInventory(workspace.stockMovements);
-  }, [workspace.stockMovements]);
-
   // Calculate statistics
   const totalProduk = filteredProducts.length;
-  const totalNilaiJual = filteredProducts.reduce((sum, p) => sum + (p.sellingPrice * (positions.find((pos) => pos.itemId === p.id)?.quantity || 0)), 0);
   const avgMargin = filteredProducts.length > 0
     ? filteredProducts.reduce((sum, p) => {
         const margin = p.sellingPrice > 0 ? ((p.sellingPrice - p.purchasePrice) / p.sellingPrice) * 100 : 0;

@@ -2,7 +2,7 @@
 // PAYROLL CALCULATIONS - INCLUDING BPJS
 // ============================================================================
 
-import type { Employee, PayrollComponent, PayrollRun } from "@/lib/domain/types";
+import type { Employee, PayrollComponent } from "@/lib/domain/types";
 import type { Money } from "@/lib/domain/types";
 
 interface PayrollCalculationInput {
@@ -138,7 +138,7 @@ export function calculatePayrollWithBPJS(input: PayrollCalculationInput): Payrol
   const taxableIncome = baseSalary + earningsAmount;
 
   // PPh 21 calculation (simplified, progressive rates)
-  const pph21 = calculatePPH21(taxableIncome, employee);
+  const pph21 = calculatePPH21(taxableIncome);
 
   // 5. Calculate total deductions (excluding BPJS employee portion for now)
   const deductionsAmount = customDeductions
@@ -183,7 +183,7 @@ export function calculatePayrollWithBPJS(input: PayrollCalculationInput): Payrol
 }
 
 // Simplified PPh 21 calculation
-function calculatePPH21(annualIncome: Money, employee: Employee): Money {
+function calculatePPH21(annualIncome: Money): Money {
   // Monthly PPh 21
   const monthlyIncome = annualIncome;
 

@@ -1,28 +1,10 @@
 "use client";
 
 import { useState, useRef } from "react";
-import Link from "next/link";
 import {
-  PieChart,
-  FileBarChart,
-  TrendingUp,
-  TrendingDown,
-  Wallet,
-  Download,
   Printer,
-  Calendar,
-  ChevronRight,
-  CheckCircle2,
   AlertCircle,
-  ArrowUpRight,
-  ArrowDownRight,
 } from "lucide-react";
-import {
-  ActionButton,
-  Panel,
-  StatusPill,
-  SelectField,
-} from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { money } from "@/lib/format";
@@ -31,7 +13,6 @@ import { money } from "@/lib/format";
 // TIPE DATA
 // ============================================
 type ReportType = "neraca_saldo" | "neraca" | "laba_rugi" | "arus_kas";
-type ReportPeriod = "bulanan" | "kuartalan" | "tahunan";
 
 interface ReportRow {
   code: string;
@@ -90,6 +71,7 @@ interface ReportTableProps {
 function ReportTable({ title, data, totalDebit, totalCredit, isBalanced = true }: ReportTableProps) {
   return (
     <div className="mb-6">
+      <h2 className="mb-3 text-lg font-semibold text-slate-950">{title}</h2>
       <table className="w-full text-sm border-collapse border border-slate-300">
         <thead>
           <tr className="bg-slate-100">

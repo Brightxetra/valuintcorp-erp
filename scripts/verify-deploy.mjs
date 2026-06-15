@@ -56,6 +56,11 @@ const requiredMigrations = [
   "supabase/migrations/009_business_logo_profile.sql",
   "supabase/migrations/010_fixed_assets.sql",
   "supabase/migrations/011_authenticated_api_privileges.sql",
+  "supabase/migrations/012_harden_supabase_security_lints.sql",
+  "supabase/migrations/013_optimize_rls_policy_performance.sql",
+  "supabase/migrations/014_private_authz_helpers.sql",
+  "supabase/migrations/015_add_foreign_key_performance_indexes.sql",
+  "supabase/migrations/016_reconciliation_rollup_rpc.sql",
 ];
 
 const requiredFiles = [
@@ -81,6 +86,11 @@ requireFileSnippet("supabase/migrations/007_production_ops_and_storage.sql", "cr
 requireFileSnippet("supabase/migrations/007_production_ops_and_storage.sql", "create table if not exists public.transaction_source_mappings");
 requireFileSnippet("supabase/migrations/010_fixed_assets.sql", "create table if not exists public.fixed_assets");
 requireFileSnippet("supabase/migrations/011_authenticated_api_privileges.sql", "grant usage on schema public to authenticated");
+requireFileSnippet("supabase/migrations/012_harden_supabase_security_lints.sql", "grant execute on function public.upload_raw_transactions(jsonb) to authenticated");
+requireFileSnippet("supabase/migrations/013_optimize_rls_policy_performance.sql", "('raw_transactions', 'members can read raw transactions'");
+requireFileSnippet("supabase/migrations/014_private_authz_helpers.sql", "create schema if not exists app_private");
+requireFileSnippet("supabase/migrations/015_add_foreign_key_performance_indexes.sql", "create index if not exists raw_transactions_location_id_fk_idx");
+requireFileSnippet("supabase/migrations/016_reconciliation_rollup_rpc.sql", "create or replace function public.reconciliation_rollup");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");
@@ -111,6 +121,10 @@ async function runLiveSchemaCheck() {
     "transaction_sources",
     "demo_sandboxes",
     "fixed_assets",
+    "raw_transactions",
+    "daily_transaction_summaries",
+    "settlement_records",
+    "attachments",
   ];
 
   for (const table of requiredTables) {

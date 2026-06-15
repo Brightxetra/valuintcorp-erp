@@ -3,17 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  AlertTriangle,
   Bell,
   BookOpenCheck,
   Boxes,
   Building2,
   Calculator,
-  ChevronDown,
   ChevronRight,
-  Command,
   FileBarChart,
-  GripVertical,
   Home,
   Landmark,
   LayoutDashboard,
@@ -24,7 +20,6 @@ import {
   Settings,
   ShoppingCart,
   Star,
-  TrendingUp,
   UserCircle,
   UsersRound,
   X,
@@ -426,10 +421,9 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function NavLinks({ workspace, onNavigate, compact = false }: {
+function NavLinks({ workspace, onNavigate }: {
   workspace: ErpWorkspace;
   onNavigate?: () => void;
-  compact?: boolean;
 }) {
   const pathname = usePathname();
   const role = workspace.user.role;
@@ -561,14 +555,11 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
   const {
     workspace,
     businesses,
     activeBusinessId,
     setActiveBusinessId,
-    loading,
-    error,
     demoMode,
   } = useErpWorkspace();
 

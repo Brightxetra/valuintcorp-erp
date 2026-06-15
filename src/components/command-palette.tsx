@@ -11,19 +11,11 @@ import {
   ReceiptText,
   BarChart3,
   Settings,
-  ClipboardList,
   Building2,
   Calculator,
-  UserPlus,
-  Building,
-  Warehouse,
-  Tag,
-  MapPin,
   Home,
   ChevronRight,
-  Command,
   Star,
-  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/components/ui";
 import type { ErpWorkspace } from "@/lib/erp/types";
@@ -278,7 +270,7 @@ export function CommandPalette({ workspace }: { workspace: ErpWorkspace }) {
               <p className="text-sm">Tidak ada hasil untuk &quot;{query}&quot;</p>
             </div>
           ) : (
-            filteredGroups.map((group, gi) => (
+            filteredGroups.map((group) => (
               <div key={group.label} className="py-1">
                 <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                   {group.label}
