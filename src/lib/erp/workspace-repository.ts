@@ -911,7 +911,7 @@ export async function loadSupabaseWorkspace(
           .order("created_at", { ascending: false })
           .limit(25)
       : skipRows(),
-    needs(profile, "shell", "dashboard", "sales", "cash", "settings", "document-detail")
+    needs(profile, "dashboard", "sales", "cash", "settings", "document-detail")
       ? (masterLimit
           ? supabase.from("customers").select("*").eq("business_id", context.businessId).order("name").limit(masterLimit)
           : supabase.from("customers").select("*").eq("business_id", context.businessId).order("name"))

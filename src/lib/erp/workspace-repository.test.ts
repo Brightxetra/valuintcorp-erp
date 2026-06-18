@@ -94,6 +94,9 @@ describe("loadSupabaseWorkspace profile selection", () => {
     expect(tables).toContain("purchase_bills");
     expect(tables).toContain("raw_import_batches");
     expect(tables).toContain("activity_events");
+    expect(tables).not.toContain("customers");
+    expect(tables).not.toContain("products");
+    expect(tables).not.toContain("warehouses");
     expect(tables).not.toContain("employees");
     expect(tables).not.toContain("stock_movements");
     expect(tables).not.toContain("fixed_assets");
