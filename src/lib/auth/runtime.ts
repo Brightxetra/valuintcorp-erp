@@ -1,4 +1,5 @@
 export const serverAccessTokenCookie = "valuintcorp.sb-access-token";
+export const serverRefreshTokenCookie = "valuintcorp.sb-refresh-token";
 export const serverBusinessCookie = "valuintcorp.active-business-id";
 
 export function isSupabaseEnvConfigured() {

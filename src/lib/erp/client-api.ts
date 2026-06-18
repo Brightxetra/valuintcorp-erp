@@ -43,24 +43,32 @@ export function storeActiveBusinessId(businessId: string) {
   window.localStorage.setItem(activeBusinessKey, businessId);
 }
 
-async function getAccessToken() {
+async function getBrowserSession() {
   if (!isSupabaseBrowserEnabled()) return null;
 
   const supabase = createBrowserSupabaseClient();
   const { data } = await supabase.auth.getSession();
 
-  return data.session?.access_token ?? null;
+  return data.session ?? null;
+}
+
+async function getAccessToken() {
+  return (await getBrowserSession())?.access_token ?? null;
 }
 
 export async function syncServerSession(businessId?: string | null): Promise<SessionSyncResult | null> {
-  const token = await getAccessToken();
+  const session = await getBrowserSession();
 
-  if (!token) return null;
+  if (!session?.access_token) return null;
 
   const response = await fetch("/api/auth/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ accessToken: token, businessId: businessId || undefined }),
+    body: JSON.stringify({
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      businessId: businessId || undefined,
+    }),
     cache: "no-store",
   });
 

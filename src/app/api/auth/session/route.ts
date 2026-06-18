@@ -1,10 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { serverAccessTokenCookie, serverBusinessCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { serverAccessTokenCookie, serverBusinessCookie, serverRefreshTokenCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { accessTokenCookieMaxAge } from "@/lib/auth/token";
 
 const syncSessionSchema = z.object({
   accessToken: z.string().min(20),
+  refreshToken: z.string().min(20).optional(),
   businessId: z.string().uuid().optional(),
 });
 
@@ -81,7 +83,11 @@ export async function POST(request: Request) {
     { ok: true, defaultBusinessId, hasBusiness: Boolean(defaultBusinessId) },
     { headers: { "cache-control": "no-store" } },
   );
-  response.cookies.set(serverAccessTokenCookie, parsed.data.accessToken, cookieOptions());
+  response.cookies.set(serverAccessTokenCookie, parsed.data.accessToken, cookieOptions(accessTokenCookieMaxAge(parsed.data.accessToken)));
+
+  if (parsed.data.refreshToken) {
+    response.cookies.set(serverRefreshTokenCookie, parsed.data.refreshToken, cookieOptions(60 * 60 * 24 * 30));
+  }
 
   if (defaultBusinessId) {
     response.cookies.set(serverBusinessCookie, defaultBusinessId, cookieOptions(60 * 60 * 24 * 30));
@@ -93,6 +99,7 @@ export async function POST(request: Request) {
 export async function DELETE() {
   const response = NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
   response.cookies.set(serverAccessTokenCookie, "", cookieOptions(0));
+  response.cookies.set(serverRefreshTokenCookie, "", cookieOptions(0));
   response.cookies.set(serverBusinessCookie, "", cookieOptions(0));
   return response;
 }
