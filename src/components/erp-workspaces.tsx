@@ -37,6 +37,7 @@ import {
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpDocumentStatus, ErpWorkspace, PaymentDirection } from "@/lib/erp/types";
 import { outstandingPurchase, outstandingSales } from "@/lib/erp/operations";
+import { destinationAfterLogin, sanitizeLoginNextPath } from "@/lib/erp/login-routing";
 import { valueInventory } from "@/lib/inventory/valuation";
 import { money, percent } from "@/lib/format";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -49,6 +50,26 @@ import {
 
 const MARKETING_SITE_URL =
   process.env.NEXT_PUBLIC_MARKETING_SITE_URL ?? "https://valuintcorp.vercel.app";
+
+function currentLoginNextPath() {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("next");
+}
+
+async function tryBootstrapDemoAccount() {
+  try {
+    return await erpApiFetch<{
+      demoAccount: boolean;
+      businessId: string | null;
+      runtimeMode: "demo_fallback" | "demo_account" | "production";
+    }>("/api/demo/bootstrap", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  } catch {
+    return null;
+  }
+}
 
 function statusTone(status: ErpDocumentStatus): "emerald" | "amber" | "gray" | "red" | "cyan" {
   if (status === "paid") return "emerald";
@@ -1881,20 +1902,14 @@ export function LoginWorkspace() {
         setPending(true);
         const session = await syncServerSession();
 
-        const params = new URLSearchParams(window.location.search);
-        const requestedNext = params.get("next");
-        const nextPath = requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/login")
-          ? requestedNext
-          : "/dashboard";
-
         if (cancelled) return;
 
-        if (session?.defaultBusinessId) {
-          router.replace(nextPath);
+        if (session) {
+          router.replace(destinationAfterLogin(currentLoginNextPath(), session.hasBusiness));
           return;
         }
 
-        router.replace("/onboarding");
+        setPending(false);
       } catch {
         if (!cancelled) setPending(false);
       }
@@ -1924,8 +1939,7 @@ export function LoginWorkspace() {
     if (demoFallback) {
       setSuccess("Demo mode aktif. Supabase env belum dikonfigurasi.");
       setPending(false);
-      const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
-      router.push(params.get("next") || "/dashboard");
+      router.replace(sanitizeLoginNextPath(currentLoginNextPath()));
       return;
     }
 
@@ -1969,33 +1983,29 @@ export function LoginWorkspace() {
       }
 
       const session = await syncServerSession();
-      const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
-      const nextPath = params.get("next") || "/dashboard";
+      const requestedNext = currentLoginNextPath();
 
-      const bootstrap = await erpApiFetch<{
-        demoAccount: boolean;
-        businessId: string | null;
-        runtimeMode: "demo_fallback" | "demo_account" | "production";
-      }>("/api/demo/bootstrap", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+      if (!session) {
+        throw new Error("Login berhasil, tapi sesi server belum tersimpan. Coba klik Masuk sekali lagi.");
+      }
 
-      if (bootstrap.demoAccount && bootstrap.businessId) {
-        await syncServerSession(bootstrap.businessId);
+      const bootstrap = await tryBootstrapDemoAccount();
+
+      if (bootstrap?.demoAccount && bootstrap.businessId) {
+        const syncedDemoSession = await syncServerSession(bootstrap.businessId);
         setSuccess("Login demo berhasil. Sandbox demo siap dipakai.");
-        router.push(nextPath);
+        router.replace(destinationAfterLogin(requestedNext, Boolean(syncedDemoSession?.hasBusiness ?? true)));
         return;
       }
 
-      if (session?.defaultBusinessId) {
+      if (session.hasBusiness) {
         setSuccess(mode === "login" ? "Login berhasil." : "Registrasi berhasil.");
-        router.push(nextPath);
+        router.replace(destinationAfterLogin(requestedNext, true));
         return;
       }
 
       setSuccess("Login berhasil. Lanjutkan setup bisnis pertama.");
-      router.push("/onboarding");
+      router.replace(destinationAfterLogin(requestedNext, false));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Auth gagal diproses.");
     } finally {
