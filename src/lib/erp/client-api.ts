@@ -21,6 +21,11 @@ export interface SessionSyncResult {
   hasBusiness: boolean;
 }
 
+export interface SessionSyncTokens {
+  accessToken: string;
+  refreshToken?: string | null;
+}
+
 export function isSupabaseBrowserEnabled() {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
@@ -56,19 +61,32 @@ async function getAccessToken() {
   return (await getBrowserSession())?.access_token ?? null;
 }
 
-export async function syncServerSession(businessId?: string | null): Promise<SessionSyncResult | null> {
-  const session = await getBrowserSession();
+export async function syncServerSession(
+  businessId?: string | null,
+  explicitTokens?: SessionSyncTokens | null,
+): Promise<SessionSyncResult | null> {
+  const session = explicitTokens ? null : await getBrowserSession();
+  const accessToken = explicitTokens?.accessToken ?? session?.access_token;
+  const refreshToken = explicitTokens?.refreshToken ?? session?.refresh_token;
 
-  if (!session?.access_token) return null;
+  if (!accessToken) return null;
+
+  const payload: { accessToken: string; refreshToken?: string; businessId?: string } = {
+    accessToken,
+  };
+
+  if (refreshToken) {
+    payload.refreshToken = refreshToken;
+  }
+
+  if (businessId) {
+    payload.businessId = businessId;
+  }
 
   const response = await fetch("/api/auth/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      accessToken: session.access_token,
-      refreshToken: session.refresh_token,
-      businessId: businessId || undefined,
-    }),
+    body: JSON.stringify(payload),
     cache: "no-store",
   });
 

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { serverAccessTokenCookie, serverBusinessCookie, serverRefreshTokenCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
+import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
 const syncSessionSchema = z.object({
   accessToken: z.string().min(20),
@@ -46,10 +47,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid or expired Supabase token." }, { status: 401, headers: { "cache-control": "no-store" } });
   }
 
+  const membershipSupabase = isSupabaseServiceConfigured() ? createServiceSupabaseClient() : supabase;
   let defaultBusinessId = parsed.data.businessId ?? null;
 
   if (parsed.data.businessId) {
-    const { data: membership, error: membershipError } = await supabase
+    const { data: membership, error: membershipError } = await membershipSupabase
       .from("business_members")
       .select("business_id")
       .eq("business_id", parsed.data.businessId)
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User is not a member of this business." }, { status: 403, headers: { "cache-control": "no-store" } });
     }
   } else {
-    const { data: membership, error: membershipError } = await supabase
+    const { data: membership, error: membershipError } = await membershipSupabase
       .from("business_members")
       .select("business_id")
       .eq("auth_user_id", userData.user.id)

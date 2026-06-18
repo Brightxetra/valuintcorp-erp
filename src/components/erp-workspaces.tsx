@@ -1900,7 +1900,10 @@ export function LoginWorkspace() {
         if (!data.session) return;
 
         setPending(true);
-        const session = await syncServerSession();
+        const session = await syncServerSession(null, {
+          accessToken: data.session.access_token,
+          refreshToken: data.session.refresh_token,
+        });
 
         if (cancelled) return;
 
@@ -1982,7 +1985,11 @@ export function LoginWorkspace() {
         return;
       }
 
-      const session = await syncServerSession();
+      const signedInTokens = {
+        accessToken: result.data.session.access_token,
+        refreshToken: result.data.session.refresh_token,
+      };
+      const session = await syncServerSession(null, signedInTokens);
       const requestedNext = currentLoginNextPath();
 
       if (!session) {
@@ -1992,7 +1999,7 @@ export function LoginWorkspace() {
       const bootstrap = await tryBootstrapDemoAccount();
 
       if (bootstrap?.demoAccount && bootstrap.businessId) {
-        const syncedDemoSession = await syncServerSession(bootstrap.businessId);
+        const syncedDemoSession = await syncServerSession(bootstrap.businessId, signedInTokens);
         setSuccess("Login demo berhasil. Sandbox demo siap dipakai.");
         router.replace(destinationAfterLogin(requestedNext, Boolean(syncedDemoSession?.hasBusiness ?? true)));
         return;
