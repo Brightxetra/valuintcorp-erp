@@ -43,7 +43,6 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   erpApiDownload,
   erpApiFetch,
-  loadBusinessOptions,
   shouldUseDemoFallbackBrowser,
   syncServerSession,
 } from "@/lib/erp/client-api";
@@ -1880,19 +1879,17 @@ export function LoginWorkspace() {
         if (!data.session) return;
 
         setPending(true);
-        await syncServerSession();
+        const session = await syncServerSession();
 
         const params = new URLSearchParams(window.location.search);
         const requestedNext = params.get("next");
         const nextPath = requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/login")
           ? requestedNext
           : "/dashboard";
-        const businessResult = await loadBusinessOptions();
 
         if (cancelled) return;
 
-        if (businessResult.defaultBusinessId) {
-          await syncServerSession(businessResult.defaultBusinessId);
+        if (session?.defaultBusinessId) {
           router.replace(nextPath);
           return;
         }
@@ -1971,7 +1968,7 @@ export function LoginWorkspace() {
         return;
       }
 
-      await syncServerSession();
+      const session = await syncServerSession();
       const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
       const nextPath = params.get("next") || "/dashboard";
 
@@ -1991,10 +1988,7 @@ export function LoginWorkspace() {
         return;
       }
 
-      const businessResult = await loadBusinessOptions();
-
-      if (businessResult.defaultBusinessId) {
-        await syncServerSession(businessResult.defaultBusinessId);
+      if (session?.defaultBusinessId) {
         setSuccess(mode === "login" ? "Login berhasil." : "Registrasi berhasil.");
         router.push(nextPath);
         return;

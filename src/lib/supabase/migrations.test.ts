@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 016", () => {
+  it("keeps production ERP migrations in order through 017", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -25,6 +25,7 @@ describe("Supabase migration contract", () => {
       "014_private_authz_helpers.sql",
       "015_add_foreign_key_performance_indexes.sql",
       "016_reconciliation_rollup_rpc.sql",
+      "017_workspace_route_performance.sql",
     ]);
   });
 
@@ -132,5 +133,16 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("from public.raw_transactions raw");
     expect(migration).toContain("from public.settlement_records settlement");
     expect(migration).toContain("grant execute on function public.reconciliation_rollup");
+  });
+
+  it("adds workspace route performance rollup RPC without dropping indexes", () => {
+    const migration = readFileSync(join(migrationsDir, "017_workspace_route_performance.sql"), "utf8");
+
+    expect(migration).toContain("create or replace function public.workspace_dashboard_rollup");
+    expect(migration).toContain("returns table");
+    expect(migration).toContain("from public.daily_transaction_summaries");
+    expect(migration).toContain("where public.is_business_member(target_business_id)");
+    expect(migration).toContain("grant execute on function public.workspace_dashboard_rollup");
+    expect(migration).not.toContain("drop index");
   });
 });

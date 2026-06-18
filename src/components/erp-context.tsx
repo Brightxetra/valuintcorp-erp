@@ -35,9 +35,11 @@ interface ErpContextValue {
 const ErpContext = createContext<ErpContextValue | null>(null);
 
 export function ErpWorkspaceProvider({
+  autoRefresh = false,
   initialWorkspace,
   children,
 }: {
+  autoRefresh?: boolean;
   initialWorkspace: ErpWorkspace;
   children: React.ReactNode;
 }) {
@@ -55,7 +57,7 @@ export function ErpWorkspaceProvider({
   const demoMode = shouldUseDemoFallbackBrowser();
   const demoAccount = Boolean(workspace.demoSandbox);
   const runtimeMode: WorkspaceRuntimeMode = demoMode ? "demo_fallback" : demoAccount ? "demo_account" : "production";
-  const [loading, setLoading] = useState(!demoMode);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const setActiveBusinessId = useCallback((businessId: string) => {
@@ -97,12 +99,14 @@ export function ErpWorkspaceProvider({
   }, [demoMode, setActiveBusinessId]);
 
   useEffect(() => {
+    if (!autoRefresh) return undefined;
+
     const timer = window.setTimeout(() => {
       void refreshWorkspace();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [refreshWorkspace]);
+  }, [autoRefresh, refreshWorkspace]);
 
   useEffect(() => {
     if (demoMode || activeBusinessId === workspace.business.id) return;

@@ -5,7 +5,7 @@ import { createDemoErpWorkspace } from "@/lib/erp/demo-workspace";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
 import { refreshErpWorkspace } from "@/lib/erp/operations";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
+import { loadSupabaseWorkspace, type WorkspaceLoadOptions } from "@/lib/erp/workspace-repository";
 
 function createOnboardingWorkspace(user: NonNullable<Awaited<ReturnType<typeof getServerAuthenticatedUser>>>): ErpWorkspace {
   const base = createDemoErpWorkspace();
@@ -60,13 +60,15 @@ function createOnboardingWorkspace(user: NonNullable<Awaited<ReturnType<typeof g
   return emptyWorkspace;
 }
 
-export async function getInitialErpWorkspace(options: { allowOnboardingFallback?: boolean } = {}): Promise<ErpWorkspace> {
+export async function getInitialErpWorkspace(
+  options: WorkspaceLoadOptions & { allowOnboardingFallback?: boolean } = {},
+): Promise<ErpWorkspace> {
   const context = await getServerWorkspaceContext();
   const accessToken = await getServerAccessToken();
 
   if (context && accessToken) {
     try {
-      return await loadSupabaseWorkspace(createServerSupabaseClient(accessToken), context);
+      return await loadSupabaseWorkspace(createServerSupabaseClient(accessToken), context, options);
     } catch {
       if (!shouldUseDemoFallback()) {
         redirect("/login");

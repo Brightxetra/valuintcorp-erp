@@ -65,6 +65,7 @@ supabase/migrations/013_optimize_rls_policy_performance.sql
 supabase/migrations/014_private_authz_helpers.sql
 supabase/migrations/015_add_foreign_key_performance_indexes.sql
 supabase/migrations/016_reconciliation_rollup_rpc.sql
+supabase/migrations/017_workspace_route_performance.sql
 ```
 
 Required env vars for Supabase-backed API authorization:

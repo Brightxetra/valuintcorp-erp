@@ -58,6 +58,31 @@ export interface WorkspaceLoadContext {
   userName?: string;
 }
 
+export type WorkspaceLoadProfile =
+  | "full"
+  | "shell"
+  | "dashboard"
+  | "sales"
+  | "purchases"
+  | "cash"
+  | "inventory"
+  | "pricing"
+  | "accounting"
+  | "reports"
+  | "tax"
+  | "hr"
+  | "payroll"
+  | "assets"
+  | "settings"
+  | "onboarding"
+  | "document-detail";
+
+export interface WorkspaceLoadOptions {
+  profile?: WorkspaceLoadProfile;
+  documentId?: string;
+  documentType?: "sales_invoice" | "purchase_bill";
+}
+
 function asRow(value: unknown): Row {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Row) : {};
 }
@@ -713,10 +738,116 @@ function tableError(requiredResults: QueryResult[], optionalResults: QueryResult
   return optionalResults.find((result) => result.error && !isMissingOptionalTableError(result.error))?.error ?? null;
 }
 
+function skipRows() {
+  return Promise.resolve({ data: [], error: null });
+}
+
+function skipSingle() {
+  return Promise.resolve({ data: null, error: null });
+}
+
+function needs(profile: WorkspaceLoadProfile, ...profiles: WorkspaceLoadProfile[]) {
+  return profile === "full" || profiles.includes(profile);
+}
+
+function listLimit(profile: WorkspaceLoadProfile, regularLimit = 200, shellLimit = 8) {
+  if (profile === "full" || profile === "settings") return null;
+  if (profile === "shell") return shellLimit;
+  return regularLimit;
+}
+
 export async function loadSupabaseWorkspace(
   supabase: SupabaseClient,
   context: WorkspaceLoadContext,
+  options: WorkspaceLoadOptions = {},
 ): Promise<ErpWorkspace> {
+  const profile = options.profile ?? "full";
+  const salesLimit = listLimit(profile);
+  const purchaseLimit = listLimit(profile);
+  const paymentsLimit = listLimit(profile, 250, 10);
+  const journalLimit = listLimit(profile, 250, 10);
+  const operationalLimit = listLimit(profile, 500, 10);
+  const masterLimit = profile === "full" || profile === "settings" ? null : 1_000;
+  const salesInvoiceQuery = () => {
+    let query = supabase
+      .from("sales_invoices")
+      .select("*, sales_invoice_lines(*)")
+      .eq("business_id", context.businessId)
+      .order("date", { ascending: false });
+
+    if (profile === "document-detail" && options.documentType === "sales_invoice" && options.documentId) {
+      query = query.eq("id", options.documentId);
+    } else if (salesLimit) {
+      query = query.limit(salesLimit);
+    }
+
+    return query;
+  };
+
+  const purchaseBillQuery = () => {
+    let query = supabase
+      .from("purchase_bills")
+      .select("*, purchase_bill_lines(*)")
+      .eq("business_id", context.businessId)
+      .order("date", { ascending: false });
+
+    if (profile === "document-detail" && options.documentType === "purchase_bill" && options.documentId) {
+      query = query.eq("id", options.documentId);
+    } else if (purchaseLimit) {
+      query = query.limit(purchaseLimit);
+    }
+
+    return query;
+  };
+
+  const paymentsQuery = () => {
+    let query = supabase
+      .from("payments")
+      .select("*")
+      .eq("business_id", context.businessId)
+      .order("date", { ascending: false });
+
+    if (profile === "document-detail" && options.documentType && options.documentId) {
+      query = query.eq("document_type", options.documentType).eq("document_id", options.documentId);
+    } else if (paymentsLimit) {
+      query = query.limit(paymentsLimit);
+    }
+
+    return query;
+  };
+
+  const paymentAllocationsQuery = () => {
+    let query = supabase
+      .from("payment_allocations")
+      .select("*")
+      .eq("business_id", context.businessId)
+      .order("created_at", { ascending: false });
+
+    if (profile === "document-detail" && options.documentType && options.documentId) {
+      query = query.eq("document_type", options.documentType).eq("document_id", options.documentId);
+    } else if (paymentsLimit) {
+      query = query.limit(paymentsLimit);
+    }
+
+    return query;
+  };
+
+  const attachmentsQuery = () => {
+    let query = supabase
+      .from("attachments")
+      .select("*")
+      .eq("business_id", context.businessId)
+      .order("created_at", { ascending: false });
+
+    if (profile === "document-detail" && options.documentType && options.documentId) {
+      query = query.eq("owner_type", options.documentType).eq("owner_id", options.documentId);
+    } else if (operationalLimit) {
+      query = query.limit(operationalLimit);
+    }
+
+    return query;
+  };
+
   const [
     business,
     periods,
@@ -765,139 +896,259 @@ export async function loadSupabaseWorkspace(
       .limit(1),
     supabase.from("tax_profiles").select("*").eq("business_id", context.businessId).maybeSingle(),
     supabase.from("locations").select("*").eq("business_id", context.businessId).order("code"),
-    supabase.from("business_feature_flags").select("*").eq("business_id", context.businessId).order("module"),
-    supabase.from("industry_templates").select("*").order("name"),
-    supabase.from("transaction_sources").select("*").eq("business_id", context.businessId).order("name"),
-    supabase
-      .from("member_invites")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("created_at", { ascending: false })
-      .limit(25),
-    supabase.from("customers").select("*").eq("business_id", context.businessId).order("name"),
-    supabase.from("suppliers").select("*").eq("business_id", context.businessId).order("name"),
-    supabase.from("products").select("*").eq("business_id", context.businessId).order("sku"),
-    supabase.from("warehouses").select("*").eq("business_id", context.businessId).order("code"),
-    supabase
-      .from("sales_invoices")
-      .select("*, sales_invoice_lines(*)")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false }),
-    supabase
-      .from("purchase_bills")
-      .select("*, purchase_bill_lines(*)")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false }),
-    supabase.from("payments").select("*").eq("business_id", context.businessId).order("date", { ascending: false }),
-    supabase
-      .from("payment_allocations")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("stock_movements")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: true }),
-    supabase
-      .from("stock_transfers")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false }),
-    supabase
-      .from("stock_adjustments")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false }),
-    supabase.from("employees").select("*").eq("business_id", context.businessId).order("employee_no"),
-    supabase.from("attendance").select("*").eq("business_id", context.businessId).order("date", { ascending: false }),
-    supabase
-      .from("payroll_runs")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("journal_entries")
-      .select("*, journal_lines(*, chart_of_accounts(code, name))")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false }),
-    supabase
-      .from("import_batches")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("raw_import_batches")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("created_at", { ascending: false })
-      .limit(25),
-    supabase
-      .from("raw_transactions")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("transaction_date", { ascending: false })
-      .limit(0),
-    supabase
-      .from("raw_transaction_lines")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("id", { ascending: false })
-      .limit(0),
-    supabase
-      .from("raw_payments")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("id", { ascending: false })
-      .limit(0),
-    supabase
-      .from("settlement_records")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("settlement_date", { ascending: false })
-      .limit(500),
-    supabase
-      .from("daily_transaction_summaries")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false })
-      .limit(500),
-    supabase
-      .from("fixed_assets")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("asset_no"),
-    supabase
-      .from("fixed_asset_depreciation_runs")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false }),
-    supabase
-      .from("fixed_asset_depreciation_lines")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("period", { ascending: false }),
-    supabase
-      .from("fixed_asset_disposals")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("date", { ascending: false }),
-    supabase
-      .from("attachments")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("demo_sandboxes")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .maybeSingle(),
-    supabase
-      .from("activity_events")
-      .select("*")
-      .eq("business_id", context.businessId)
-      .order("created_at", { ascending: false })
-      .limit(40),
+    needs(profile, "shell", "settings", "onboarding")
+      ? supabase.from("business_feature_flags").select("*").eq("business_id", context.businessId).order("module")
+      : skipRows(),
+    needs(profile, "settings", "onboarding") ? supabase.from("industry_templates").select("*").order("name") : skipRows(),
+    needs(profile, "settings", "reports", "dashboard")
+      ? supabase.from("transaction_sources").select("*").eq("business_id", context.businessId).order("name")
+      : skipRows(),
+    needs(profile, "settings")
+      ? supabase
+          .from("member_invites")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("created_at", { ascending: false })
+          .limit(25)
+      : skipRows(),
+    needs(profile, "shell", "dashboard", "sales", "cash", "settings", "document-detail")
+      ? (masterLimit
+          ? supabase.from("customers").select("*").eq("business_id", context.businessId).order("name").limit(masterLimit)
+          : supabase.from("customers").select("*").eq("business_id", context.businessId).order("name"))
+      : skipRows(),
+    needs(profile, "purchases", "cash", "settings", "assets", "document-detail")
+      ? (masterLimit
+          ? supabase.from("suppliers").select("*").eq("business_id", context.businessId).order("name").limit(masterLimit)
+          : supabase.from("suppliers").select("*").eq("business_id", context.businessId).order("name"))
+      : skipRows(),
+    needs(profile, "dashboard", "sales", "purchases", "inventory", "pricing", "settings", "document-detail")
+      ? (masterLimit
+          ? supabase.from("products").select("*").eq("business_id", context.businessId).order("sku").limit(masterLimit)
+          : supabase.from("products").select("*").eq("business_id", context.businessId).order("sku"))
+      : skipRows(),
+    needs(profile, "sales", "purchases", "inventory", "settings", "document-detail")
+      ? (masterLimit
+          ? supabase.from("warehouses").select("*").eq("business_id", context.businessId).order("code").limit(masterLimit)
+          : supabase.from("warehouses").select("*").eq("business_id", context.businessId).order("code"))
+      : skipRows(),
+    needs(profile, "shell", "dashboard", "sales", "cash", "accounting", "reports", "tax", "document-detail") ? salesInvoiceQuery() : skipRows(),
+    needs(profile, "shell", "dashboard", "purchases", "cash", "accounting", "reports", "tax", "document-detail") ? purchaseBillQuery() : skipRows(),
+    needs(profile, "cash", "accounting", "reports", "tax", "document-detail") ? paymentsQuery() : skipRows(),
+    needs(profile, "cash", "accounting", "reports", "document-detail") ? paymentAllocationsQuery() : skipRows(),
+    needs(profile, "dashboard", "inventory", "accounting", "reports")
+      ? (operationalLimit
+          ? supabase
+              .from("stock_movements")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: true })
+              .limit(operationalLimit)
+          : supabase
+              .from("stock_movements")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: true }))
+      : skipRows(),
+    needs(profile, "inventory", "accounting")
+      ? (operationalLimit
+          ? supabase
+              .from("stock_transfers")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false })
+              .limit(operationalLimit)
+          : supabase
+              .from("stock_transfers")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false }))
+      : skipRows(),
+    needs(profile, "inventory", "accounting")
+      ? (operationalLimit
+          ? supabase
+              .from("stock_adjustments")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false })
+              .limit(operationalLimit)
+          : supabase
+              .from("stock_adjustments")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false }))
+      : skipRows(),
+    needs(profile, "dashboard", "hr", "payroll", "tax", "settings")
+      ? (masterLimit
+          ? supabase.from("employees").select("*").eq("business_id", context.businessId).order("employee_no").limit(masterLimit)
+          : supabase.from("employees").select("*").eq("business_id", context.businessId).order("employee_no"))
+      : skipRows(),
+    needs(profile, "hr")
+      ? (operationalLimit
+          ? supabase.from("attendance").select("*").eq("business_id", context.businessId).order("date", { ascending: false }).limit(operationalLimit)
+          : supabase.from("attendance").select("*").eq("business_id", context.businessId).order("date", { ascending: false }))
+      : skipRows(),
+    needs(profile, "hr", "payroll", "dashboard", "reports")
+      ? (operationalLimit
+          ? supabase
+              .from("payroll_runs")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("created_at", { ascending: false })
+              .limit(operationalLimit)
+          : supabase
+              .from("payroll_runs")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("created_at", { ascending: false }))
+      : skipRows(),
+    needs(profile, "shell", "dashboard", "accounting", "reports", "tax", "document-detail")
+      ? (journalLimit
+          ? supabase
+              .from("journal_entries")
+              .select("*, journal_lines(*, chart_of_accounts(code, name))")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false })
+              .limit(journalLimit)
+          : supabase
+              .from("journal_entries")
+              .select("*, journal_lines(*, chart_of_accounts(code, name))")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false }))
+      : skipRows(),
+    needs(profile, "accounting", "reports")
+      ? (operationalLimit
+          ? supabase
+              .from("import_batches")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("created_at", { ascending: false })
+              .limit(operationalLimit)
+          : supabase
+              .from("import_batches")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("created_at", { ascending: false }))
+      : skipRows(),
+    needs(profile, "shell", "dashboard", "accounting", "reports")
+      ? supabase
+          .from("raw_import_batches")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("created_at", { ascending: false })
+          .limit(profile === "shell" ? 5 : 25)
+      : skipRows(),
+    needs(profile, "full")
+      ? supabase
+          .from("raw_transactions")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("transaction_date", { ascending: false })
+          .limit(0)
+      : skipRows(),
+    needs(profile, "full")
+      ? supabase
+          .from("raw_transaction_lines")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("id", { ascending: false })
+          .limit(0)
+      : skipRows(),
+    needs(profile, "full")
+      ? supabase
+          .from("raw_payments")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("id", { ascending: false })
+          .limit(0)
+      : skipRows(),
+    needs(profile, "dashboard", "accounting", "reports")
+      ? supabase
+          .from("settlement_records")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("settlement_date", { ascending: false })
+          .limit(operationalLimit ?? 500)
+      : skipRows(),
+    needs(profile, "shell", "dashboard", "accounting", "reports", "tax")
+      ? supabase
+          .from("daily_transaction_summaries")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("date", { ascending: false })
+          .limit(profile === "shell" ? 10 : 500)
+      : skipRows(),
+    needs(profile, "dashboard", "assets", "reports")
+      ? (masterLimit
+          ? supabase
+              .from("fixed_assets")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("asset_no")
+              .limit(masterLimit)
+          : supabase
+              .from("fixed_assets")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("asset_no"))
+      : skipRows(),
+    needs(profile, "assets", "reports")
+      ? (operationalLimit
+          ? supabase
+              .from("fixed_asset_depreciation_runs")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false })
+              .limit(operationalLimit)
+          : supabase
+              .from("fixed_asset_depreciation_runs")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false }))
+      : skipRows(),
+    needs(profile, "dashboard", "assets", "reports")
+      ? (operationalLimit
+          ? supabase
+              .from("fixed_asset_depreciation_lines")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("period", { ascending: false })
+              .limit(operationalLimit)
+          : supabase
+              .from("fixed_asset_depreciation_lines")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("period", { ascending: false }))
+      : skipRows(),
+    needs(profile, "assets", "reports")
+      ? (operationalLimit
+          ? supabase
+              .from("fixed_asset_disposals")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false })
+              .limit(operationalLimit)
+          : supabase
+              .from("fixed_asset_disposals")
+              .select("*")
+              .eq("business_id", context.businessId)
+              .order("date", { ascending: false }))
+      : skipRows(),
+    needs(profile, "tax", "settings", "document-detail") ? attachmentsQuery() : skipRows(),
+    needs(profile, "shell", "settings")
+      ? supabase
+          .from("demo_sandboxes")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .maybeSingle()
+      : skipSingle(),
+    needs(profile, "shell", "dashboard")
+      ? supabase
+          .from("activity_events")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("created_at", { ascending: false })
+          .limit(profile === "shell" ? 8 : 40)
+      : skipRows(),
   ]);
 
   const error = tableError(

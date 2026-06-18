@@ -44,6 +44,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid or expired Supabase token." }, { status: 401, headers: { "cache-control": "no-store" } });
   }
 
+  let defaultBusinessId = parsed.data.businessId ?? null;
+
   if (parsed.data.businessId) {
     const { data: membership, error: membershipError } = await supabase
       .from("business_members")
@@ -59,13 +61,30 @@ export async function POST(request: Request) {
     if (!membership?.business_id) {
       return NextResponse.json({ error: "User is not a member of this business." }, { status: 403, headers: { "cache-control": "no-store" } });
     }
+  } else {
+    const { data: membership, error: membershipError } = await supabase
+      .from("business_members")
+      .select("business_id")
+      .eq("auth_user_id", userData.user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (membershipError) {
+      return NextResponse.json({ error: membershipError.message }, { status: 500, headers: { "cache-control": "no-store" } });
+    }
+
+    defaultBusinessId = membership?.business_id ?? null;
   }
 
-  const response = NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
+  const response = NextResponse.json(
+    { ok: true, defaultBusinessId, hasBusiness: Boolean(defaultBusinessId) },
+    { headers: { "cache-control": "no-store" } },
+  );
   response.cookies.set(serverAccessTokenCookie, parsed.data.accessToken, cookieOptions());
 
-  if (parsed.data.businessId) {
-    response.cookies.set(serverBusinessCookie, parsed.data.businessId, cookieOptions(60 * 60 * 24 * 30));
+  if (defaultBusinessId) {
+    response.cookies.set(serverBusinessCookie, defaultBusinessId, cookieOptions(60 * 60 * 24 * 30));
   }
 
   return response;

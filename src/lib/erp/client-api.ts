@@ -1,6 +1,7 @@
 "use client";
 
 import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
+import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
@@ -12,6 +13,12 @@ export interface BusinessOption {
   legalName: string;
   industry: BusinessIndustry;
   role: BusinessRole;
+}
+
+export interface SessionSyncResult {
+  ok: boolean;
+  defaultBusinessId: string | null;
+  hasBusiness: boolean;
 }
 
 export function isSupabaseBrowserEnabled() {
@@ -45,17 +52,21 @@ async function getAccessToken() {
   return data.session?.access_token ?? null;
 }
 
-export async function syncServerSession(businessId?: string | null) {
+export async function syncServerSession(businessId?: string | null): Promise<SessionSyncResult | null> {
   const token = await getAccessToken();
 
-  if (!token) return;
+  if (!token) return null;
 
-  await fetch("/api/auth/session", {
+  const response = await fetch("/api/auth/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ accessToken: token, businessId: businessId || undefined }),
     cache: "no-store",
   });
+
+  if (!response.ok) return null;
+
+  return response.json() as Promise<SessionSyncResult>;
 }
 
 export async function clearServerSession() {
@@ -140,11 +151,11 @@ export async function erpApiDownload(endpoint: string, businessId: string | null
 }
 
 export async function loadBusinessOptions() {
-  await syncServerSession();
   return erpApiFetch<{ businesses: BusinessOption[]; defaultBusinessId: string | null }>("/api/erp/businesses");
 }
 
-export async function loadWorkspaceForBusiness(businessId: string) {
+export async function loadWorkspaceForBusiness(businessId: string, profile: WorkspaceLoadProfile = "full") {
   await syncServerSession(businessId);
-  return erpApiFetch<{ workspace: ErpWorkspace }>("/api/erp/workspace", { businessId });
+  const query = profile === "full" ? "" : `?profile=${encodeURIComponent(profile)}`;
+  return erpApiFetch<{ workspace: ErpWorkspace }>(`/api/erp/workspace${query}`, { businessId });
 }

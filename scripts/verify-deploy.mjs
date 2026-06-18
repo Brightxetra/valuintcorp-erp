@@ -61,6 +61,7 @@ const requiredMigrations = [
   "supabase/migrations/014_private_authz_helpers.sql",
   "supabase/migrations/015_add_foreign_key_performance_indexes.sql",
   "supabase/migrations/016_reconciliation_rollup_rpc.sql",
+  "supabase/migrations/017_workspace_route_performance.sql",
 ];
 
 const requiredFiles = [
@@ -91,6 +92,7 @@ requireFileSnippet("supabase/migrations/013_optimize_rls_policy_performance.sql"
 requireFileSnippet("supabase/migrations/014_private_authz_helpers.sql", "create schema if not exists app_private");
 requireFileSnippet("supabase/migrations/015_add_foreign_key_performance_indexes.sql", "create index if not exists raw_transactions_location_id_fk_idx");
 requireFileSnippet("supabase/migrations/016_reconciliation_rollup_rpc.sql", "create or replace function public.reconciliation_rollup");
+requireFileSnippet("supabase/migrations/017_workspace_route_performance.sql", "create or replace function public.workspace_dashboard_rollup");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");
