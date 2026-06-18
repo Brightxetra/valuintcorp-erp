@@ -190,7 +190,7 @@ export function QuickActions() {
       <h3 className="text-sm font-semibold">Aksi Cepat</h3>
       <div className="mt-3 space-y-2">
         <Link
-          href="/transaksi/invoice/baru"
+          href="/transaksi/invoice?action=new"
           className="flex items-center gap-2 rounded-lg bg-white/20 px-3 py-2 text-sm font-medium transition hover:bg-white/30"
         >
           <Plus className="size-4" />
@@ -204,7 +204,7 @@ export function QuickActions() {
           Hitung Gaji
         </Link>
         <Link
-          href="/keuangan/jurnal/baru"
+          href="/keuangan/jurnal?action=new"
           className="flex items-center gap-2 rounded-lg bg-white/20 px-3 py-2 text-sm font-medium transition hover:bg-white/30"
         >
           <FileBarChart className="size-4" />

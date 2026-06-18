@@ -41,6 +41,24 @@ test("core ERP menu navigation stays responsive in demo fallback mode", async ({
   await expect(page.getByText("Stok & Persediaan").first()).toBeVisible();
 });
 
+test("dashboard quick actions open existing create forms", async ({ page }) => {
+  await page.goto("/dashboard");
+
+  await page.getByRole("link", { name: "Invoice Baru" }).click();
+  await expect(page).toHaveURL(/\/transaksi\/invoice\?action=new$/);
+  await expect(page.getByRole("heading", { name: "Buat Invoice Baru" })).toBeVisible();
+
+  await page.goto("/dashboard");
+  await page.getByRole("link", { name: "Tagihan Baru" }).click();
+  await expect(page).toHaveURL(/\/transaksi\/tagihan\?action=new$/);
+  await expect(page.getByRole("heading", { name: "Buat Tagihan Baru" })).toBeVisible();
+
+  await page.goto("/dashboard");
+  await page.getByRole("link", { name: "Catat Jurnal" }).click();
+  await expect(page).toHaveURL(/\/keuangan\/jurnal\?action=new$/);
+  await expect(page.getByRole("heading", { name: "Buat Jurnal Baru" })).toBeVisible();
+});
+
 test("financial export enforces demo roles and returns a workbook for owners", async ({ request }) => {
   const denied = await request.get("/api/exports/financials?format=xlsx", {
     headers: { "x-demo-role": "staff" },

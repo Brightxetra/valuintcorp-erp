@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { PageHeader } from "@/components/ui";
@@ -105,10 +106,12 @@ function FormField({
 // ============================================================================
 
 export function JurnalWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
+  const searchParams = useSearchParams();
+  const requestedAction = searchParams.get("action");
   const { workspace, setWorkspace } = useErpWorkspace(initialWorkspace);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [showNewModal, setShowNewModal] = useState(false);
+  const [showNewModal, setShowNewModal] = useState(() => requestedAction === "new");
   const [showDetailModal, setShowDetailModal] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);

@@ -108,10 +108,10 @@ export function DashboardMetricCard({
 // ============================================
 export function QuickActions() {
   const actions = [
-    { href: "/transaksi/invoice/baru", label: "Invoice Baru", icon: ReceiptText, color: "bg-emerald-600 hover:bg-emerald-700" },
-    { href: "/transaksi/tagihan/baru", label: "Tagihan Baru", icon: ShoppingCart, color: "bg-blue-600 hover:bg-blue-700" },
+    { href: "/transaksi/invoice?action=new", label: "Invoice Baru", icon: ReceiptText, color: "bg-emerald-600 hover:bg-emerald-700" },
+    { href: "/transaksi/tagihan?action=new", label: "Tagihan Baru", icon: ShoppingCart, color: "bg-blue-600 hover:bg-blue-700" },
     { href: "/karyawan/gaji", label: "Hitung Gaji", icon: Calculator, color: "bg-purple-600 hover:bg-purple-700" },
-    { href: "/keuangan/jurnal/baru", label: "Catat Jurnal", icon: FileBarChart, color: "bg-amber-600 hover:bg-amber-700" },
+    { href: "/keuangan/jurnal?action=new", label: "Catat Jurnal", icon: FileBarChart, color: "bg-amber-600 hover:bg-amber-700" },
   ];
 
   return (
@@ -375,7 +375,7 @@ export function DashboardWorkspace({ initialWorkspace }: { initialWorkspace: Erp
           subtitle="PPh final UMKM"
           icon={DollarSign}
           tone="red"
-          href="/pajak"
+          href="/tax"
         />
         <DashboardMetricCard
           title="Transaksi Bulan Ini"
@@ -383,7 +383,7 @@ export function DashboardWorkspace({ initialWorkspace }: { initialWorkspace: Erp
           subtitle="Total transaksi"
           icon={TrendingUp}
           tone="slate"
-          href="/laporan"
+          href="/reports"
         />
       </div>
 
