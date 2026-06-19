@@ -1903,6 +1903,7 @@ export function LoginWorkspace() {
         const session = await syncServerSession(null, {
           accessToken: data.session.access_token,
           refreshToken: data.session.refresh_token,
+          userId: data.session.user.id,
         });
 
         if (cancelled) return;
@@ -1988,6 +1989,7 @@ export function LoginWorkspace() {
       const signedInTokens = {
         accessToken: result.data.session.access_token,
         refreshToken: result.data.session.refresh_token,
+        userId: result.data.session.user.id,
       };
       const session = await syncServerSession(null, signedInTokens);
       const requestedNext = currentLoginNextPath();

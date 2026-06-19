@@ -93,6 +93,8 @@ export async function POST(request: Request) {
 
   if (defaultBusinessId) {
     response.cookies.set(serverBusinessCookie, defaultBusinessId, cookieOptions(60 * 60 * 24 * 30));
+  } else {
+    response.cookies.set(serverBusinessCookie, "", cookieOptions(0));
   }
 
   return response;

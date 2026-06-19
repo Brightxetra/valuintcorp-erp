@@ -1,6 +1,8 @@
 "use client";
 
 import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
+import { serverAccessTokenCookie, serverBusinessCookie, serverRefreshTokenCookie } from "@/lib/auth/runtime";
+import { accessTokenCookieMaxAge } from "@/lib/auth/token";
 import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -24,6 +26,12 @@ export interface SessionSyncResult {
 export interface SessionSyncTokens {
   accessToken: string;
   refreshToken?: string | null;
+  userId?: string | null;
+}
+
+interface BrowserBusinessResolution {
+  businessId: string | null;
+  resolved: boolean;
 }
 
 export function isSupabaseBrowserEnabled() {
@@ -48,6 +56,47 @@ export function storeActiveBusinessId(businessId: string) {
   window.localStorage.setItem(activeBusinessKey, businessId);
 }
 
+function clearStoredActiveBusinessId() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(activeBusinessKey);
+}
+
+export function buildBrowserCookie(name: string, value: string, maxAge: number, secure: boolean) {
+  return `${name}=${value}; Path=/; SameSite=Lax; Max-Age=${Math.max(0, Math.floor(maxAge))}${secure ? "; Secure" : ""}`;
+}
+
+function browserCookieSecure() {
+  return typeof window !== "undefined" && window.location.protocol === "https:";
+}
+
+function writeBrowserCookie(name: string, value: string, maxAge: number) {
+  if (typeof document === "undefined") return;
+  document.cookie = buildBrowserCookie(name, value, maxAge, browserCookieSecure());
+}
+
+function persistServerSessionCookies(tokens: SessionSyncTokens, businessId: string | null) {
+  writeBrowserCookie(serverAccessTokenCookie, tokens.accessToken, accessTokenCookieMaxAge(tokens.accessToken));
+
+  if (tokens.refreshToken) {
+    writeBrowserCookie(serverRefreshTokenCookie, tokens.refreshToken, 60 * 60 * 24 * 30);
+  }
+
+  if (businessId) {
+    writeBrowserCookie(serverBusinessCookie, businessId, 60 * 60 * 24 * 30);
+    storeActiveBusinessId(businessId);
+  } else {
+    writeBrowserCookie(serverBusinessCookie, "", 0);
+    clearStoredActiveBusinessId();
+  }
+}
+
+function clearBrowserSessionCookies() {
+  writeBrowserCookie(serverAccessTokenCookie, "", 0);
+  writeBrowserCookie(serverRefreshTokenCookie, "", 0);
+  writeBrowserCookie(serverBusinessCookie, "", 0);
+  clearStoredActiveBusinessId();
+}
+
 async function getBrowserSession() {
   if (!isSupabaseBrowserEnabled()) return null;
 
@@ -59,6 +108,53 @@ async function getBrowserSession() {
 
 async function getAccessToken() {
   return (await getBrowserSession())?.access_token ?? null;
+}
+
+async function resolveBrowserBusinessId(
+  businessId: string | null | undefined,
+  userId: string | null | undefined,
+): Promise<BrowserBusinessResolution> {
+  if (businessId) {
+    return { businessId, resolved: true };
+  }
+
+  const storedBusinessId = getStoredActiveBusinessId();
+  const sessionUserId = userId ?? (await getBrowserSession())?.user.id ?? null;
+
+  if (!sessionUserId) {
+    return { businessId: storedBusinessId, resolved: Boolean(storedBusinessId) };
+  }
+
+  const supabase = createBrowserSupabaseClient();
+  const { data, error } = await supabase
+    .from("business_members")
+    .select("business_id")
+    .eq("auth_user_id", sessionUserId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return { businessId: storedBusinessId, resolved: Boolean(storedBusinessId) };
+  }
+
+  const membership = data as { business_id?: string | null } | null;
+
+  return { businessId: membership?.business_id ?? null, resolved: true };
+}
+
+async function syncServerSessionWithBrowserCookies(
+  tokens: SessionSyncTokens,
+  businessId?: string | null,
+): Promise<SessionSyncResult> {
+  const business = await resolveBrowserBusinessId(businessId, tokens.userId);
+  persistServerSessionCookies(tokens, business.businessId);
+
+  return {
+    ok: true,
+    defaultBusinessId: business.businessId,
+    hasBusiness: business.resolved ? Boolean(business.businessId) : true,
+  };
 }
 
 export async function syncServerSession(
@@ -83,19 +179,43 @@ export async function syncServerSession(
     payload.businessId = businessId;
   }
 
-  const response = await fetch("/api/auth/session", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
+  const fallbackTokens: SessionSyncTokens = {
+    accessToken,
+    refreshToken,
+    userId: explicitTokens?.userId ?? session?.user.id,
+  };
 
-  if (!response.ok) return null;
+  try {
+    const response = await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
 
-  return response.json() as Promise<SessionSyncResult>;
+    if (response.ok) {
+      const synced = (await response.json()) as SessionSyncResult;
+
+      if (synced.defaultBusinessId) {
+        storeActiveBusinessId(synced.defaultBusinessId);
+      } else {
+        clearStoredActiveBusinessId();
+      }
+
+      return synced;
+    }
+
+    if (response.status === 401) return null;
+  } catch {
+    // Fall through to browser cookie persistence below.
+  }
+
+  return syncServerSessionWithBrowserCookies(fallbackTokens, businessId);
 }
 
 export async function clearServerSession() {
+  clearBrowserSessionCookies();
+
   await fetch("/api/auth/session", {
     method: "DELETE",
     cache: "no-store",
