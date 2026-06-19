@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { isApiResponse, requireAuthenticatedUser, withDemoHeader } from "@/lib/auth/api";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
+import { callActorServiceRpc } from "@/lib/supabase/service-rpc";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
 
@@ -116,13 +118,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = createRequestSupabaseClient(request);
-  const { data, error } = await supabase.rpc("create_business_with_owner", {
+  const service = createServiceSupabaseClient();
+  const { data, error } = await service.rpc("create_business_with_owner_for_actor", {
     legal_name: parsed.data.legalName,
     display_name: parsed.data.displayName,
     industry: parsed.data.industry,
     owner_name: parsed.data.ownerName,
     tax_id: parsed.data.taxId || null,
+    actor_user_id: user.userId,
   });
 
   if (error) {
@@ -130,9 +133,15 @@ export async function POST(request: Request) {
   }
 
   if (typeof data === "string") {
-    await supabase.rpc("apply_industry_template", {
-      payload: { businessId: data, templateId: parsed.data.industry },
-    });
+    const { error: templateError } = await callActorServiceRpc(
+      "apply_industry_template",
+      { businessId: data, templateId: parsed.data.industry },
+      user.userId,
+    );
+
+    if (templateError) {
+      return json({ businessId: data, error: templateError.message }, 422);
+    }
   }
 
   return json({ businessId: data }, 201);

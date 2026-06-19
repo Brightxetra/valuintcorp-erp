@@ -2,6 +2,7 @@ import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/
 import { voidDemoDocument } from "@/lib/erp/demo-store";
 import { voidDocumentSchema } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
+import { callActorServiceRpc } from "@/lib/supabase/service-rpc";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 
 function json(body: unknown, status = 200) {
@@ -27,9 +28,11 @@ export async function POST(request: Request) {
   }
 
   const supabase = createRequestSupabaseClient(request);
-  const { error } = await supabase.rpc("void_document", {
-    payload: { ...parsed.data, businessId: context.businessId },
-  });
+  const { error } = await callActorServiceRpc(
+    "void_document",
+    { ...parsed.data, businessId: context.businessId },
+    context.userId,
+  );
 
   if (error) {
     return withDemoHeader(json({ error: error.message }, 422), context);

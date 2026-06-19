@@ -3,9 +3,42 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
+const sensitiveJsonbRpcs = [
+  "apply_industry_template",
+  "post_daily_summary",
+  "post_fixed_asset",
+  "post_fixed_asset_depreciation_run",
+  "post_fixed_asset_disposal",
+  "post_payment",
+  "post_purchase_bill",
+  "post_sales_invoice",
+  "post_stock_adjustment",
+  "post_stock_transfer",
+  "reverse_fixed_asset_document",
+  "rollback_daily_summary",
+  "run_payroll",
+  "set_report_period_lock",
+  "summarize_raw_import_batch",
+  "update_fixed_asset",
+  "upload_raw_transactions",
+  "validate_raw_import_batch",
+  "void_document",
+];
+
+function readFilesRecursive(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      return readFilesRecursive(fullPath);
+    }
+
+    return entry.isFile() && entry.name.endsWith(".ts") ? [fullPath] : [];
+  });
+}
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 017", () => {
+  it("keeps production ERP migrations in order through 018", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -26,6 +59,7 @@ describe("Supabase migration contract", () => {
       "015_add_foreign_key_performance_indexes.sql",
       "016_reconciliation_rollup_rpc.sql",
       "017_workspace_route_performance.sql",
+      "018_lockdown_security_definer_rpcs.sql",
     ]);
   });
 
@@ -80,7 +114,6 @@ describe("Supabase migration contract", () => {
 
     expect(migration).toContain("alter function public.ensure_journal_entry_complete() set search_path = public");
     expect(migration).toContain("revoke execute on function public.post_sales_invoice(jsonb) from public, anon, authenticated");
-    expect(migration).toContain("grant execute on function public.post_sales_invoice(jsonb) to authenticated");
     expect(migration).toContain("revoke execute on function public.require_posting_role(uuid, text[]) from public, anon, authenticated");
     expect(migration).toContain("grant execute on function public.require_posting_role(uuid, text[]) to service_role");
     expect(migration).toContain("to_regprocedure('public.rls_auto_enable()')");
@@ -144,5 +177,43 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("where public.is_business_member(target_business_id)");
     expect(migration).toContain("grant execute on function public.workspace_dashboard_rollup");
     expect(migration).not.toContain("drop index");
+  });
+
+  it("locks sensitive SECURITY DEFINER RPCs behind service-role API calls", () => {
+    const migration = readFileSync(join(migrationsDir, "018_lockdown_security_definer_rpcs.sql"), "utf8");
+
+    expect(migration).toContain("create or replace function app_private.apply_request_actor(actor_user_id uuid)");
+    expect(migration).toContain("jwt_role is distinct from 'service_role'");
+    expect(migration).toContain("create or replace function public.create_business_with_owner_for_actor");
+    expect(migration).toContain(
+      "revoke execute on function public.create_business_with_owner(text, text, text, text, text) from public, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.create_business_with_owner_for_actor(text, text, text, text, text, uuid) to service_role",
+    );
+
+    for (const rpc of sensitiveJsonbRpcs) {
+      expect(migration).toContain(`alter function public.${rpc}(jsonb) rename to ${rpc}_internal`);
+      expect(migration).toContain(`revoke execute on function public.${rpc}(jsonb) from public, anon, authenticated`);
+      expect(migration).toContain(`grant execute on function public.${rpc}(jsonb) to service_role`);
+      expect(migration).not.toContain(`grant execute on function public.${rpc}(jsonb) to authenticated`);
+    }
+  });
+
+  it("routes sensitive ERP mutations through the service-role RPC helper", () => {
+    const apiDir = join(process.cwd(), "src", "app", "api", "erp");
+    const apiContents = readFilesRecursive(apiDir)
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    const helper = readFileSync(join(process.cwd(), "src", "lib", "supabase", "service-rpc.ts"), "utf8");
+
+    for (const rpc of sensitiveJsonbRpcs) {
+      expect(apiContents).not.toContain(`.rpc("${rpc}"`);
+    }
+
+    expect(apiContents).not.toContain(`.rpc("create_business_with_owner",`);
+    expect(apiContents).toContain(`.rpc("create_business_with_owner_for_actor"`);
+    expect(helper).toContain("createServiceSupabaseClient");
+    expect(helper).toContain("actorUserId");
   });
 });

@@ -4,6 +4,7 @@ import { buildRawImportPreview } from "@/lib/erp/import-preview";
 import { csvImportSchema } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
 import { logApiError, logApiInfo, logApiWarning } from "@/lib/observability/logger";
+import { callActorServiceRpc } from "@/lib/supabase/service-rpc";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 
 function json(body: unknown, status = 200) {
@@ -51,9 +52,11 @@ export async function POST(request: Request) {
   }
 
   const supabase = createRequestSupabaseClient(request);
-  const { error } = await supabase.rpc("upload_raw_transactions", {
-    payload: { ...importPayload, businessId: context.businessId },
-  });
+  const { error } = await callActorServiceRpc(
+    "upload_raw_transactions",
+    { ...importPayload, businessId: context.businessId },
+    context.userId,
+  );
 
   if (error) {
     logApiError("erp.import.commit.failed", error, {

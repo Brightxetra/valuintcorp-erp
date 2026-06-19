@@ -62,6 +62,7 @@ const requiredMigrations = [
   "supabase/migrations/015_add_foreign_key_performance_indexes.sql",
   "supabase/migrations/016_reconciliation_rollup_rpc.sql",
   "supabase/migrations/017_workspace_route_performance.sql",
+  "supabase/migrations/018_lockdown_security_definer_rpcs.sql",
 ];
 
 const requiredFiles = [
@@ -87,12 +88,15 @@ requireFileSnippet("supabase/migrations/007_production_ops_and_storage.sql", "cr
 requireFileSnippet("supabase/migrations/007_production_ops_and_storage.sql", "create table if not exists public.transaction_source_mappings");
 requireFileSnippet("supabase/migrations/010_fixed_assets.sql", "create table if not exists public.fixed_assets");
 requireFileSnippet("supabase/migrations/011_authenticated_api_privileges.sql", "grant usage on schema public to authenticated");
-requireFileSnippet("supabase/migrations/012_harden_supabase_security_lints.sql", "grant execute on function public.upload_raw_transactions(jsonb) to authenticated");
 requireFileSnippet("supabase/migrations/013_optimize_rls_policy_performance.sql", "('raw_transactions', 'members can read raw transactions'");
 requireFileSnippet("supabase/migrations/014_private_authz_helpers.sql", "create schema if not exists app_private");
 requireFileSnippet("supabase/migrations/015_add_foreign_key_performance_indexes.sql", "create index if not exists raw_transactions_location_id_fk_idx");
 requireFileSnippet("supabase/migrations/016_reconciliation_rollup_rpc.sql", "create or replace function public.reconciliation_rollup");
 requireFileSnippet("supabase/migrations/017_workspace_route_performance.sql", "create or replace function public.workspace_dashboard_rollup");
+requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql", "create or replace function app_private.apply_request_actor");
+requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql", "revoke execute on function public.upload_raw_transactions(jsonb) from public, anon, authenticated");
+requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql", "grant execute on function public.upload_raw_transactions(jsonb) to service_role");
+requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql", "create_business_with_owner_for_actor");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");
