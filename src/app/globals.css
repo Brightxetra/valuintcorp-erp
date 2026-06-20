@@ -27,6 +27,14 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Keep transient toasts above the ERP mobile navigation. */
+@media (max-width: 1023px) {
+  [data-sonner-toaster][data-y-position="bottom"] {
+    --offset-bottom: 6rem !important;
+    --mobile-offset-bottom: 6rem !important;
+  }
+}
+
 @media print {
   .no-print,
   .screen-only {

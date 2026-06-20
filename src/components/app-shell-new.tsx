@@ -29,10 +29,10 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { gooeyToast } from "goey-toast";
 import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
-import { ToastContainer, addToast } from "@/components/modals";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { can, type Permission } from "@/lib/security/permissions";
 import { clearServerSession } from "@/lib/erp/client-api";
@@ -123,22 +123,23 @@ function useFavorites() {
     }
     return [];
   });
+  const favoritesRef = useRef(favorites);
 
   const toggleFavorite = useCallback((item: FavoriteItem) => {
-    setFavorites((prev) => {
-      const exists = prev.find((f) => f.id === item.id);
-      const next = exists ? prev.filter((f) => f.id !== item.id) : [...prev, item];
-      localStorage.setItem("erp-favorites-nav", JSON.stringify(next));
+    const exists = favoritesRef.current.some((favorite) => favorite.id === item.id);
+    const next = exists
+      ? favoritesRef.current.filter((favorite) => favorite.id !== item.id)
+      : [...favoritesRef.current, item];
 
-      // Show toast notification
-      if (exists) {
-        addToast({ type: "info", title: `Removed from favorites`, description: item.label });
-      } else {
-        addToast({ type: "success", title: `Added to favorites`, description: item.label });
-      }
+    favoritesRef.current = next;
+    localStorage.setItem("erp-favorites-nav", JSON.stringify(next));
+    setFavorites(next);
 
-      return next;
-    });
+    if (exists) {
+      gooeyToast.info("Dihapus dari favorit", { description: item.label });
+    } else {
+      gooeyToast.success("Ditambahkan ke favorit", { description: item.label });
+    }
   }, []);
 
   const isFavorite = useCallback((id: string) => favorites.some((f) => f.id === id), [favorites]);
@@ -319,6 +320,11 @@ function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClo
                         )}
                         <button
                           type="button"
+                          aria-label={
+                            isFavorite(item.id)
+                              ? `Hapus ${item.label} dari favorit`
+                              : `Tambah ${item.label} ke favorit`
+                          }
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleFavorite({ id: item.id, label: item.label, icon: item.icon, href: item.href });
@@ -469,6 +475,7 @@ function NavLinks({ workspace, onNavigate }: {
                   <span className="truncate">{item.label}</span>
                   <button
                     type="button"
+                    aria-label={`Hapus ${item.label} dari favorit`}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -511,6 +518,11 @@ function NavLinks({ workspace, onNavigate }: {
                   </Link>
                   <button
                     type="button"
+                    aria-label={
+                      isFav
+                        ? `Hapus ${item.label} dari favorit`
+                        : `Tambah ${item.label} ke favorit`
+                    }
                     onClick={() => {
                       toggleFavorite({
                         id: favId,
@@ -991,10 +1003,6 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
           ============================================================================ */}
       {commandOpen && <CommandPalette workspace={workspace} onClose={() => setCommandOpen(false)} />}
       {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
-      <ToastContainer />
     </div>
   );
 }
-
-// Import useRef
-import { useRef } from "react";

@@ -41,6 +41,44 @@ test("core ERP menu navigation stays responsive in demo fallback mode", async ({
   await expect(page.getByText("Stok & Persediaan").first()).toBeVisible();
 });
 
+test("favorite changes use Goey toast notifications", async ({ page }) => {
+  await page.goto("/dashboard");
+
+  await page.getByRole("button", { name: "Tambah Dashboard ke favorit" }).click();
+  const addedToast = page.locator("[data-sonner-toast]").filter({ hasText: "Ditambahkan ke favorit" });
+  await expect(addedToast).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(addedToast).toBeHidden();
+
+  await page
+    .getByRole("link", { name: "Dashboard Hapus Dashboard dari favorit" })
+    .getByRole("button", { name: "Hapus Dashboard dari favorit" })
+    .click();
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Dihapus dari favorit" })).toBeVisible();
+});
+
+test("favorite toast clears mobile navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/dashboard");
+
+  await page.getByRole("button", { name: "Buka menu" }).click();
+  await page.getByRole("button", { name: "Tambah Dashboard ke favorit" }).click();
+  const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Ditambahkan ke favorit" });
+  await expect(toast).toBeVisible();
+
+  const toastBox = await toast.boundingBox();
+  expect(toastBox).not.toBeNull();
+  expect(toastBox!.y + toastBox!.height).toBeLessThanOrEqual(780);
+});
+
+test("header notification panel remains available", async ({ page }) => {
+  await page.goto("/dashboard");
+
+  await page.getByRole("button", { name: "Notifikasi" }).click();
+  await expect(page.getByText("Notifikasi & tugas", { exact: true })).toBeVisible();
+});
+
 test("dashboard quick actions open existing create forms", async ({ page }) => {
   await page.goto("/dashboard");
 
