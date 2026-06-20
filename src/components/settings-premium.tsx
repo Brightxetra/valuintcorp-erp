@@ -21,6 +21,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/components/ui";
+import { FeedbackToast } from "@/components/feedback-toast";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -39,6 +40,14 @@ type SettingsCategory =
   | "integrations";
 
 type SettingsTab = "overview" | "business" | "team" | "data" | "integrations";
+
+const industryLabels: Record<string, string> = {
+  food_beverage: "F&B ringan",
+  retail: "Retail",
+  service: "Jasa",
+  online_seller: "Online seller",
+  general: "General",
+};
 
 interface CategoryCard {
   id: SettingsCategory | "onboarding";
@@ -74,12 +83,6 @@ function fileToDataUrl(file: File) {
     reader.onerror = () => reject(reader.error ?? new Error("Logo gagal dibaca."));
     reader.readAsDataURL(file);
   });
-}
-
-function Notice({ error, success }: { error: string | null; success: string | null }) {
-  if (error) return <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>;
-  if (success) return <p className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{success}</p>;
-  return null;
 }
 
 function CategoryGrid({
@@ -686,6 +689,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [successDescription, setSuccessDescription] = useState<string | null>(null);
 
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "overview", label: "Overview" },
@@ -739,14 +743,21 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     return body;
   }
 
-  async function saveMaster(resource: string, values: Record<string, unknown>, id?: string) {
+  async function saveMaster(
+    resource: string,
+    values: Record<string, unknown>,
+    id?: string,
+    description?: string,
+  ) {
     setPending(true);
     setError(null);
     setSuccess(null);
+    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/master-data", { resource, id, values });
       setSuccess(`${resource} disimpan.`);
+      setSuccessDescription(description ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : `${resource} gagal disimpan.`);
     } finally {
@@ -758,6 +769,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     setPending(true);
     setError(null);
     setSuccess(null);
+    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/master-data", { resource, id }, "DELETE");
@@ -778,13 +790,14 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
       taxId: String(formData.get("taxId")),
       logoUrl: String(formData.get("logoUrl") || workspace.business.logoUrl || ""),
       periodStartMonth: Number(formData.get("periodStartMonth")),
-    });
+    }, undefined, `Industri: ${industryLabels[String(formData.get("industry"))] ?? String(formData.get("industry"))}`);
   }
 
   async function uploadBusinessLogo(file: File) {
     setLogoUploading(true);
     setError(null);
     setSuccess(null);
+    setSuccessDescription(null);
 
     try {
       if (!["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.type)) {
@@ -865,6 +878,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     setPending(true);
     setError(null);
     setSuccess(null);
+    setSuccessDescription(null);
 
     try {
       const body = await postObject("/api/erp/members", {
@@ -884,6 +898,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     setPending(true);
     setError(null);
     setSuccess(null);
+    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/locations", {
@@ -914,6 +929,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     setPending(true);
     setError(null);
     setSuccess(null);
+    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/templates/apply", {
@@ -931,6 +947,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     setPending(true);
     setError(null);
     setSuccess(null);
+    setSuccessDescription(null);
 
     try {
       const body = await request<{ businessId: string }>("/api/erp/businesses", {
@@ -1029,7 +1046,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
         </div>
       ) : null}
 
-      <Notice error={error} success={success} />
+      <FeedbackToast error={error} success={success} successDescription={successDescription} />
 
       <div className="border-b border-slate-200">
         <div className="flex gap-1 overflow-x-auto">

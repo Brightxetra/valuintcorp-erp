@@ -34,6 +34,7 @@ import {
   TextField,
   WorkspaceHeader,
 } from "@/components/ui";
+import { FeedbackToast } from "@/components/feedback-toast";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpDocumentStatus, ErpWorkspace, PaymentDirection } from "@/lib/erp/types";
 import { outstandingPurchase, outstandingSales } from "@/lib/erp/operations";
@@ -125,16 +126,18 @@ async function postObject(
   });
 }
 
-function ActionState({ error, success }: { error: string | null; success: string | null }) {
-  if (error) {
-    return <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>;
-  }
+function WorkspaceFeedback({ error, success }: { error: string | null; success: string | null }) {
+  const isPersistentStatus =
+    success?.startsWith("Memuat ") || success?.startsWith("Demo fallback aktif");
 
-  if (success) {
-    return <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{success}</p>;
-  }
-
-  return null;
+  return (
+    <>
+      <FeedbackToast error={error} success={isPersistentStatus ? null : success} />
+      {isPersistentStatus ? (
+        <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{success}</p>
+      ) : null}
+    </>
+  );
 }
 
 export function DashboardWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
@@ -150,7 +153,7 @@ export function DashboardWorkspace({ initialWorkspace }: { initialWorkspace: Erp
         secondaryAction={<ActionButton variant="secondary" onClick={() => erpApiDownload("/api/exports/financials?format=xlsx", activeBusinessId)}>Export ringkasan</ActionButton>}
       />
       {loading || error || demoMode ? (
-        <ActionState
+        <WorkspaceFeedback
           error={error}
           success={loading ? "Memuat workspace production..." : demoMode ? "Demo fallback aktif. Isi Supabase env untuk mode produksi." : null}
         />
@@ -323,7 +326,7 @@ export function SalesWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
         description="Kelola customer, invoice, penerimaan pembayaran, piutang, dan jurnal otomatis dari dokumen penjualan."
         primaryAction={<ActionButton form="sales-invoice-form" disabled={pending}><PackagePlus className="size-4" />Buat invoice</ActionButton>}
       />
-      <ActionState error={workspaceError} success={workspaceLoading ? "Memuat data penjualan production..." : null} />
+      <WorkspaceFeedback error={workspaceError} success={workspaceLoading ? "Memuat data penjualan production..." : null} />
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel title="Buat invoice" description="Dokumen posted akan membentuk AR, revenue, HPP, dan inventory relief.">
@@ -343,7 +346,7 @@ export function SalesWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
             <TextField name="dueDate" label="Jatuh tempo" type="date" defaultValue="2026-07-05" />
           </form>
           <div className="mt-4">
-            <ActionState error={error} success={success} />
+            <WorkspaceFeedback error={error} success={success} />
           </div>
         </Panel>
 
@@ -462,7 +465,7 @@ export function PurchasesWorkspace({ initialWorkspace }: { initialWorkspace: Erp
         description="Kelola supplier, purchase bill, payment, utang, dan pembelian yang langsung masuk nilai persediaan."
         primaryAction={<ActionButton form="purchase-bill-form" disabled={pending}><ShoppingCart className="size-4" />Buat bill</ActionButton>}
       />
-      <ActionState error={workspaceError} success={workspaceLoading ? "Memuat data pembelian production..." : null} />
+      <WorkspaceFeedback error={workspaceError} success={workspaceLoading ? "Memuat data pembelian production..." : null} />
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel title="Buat purchase bill">
@@ -482,7 +485,7 @@ export function PurchasesWorkspace({ initialWorkspace }: { initialWorkspace: Erp
             <TextField name="dueDate" label="Jatuh tempo" type="date" defaultValue="2026-07-05" />
           </form>
           <div className="mt-4">
-            <ActionState error={error} success={success} />
+            <WorkspaceFeedback error={error} success={success} />
           </div>
         </Panel>
 
@@ -600,7 +603,7 @@ export function InventoryWorkspaceV2({ initialWorkspace }: { initialWorkspace: E
         description="SKU, gudang, stock card, transfer, adjustment, opname, dan valuasi moving average."
         primaryAction={<ActionButton form="stock-adjustment-form" disabled={pending}><Boxes className="size-4" />Post adjustment</ActionButton>}
       />
-      <ActionState error={workspaceError} success={workspaceLoading ? "Memuat data stok production..." : null} />
+      <WorkspaceFeedback error={workspaceError} success={workspaceLoading ? "Memuat data stok production..." : null} />
 
       <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
         <Panel title="Stock adjustment">
@@ -617,7 +620,7 @@ export function InventoryWorkspaceV2({ initialWorkspace }: { initialWorkspace: E
             <TextField name="reason" label="Alasan" defaultValue="Stock opname" />
           </form>
           <div className="mt-4">
-            <ActionState error={error} success={success} />
+            <WorkspaceFeedback error={error} success={success} />
           </div>
         </Panel>
 
@@ -755,7 +758,7 @@ export function AccountingWorkspace({ initialWorkspace }: { initialWorkspace: Er
         description="Jurnal otomatis dari dokumen bisnis, manual journal terbatas, period lock, reversal, dan audit trail."
         primaryAction={<a href="#period-control" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800"><BookOpenCheck className="size-4" />Period control</a>}
       />
-      <ActionState error={workspaceError ?? error} success={workspaceLoading ? "Memuat data akuntansi production..." : success} />
+      <WorkspaceFeedback error={workspaceError ?? error} success={workspaceLoading ? "Memuat data akuntansi production..." : success} />
       <div className="grid gap-5 xl:grid-cols-4">
         <MetricCard label="Jurnal Dicatat" value={String(workspace.journals.length)} meta="Dari penjualan, pembelian, gaji, pembayaran" icon={BookOpenCheck} />
         <MetricCard label="Period" value={workspace.period.label} meta={workspace.period.locked ? "Locked" : "Open"} icon={CalendarCheck} tone={workspace.period.locked ? "red" : "emerald"} />
@@ -965,7 +968,7 @@ export function ReportsWorkspaceV2({ initialWorkspace }: { initialWorkspace: Erp
           </button>
         }
       />
-      <ActionState error={workspaceError ?? error} success={workspaceLoading ? "Memuat laporan production..." : success} />
+      <WorkspaceFeedback error={workspaceError ?? error} success={workspaceLoading ? "Memuat laporan production..." : success} />
       <div className="grid gap-5 xl:grid-cols-3">
         <Panel title="Laba rugi operasional">
           <div className="grid gap-3">
@@ -1188,7 +1191,7 @@ export function HrWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorks
         description="Employee CRUD, attendance summary, leave request, payroll run, payslip, dan jurnal biaya gaji."
         primaryAction={<ActionButton form="payroll-form" disabled={pending}><UsersRound className="size-4" />Run payroll</ActionButton>}
       />
-      <ActionState error={workspaceError ?? error} success={workspaceLoading ? "Memuat data HR production..." : success} />
+      <WorkspaceFeedback error={workspaceError ?? error} success={workspaceLoading ? "Memuat data HR production..." : success} />
       <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
         <Panel title="Run payroll">
           <form id="payroll-form" action={runPayroll} className="grid gap-3 sm:grid-cols-2">
@@ -1337,7 +1340,7 @@ export function TaxWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWork
         description="Estimasi PPh final UMKM, checklist Coretax, dan paket data untuk input manual atau partner resmi."
         primaryAction={<a href={jsonHref} download="coretax-prep.json" className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white"><Landmark className="size-4" />Export Coretax prep</a>}
       />
-      <ActionState error={workspaceError ?? error} success={workspaceLoading ? "Memuat data pajak production..." : success} />
+      <WorkspaceFeedback error={workspaceError ?? error} success={workspaceLoading ? "Memuat data pajak production..." : success} />
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
         <Panel title="Estimasi PPh final">
           <div className="rounded-lg bg-emerald-50 p-5">
@@ -1556,7 +1559,7 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
         title="Settings"
         description="Admin workspace untuk profil bisnis, pajak, role aktif, master data, periode, produk, gudang, dan kesiapan integrasi."
       />
-      <ActionState error={workspaceError ?? error} success={loading ? "Memuat settings production..." : success ?? (demoMode ? "Demo fallback aktif. Data tersimpan di demo store selama sesi berjalan." : null)} />
+      <WorkspaceFeedback error={workspaceError ?? error} success={loading ? "Memuat settings production..." : success ?? (demoMode ? "Demo fallback aktif. Data tersimpan di demo store selama sesi berjalan." : null)} />
       <div className="grid gap-5 xl:grid-cols-2">
         <Panel title="Profil bisnis">
           <form action={saveBusiness} className="grid gap-3 sm:grid-cols-2">
@@ -1832,7 +1835,7 @@ export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: 
         title="Onboarding bisnis"
         description="Buat tenant produksi dengan role owner, template industri, modul aktif, COA, periode awal, pajak, gudang, lokasi default, dan sequence dokumen."
       />
-      <ActionState error={error} success={success} />
+      <WorkspaceFeedback error={error} success={success} />
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel title="Buat bisnis baru">
           <form action={createBusiness} className="grid gap-3 sm:grid-cols-2">
@@ -2074,7 +2077,7 @@ export function LoginWorkspace() {
                 />
               </div>
             ) : null}
-            <ActionState error={error} success={success} />
+            <WorkspaceFeedback error={error} success={success} />
             <ActionButton className="w-full" disabled={pending}>
               {supabaseEnabled ? (mode === "login" ? "Masuk" : "Daftar") : "Masuk demo fallback"}
             </ActionButton>

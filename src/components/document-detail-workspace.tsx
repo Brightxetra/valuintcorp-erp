@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Check, FileText, X, AlertCircle } from "lucide-react";
+import { ArrowLeft, Check, FileText, X } from "lucide-react";
 import { useErpWorkspace } from "@/components/erp-context";
+import { FeedbackToast } from "@/components/feedback-toast";
 import { ActionButton, PageHeader, Panel, StatTile, StatusPill } from "@/components/ui";
 import { money } from "@/lib/format";
 import type { ErpWorkspace, PaymentMethod } from "@/lib/erp/types";
@@ -227,18 +228,7 @@ export function DocumentDetailWorkspace({
         }
       />
 
-      {message ? (
-        <div className="flex items-center gap-3 rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
-          <Check className="size-5" />
-          {message}
-        </div>
-      ) : null}
-      {error ? (
-        <div className="flex items-center gap-3 rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800">
-          <AlertCircle className="size-5" />
-          {error}
-        </div>
-      ) : null}
+      <FeedbackToast error={error} success={message} />
 
       <div className="grid gap-4 md:grid-cols-4">
         <StatTile label="Status" value={statusLabel(document.status)} />

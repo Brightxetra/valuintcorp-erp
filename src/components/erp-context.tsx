@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { FeedbackToast } from "@/components/feedback-toast";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import {
   type BusinessOption,
@@ -166,7 +167,12 @@ export function ErpWorkspaceProvider({
     ],
   );
 
-  return <ErpContext.Provider value={value}>{children}</ErpContext.Provider>;
+  return (
+    <ErpContext.Provider value={value}>
+      {children}
+      <FeedbackToast error={error} />
+    </ErpContext.Provider>
+  );
 }
 
 export function useErpWorkspace(initialWorkspace?: ErpWorkspace) {

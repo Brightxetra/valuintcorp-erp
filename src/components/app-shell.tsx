@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "@/components/ui";
+import { FeedbackToast } from "@/components/feedback-toast";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { can, type Permission } from "@/lib/security/permissions";
@@ -323,7 +324,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
               <p className="mt-2 text-xs text-slate-500">Role: {user.role}</p>
               {demoMode ? <p className="mt-2 text-xs font-medium text-amber-700">Demo fallback aktif</p> : null}
               {loading ? <p className="mt-2 text-xs text-slate-500">Memuat workspace production...</p> : null}
-              {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+              <FeedbackToast error={error} />
             </div>
             <NavLinks workspace={workspace} />
           </div>

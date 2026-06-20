@@ -30,9 +30,9 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import { gooeyToast } from "goey-toast";
 import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
+import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { can, type Permission } from "@/lib/security/permissions";
 import { clearServerSession } from "@/lib/erp/client-api";
@@ -136,9 +136,9 @@ function useFavorites() {
     setFavorites(next);
 
     if (exists) {
-      gooeyToast.info("Dihapus dari favorit", { description: item.label });
+      notify.info("Dihapus dari favorit", { description: item.label });
     } else {
-      gooeyToast.success("Ditambahkan ke favorit", { description: item.label });
+      notify.success("Ditambahkan ke favorit", { description: item.label });
     }
   }, []);
 
@@ -568,7 +568,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const { workspace, businesses, activeBusinessId, setActiveBusinessId, error, demoMode, demoAccount, runtimeMode } = useErpWorkspace();
+  const { workspace, businesses, activeBusinessId, setActiveBusinessId, demoMode, demoAccount, runtimeMode } = useErpWorkspace();
 
   const business = workspace.business;
   const period = workspace.period;
@@ -889,21 +889,14 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
 
           {/* Main Content */}
           <main className="min-w-0 space-y-6">
-            {(error || demoAccount) && (
-              <div
-                className={cn(
-                  "rounded-xl border p-4",
-                  error ? "border-amber-200 bg-amber-50" : "border-cyan-200 bg-cyan-50",
-                )}
-              >
+            {demoAccount && (
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className={cn("size-5 shrink-0", error ? "text-amber-600" : "text-cyan-600")} aria-hidden />
+                  <AlertCircle className="size-5 shrink-0 text-cyan-600" aria-hidden />
                   <div>
-                    <p className={cn("text-sm font-medium", error ? "text-amber-800" : "text-cyan-800")}>
-                      {error ? "Workspace production belum siap" : "Akun demo Supabase aktif"}
-                    </p>
-                    <p className={cn("mt-1 text-sm", error ? "text-amber-700" : "text-cyan-700")}>
-                      {error ?? `Data sandbox akan reset ${workspace.demoSandbox?.nextResetAt ? `pada ${new Date(workspace.demoSandbox.nextResetAt).toLocaleString("id-ID")}` : "sesuai jadwal demo"}.`}
+                    <p className="text-sm font-medium text-cyan-800">Akun demo Supabase aktif</p>
+                    <p className="mt-1 text-sm text-cyan-700">
+                      {`Data sandbox akan reset ${workspace.demoSandbox?.nextResetAt ? `pada ${new Date(workspace.demoSandbox.nextResetAt).toLocaleString("id-ID")}` : "sesuai jadwal demo"}.`}
                     </p>
                   </div>
                 </div>

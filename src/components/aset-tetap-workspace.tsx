@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Building2, CalendarClock, Check, Edit3, Landmark, Plus, Search, Trash2, X } from "lucide-react";
+import { Building2, CalendarClock, Check, Edit3, Landmark, Plus, Search, Trash2, X } from "lucide-react";
 import { useErpWorkspace } from "@/components/erp-context";
+import { FeedbackToast } from "@/components/feedback-toast";
 import { ActionButton, MetricCard, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { money } from "@/lib/format";
 import {
@@ -298,18 +299,7 @@ export function AsetTetapWorkspace({ initialWorkspace }: { initialWorkspace: Erp
         }
       />
 
-      {message ? (
-        <div className="flex items-center gap-3 rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
-          <Check className="size-5" />
-          {message}
-        </div>
-      ) : null}
-      {error ? (
-        <div className="flex items-center gap-3 rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800">
-          <AlertCircle className="size-5" />
-          {error}
-        </div>
-      ) : null}
+      <FeedbackToast error={error} success={message} />
 
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Aset Aktif" value={String(totals.assetCount)} meta="Tidak termasuk aset disposed" icon={Building2} tone="gray" />

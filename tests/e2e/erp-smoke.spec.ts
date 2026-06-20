@@ -79,6 +79,38 @@ test("header notification panel remains available", async ({ page }) => {
   await expect(page.getByText("Notifikasi & tugas", { exact: true })).toBeVisible();
 });
 
+test("saving a business industry uses a Goey success toast instead of an inline banner", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /Profil Bisnis/ }).click();
+  await page.getByLabel("Industri").selectOption("service");
+  await page.getByRole("button", { name: "Simpan profil" }).click();
+
+  const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Profil bisnis disimpan" });
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Industri: Jasa");
+  await expect(page.getByText("business disimpan.", { exact: true })).toHaveCount(0);
+});
+
+test("failed business changes show an eight-second Goey error without an inline banner", async ({ page }) => {
+  await page.route("**/api/erp/master-data", async (route) => {
+    await route.fulfill({
+      status: 422,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Industri tidak valid." }),
+    });
+  });
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /Profil Bisnis/ }).click();
+  await page.getByLabel("Industri").selectOption("service");
+  await page.getByRole("button", { name: "Simpan profil" }).click();
+
+  const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Operasi gagal" });
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Industri tidak valid.");
+  await expect(page.getByText("Industri tidak valid.", { exact: true })).toHaveCount(1);
+});
+
 test("dashboard quick actions open existing create forms", async ({ page }) => {
   await page.goto("/dashboard");
 

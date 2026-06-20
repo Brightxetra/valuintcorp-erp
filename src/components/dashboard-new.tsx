@@ -24,6 +24,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
+import { FeedbackToast } from "@/components/feedback-toast";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { money, percent } from "@/lib/format";
 import { getStatusLabel } from "@/lib/translations";
@@ -300,7 +301,7 @@ export function DashboardWorkspace({ initialWorkspace }: { initialWorkspace: Erp
           </div>
         )}
         {loading && <p className="mt-2 text-sm text-slate-500">Memuat data...</p>}
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        <FeedbackToast error={error} />
       </div>
 
       {/* AKSI CEPAT */}

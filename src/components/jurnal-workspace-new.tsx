@@ -3,13 +3,13 @@
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
+import { FeedbackToast } from "@/components/feedback-toast";
 import { PageHeader } from "@/components/ui";
 import {
   Plus,
   BookOpen,
   Search,
   Check,
-  AlertCircle,
   ChevronRight,
   X,
   FileText,
@@ -306,19 +306,7 @@ export function JurnalWorkspace({ initialWorkspace }: { initialWorkspace: ErpWor
         </div>
       </div>
 
-      {/* Messages */}
-      {success && (
-        <div className="flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-800">
-          <Check className="size-5 text-emerald-600" />
-          <p className="text-sm font-medium">{success}</p>
-        </div>
-      )}
-      {error && (
-        <div className="flex items-center gap-3 rounded-xl bg-red-50 p-4 text-red-800">
-          <AlertCircle className="size-5 text-red-600" />
-          <p className="text-sm font-medium">{error}</p>
-        </div>
-      )}
+      <FeedbackToast error={error} success={success} />
 
       {/* Journal List */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">

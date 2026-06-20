@@ -1,6 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
+import { FeedbackToast } from "@/components/feedback-toast";
 
 export function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -418,7 +419,7 @@ export function TextField({
         />
       </div>
       {hint && !error && <p className="mt-1.5 text-xs text-slate-500">{hint}</p>}
-      {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+      <FeedbackToast error={error} />
     </label>
   );
 }
@@ -456,7 +457,7 @@ export function SelectField({
         {children}
       </select>
       {hint && !error && <p className="mt-1.5 text-xs text-slate-500">{hint}</p>}
-      {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+      <FeedbackToast error={error} />
     </label>
   );
 }
@@ -490,7 +491,7 @@ export function TextArea({
         )}
       />
       {hint && !error && <p className="mt-1.5 text-xs text-slate-500">{hint}</p>}
-      {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+      <FeedbackToast error={error} />
     </label>
   );
 }

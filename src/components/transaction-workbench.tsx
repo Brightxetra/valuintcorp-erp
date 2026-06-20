@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CheckCircle2, FileInput, Plus, RotateCcw } from "lucide-react";
+import { FeedbackToast } from "@/components/feedback-toast";
 import type { JournalEntry } from "@/lib/domain/types";
 import { parseCsv } from "@/lib/import/csv";
 import { money } from "@/lib/format";
@@ -242,8 +243,7 @@ export function TransactionWorkbench({ initialEntries }: { initialEntries: Journ
                 />
               ))}
           </div>
-          {error ? <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-          {success ? <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{success}</p> : null}
+          <FeedbackToast error={error} success={success} />
           <div className="flex flex-wrap gap-2">
             <button
               disabled={pending}
