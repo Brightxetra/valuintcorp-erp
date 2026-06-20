@@ -3,6 +3,9 @@
 :root {
   --background: #f1f5f9;
   --foreground: #020617;
+  --erp-mobile-nav-base-height: 4.5rem;
+  --erp-mobile-nav-height: calc(var(--erp-mobile-nav-base-height) + env(safe-area-inset-bottom));
+  --erp-mobile-content-clearance: calc(var(--erp-mobile-nav-height) + 1.5rem);
 }
 
 @theme inline {
@@ -16,6 +19,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  overflow-x: clip;
 }
 
 * {
@@ -29,9 +33,104 @@ a {
 
 /* Keep transient toasts above the ERP mobile navigation. */
 @media (max-width: 1023px) {
+  .erp-mobile-shell {
+    overflow-x: clip;
+  }
+
+  .erp-mobile-shell-content {
+    padding-bottom: var(--erp-mobile-content-clearance);
+  }
+
+  .erp-mobile-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .erp-mobile-nav a {
+    min-height: 44px;
+  }
+
+  .erp-mobile-drawer {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .mobile-card-table {
+    border-collapse: separate;
+    border-spacing: 0 0.75rem;
+  }
+
+  .mobile-card-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .mobile-card-table,
+  .mobile-card-table tbody,
+  .mobile-card-table tr,
+  .mobile-card-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .mobile-card-table tbody {
+    padding: 0.25rem 0.75rem 0.75rem;
+  }
+
+  .mobile-card-table tr {
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    background: white;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  }
+
+  .mobile-card-table td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.625rem 0.875rem;
+    text-align: right;
+  }
+
+  .mobile-card-table td::before {
+    content: attr(data-mobile-label);
+    flex: 0 0 42%;
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .mobile-card-table td[data-mobile-label=""]::before {
+    display: none;
+  }
+
+  .mobile-card-table td[data-mobile-label="Aksi"] {
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .mobile-card-table td[data-mobile-label="Aksi"]::before {
+    display: none;
+  }
+
+  #report-content {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  #report-content table {
+    min-width: 38rem;
+  }
+
   [data-sonner-toaster][data-y-position="bottom"] {
-    --offset-bottom: 6rem !important;
-    --mobile-offset-bottom: 6rem !important;
+    --offset-bottom: calc(var(--erp-mobile-nav-height) + 1.5rem) !important;
+    --mobile-offset-bottom: calc(var(--erp-mobile-nav-height) + 1.5rem) !important;
   }
 }
 

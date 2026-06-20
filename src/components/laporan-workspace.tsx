@@ -558,7 +558,15 @@ export function LaporanWorkspace({ initialWorkspace }: { initialWorkspace: ErpWo
       </div>
 
       {/* CONTENT - Print Area */}
-      <div ref={reportRef} id="report-content" className="print-content">
+      <div
+        ref={reportRef}
+        id="report-content"
+        className="print-content"
+        role="region"
+        aria-label="Laporan keuangan. Geser horizontal untuk melihat seluruh kolom."
+        tabIndex={0}
+      >
+        <p className="mb-3 text-xs text-slate-500 sm:hidden">Geser tabel untuk melihat kolom laporan lainnya.</p>
         {/* Header untuk Print */}
         <div className="print-header hidden">
           <div className="text-center mb-4">

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Check, FileText, X } from "lucide-react";
+import { ArrowLeft, Check, FileText } from "lucide-react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { FeedbackToast } from "@/components/feedback-toast";
+import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { ActionButton, PageHeader, Panel, StatTile, StatusPill } from "@/components/ui";
 import { money } from "@/lib/format";
 import type { ErpWorkspace, PaymentMethod } from "@/lib/erp/types";
@@ -28,34 +29,6 @@ function statusLabel(status: string) {
     draft: "Draft",
     void: "Batal",
   }[status] ?? status;
-}
-
-function Modal({
-  isOpen,
-  title,
-  onClose,
-  children,
-}: {
-  isOpen: boolean;
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
-            <X className="size-5" />
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
 }
 
 export function DocumentDetailWorkspace({
@@ -239,8 +212,9 @@ export function DocumentDetailWorkspace({
 
       <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
         <Panel title="Item Dokumen" description="Detail produk/jasa yang menjadi dasar posting dokumen.">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <p className="mb-2 text-xs text-slate-500 sm:hidden">Geser tabel untuk melihat seluruh kolom item.</p>
+          <div className="overflow-x-auto" role="region" aria-label="Item dokumen" tabIndex={0}>
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <th className="py-3">Item</th>

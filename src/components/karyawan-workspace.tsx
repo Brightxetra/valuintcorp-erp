@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Plus,
   Search,
@@ -41,6 +41,20 @@ interface EmployeeProfileProps {
 export function EmployeeProfileModal({ employee, workspace, onClose }: EmployeeProfileProps) {
   const [activeTab, setActiveTab] = useState<TabType>("data");
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
   const tabs = [
     { id: "data" as TabType, label: "📋 Data Diri", count: 0 },
     { id: "gaji" as TabType, label: "💰 Gaji", count: 0 },
@@ -51,7 +65,7 @@ export function EmployeeProfileModal({ employee, workspace, onClose }: EmployeeP
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-xl">
+      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
         {/* HEADER */}
         <div className="flex items-center justify-between border-b border-slate-200 p-4">
           <div className="flex items-center gap-4">
@@ -75,7 +89,7 @@ export function EmployeeProfileModal({ employee, workspace, onClose }: EmployeeP
         </div>
 
         {/* TABS */}
-        <div className="flex gap-1 border-b border-slate-200 bg-slate-50 px-4">
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50 px-4">
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -93,7 +107,7 @@ export function EmployeeProfileModal({ employee, workspace, onClose }: EmployeeP
         </div>
 
         {/* CONTENT */}
-        <div className="overflow-y-auto p-6" style={{ maxHeight: "calc(90vh - 180px)" }}>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-6">
           {activeTab === "data" && <DataDiriTab employee={employee} />}
           {activeTab === "gaji" && <GajiTab employee={employee} workspace={workspace} />}
           {activeTab === "bpjs" && <BPJSTab employee={employee} />}
@@ -348,7 +362,7 @@ function BPJSTab({ employee }: { employee: Employee }) {
           Iuran BPJS Bulanan (2024)
         </h3>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-slate-200">
                 <th className="py-2 text-left font-medium text-slate-500">Program</th>
@@ -455,7 +469,7 @@ function AbsensiTab() {
 
       {/* Tabel Absensi */}
       <div className="rounded-lg border border-slate-200">
-        <table className="w-full text-sm">
+        <table className="mobile-card-table w-full text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-3 text-left font-medium text-slate-500">Tanggal</th>
@@ -467,14 +481,14 @@ function AbsensiTab() {
           <tbody className="divide-y divide-slate-100">
             {bulanIni.map((item) => (
               <tr key={item.tanggal}>
-                <td className="px-4 py-3">{new Date(item.tanggal).toLocaleDateString("id-ID")}</td>
-                <td className="px-4 py-3">
+                <td data-mobile-label="Tanggal" className="px-4 py-3">{new Date(item.tanggal).toLocaleDateString("id-ID")}</td>
+                <td data-mobile-label="Status" className="px-4 py-3">
                   <StatusPill tone={statusColors[item.status] as "emerald" | "amber" | "gray" | "red" | "cyan"}>
                     {statusLabels[item.status]}
                   </StatusPill>
                 </td>
-                <td className="px-4 py-3">{item.jam}</td>
-                <td className="px-4 py-3">17:00</td>
+                <td data-mobile-label="Jam masuk" className="px-4 py-3">{item.jam}</td>
+                <td data-mobile-label="Jam pulang" className="px-4 py-3">17:00</td>
               </tr>
             ))}
           </tbody>
@@ -591,7 +605,7 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
       {/* TABEL */}
       {filteredEmployees.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
+          <table className="mobile-card-table w-full text-sm">
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold text-slate-500">Karyawan</th>
@@ -606,7 +620,7 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
             <tbody className="divide-y divide-slate-100">
               {filteredEmployees.map((employee) => (
                 <tr key={employee.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3">
+                  <td data-mobile-label="Karyawan" className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="flex size-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-700">
                         {employee.name.charAt(0).toUpperCase()}
@@ -614,13 +628,13 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
                       <span className="font-medium text-slate-950">{employee.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{employee.employeeNo}</td>
-                  <td className="px-4 py-3 text-slate-600">{employee.role}</td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td data-mobile-label="No. karyawan" className="px-4 py-3 text-slate-600">{employee.employeeNo}</td>
+                  <td data-mobile-label="Jabatan" className="px-4 py-3 text-slate-600">{employee.role}</td>
+                  <td data-mobile-label="Kontrak" className="px-4 py-3 text-slate-600">
                     {getContractTypeLabel(employee.contractType)}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{money(employee.baseSalary)}</td>
-                  <td className="px-4 py-3">
+                  <td data-mobile-label="Gaji pokok" className="px-4 py-3 text-slate-600">{money(employee.baseSalary)}</td>
+                  <td data-mobile-label="Status" className="px-4 py-3">
                     <StatusPill
                       tone={
                         employee.status === "active"
@@ -633,7 +647,7 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
                       {employee.status === "active" ? "Aktif" : employee.status === "inactive" ? "Non-aktif" : "Kontrak"}
                     </StatusPill>
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-mobile-label="Aksi" className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       <button
                         type="button"

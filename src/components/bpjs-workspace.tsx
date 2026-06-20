@@ -82,8 +82,14 @@ function CalculationTable({ calculations }: { calculations: BPJSCalculation[] })
   const totalSemua = calculations.reduce((sum, c) => sum + c.totalContribution, 0);
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <div
+      className="overflow-x-auto"
+      role="region"
+      aria-label="Perhitungan BPJS. Geser horizontal untuk melihat seluruh kolom."
+      tabIndex={0}
+    >
+      <p className="mb-2 text-xs text-slate-500 sm:hidden">Geser tabel untuk melihat seluruh komponen iuran.</p>
+      <table className="w-full min-w-[760px] text-sm">
         <thead className="bg-slate-50 text-xs">
           <tr>
             <th className="px-4 py-3 text-left font-semibold text-slate-500">Karyawan</th>

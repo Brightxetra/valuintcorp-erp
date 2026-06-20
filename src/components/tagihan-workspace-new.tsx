@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { FeedbackToast } from "@/components/feedback-toast";
+import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { PageHeader } from "@/components/ui";
 import {
   Plus,
@@ -46,37 +47,6 @@ function getStatusBadge(status: string): { label: string; color: string; icon: R
 // ============================================================================
 // MODAL
 // ============================================================================
-
-function Modal({
-  isOpen,
-  onClose,
-  title,
-  children,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-          >
-            <X className="size-5" />
-          </button>
-        </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 // ============================================================================
 // FORM FIELD
@@ -367,7 +337,7 @@ export function TagihanWorkspace({ initialWorkspace }: { initialWorkspace: ErpWo
       {/* Bills Table */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="mobile-card-table w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <th className="px-4 py-3">Bill No</th>
@@ -383,7 +353,7 @@ export function TagihanWorkspace({ initialWorkspace }: { initialWorkspace: ErpWo
             <tbody className="divide-y divide-gray-50">
               {filteredBills.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={8} data-mobile-label="" className="px-4 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <Receipt className="size-12 text-gray-300" />
                       <p>Belum ada tagihan</p>
@@ -404,34 +374,34 @@ export function TagihanWorkspace({ initialWorkspace }: { initialWorkspace: ErpWo
 
                   return (
                     <tr key={bill.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
+                      <td data-mobile-label="Tagihan" className="px-4 py-3">
                         <p className="font-semibold text-gray-900">{bill.billNo}</p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td data-mobile-label="Supplier" className="px-4 py-3">
                         <p className="font-medium text-gray-900">{supplier?.name || "-"}</p>
                         {supplier?.phone && (
                           <p className="text-xs text-gray-500">{supplier.phone}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td data-mobile-label="Tanggal" className="px-4 py-3 text-sm text-gray-600">
                         {formatDate(bill.date)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td data-mobile-label="Jatuh tempo" className="px-4 py-3 text-sm text-gray-600">
                         {formatDate(bill.dueDate)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                      <td data-mobile-label="Total" className="px-4 py-3 text-right font-semibold text-gray-900">
                         {money(bill.total)}
                       </td>
-                      <td className={`px-4 py-3 text-right font-semibold ${sisaBayar > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                      <td data-mobile-label="Sisa" className={`px-4 py-3 text-right font-semibold ${sisaBayar > 0 ? "text-red-600" : "text-emerald-600"}`}>
                         {money(sisaBayar)}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td data-mobile-label="Status" className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${status.color}`}>
                           {status.icon}
                           {status.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td data-mobile-label="Aksi" className="px-4 py-3">
                         <div className="flex items-center justify-center gap-2">
                           {bill.status !== "paid" && bill.status !== "void" && (
                             <button
@@ -489,7 +459,7 @@ export function TagihanWorkspace({ initialWorkspace }: { initialWorkspace: ErpWo
             </select>
           </FormField>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Tanggal">
               <input
                 type="date"

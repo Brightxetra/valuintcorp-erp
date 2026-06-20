@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { FeedbackToast } from "@/components/feedback-toast";
+import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { PageHeader } from "@/components/ui";
 import {
   Plus,
@@ -50,37 +51,6 @@ function getStatusBadge(status: string): { label: string; color: string } {
 // ============================================================================
 // MODAL
 // ============================================================================
-
-function Modal({
-  isOpen,
-  onClose,
-  title,
-  children,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-          >
-            <X className="size-5" />
-          </button>
-        </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 // ============================================================================
 // FORM FIELD
@@ -311,7 +281,7 @@ export function JurnalWorkspace({ initialWorkspace }: { initialWorkspace: ErpWor
       {/* Journal List */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="mobile-card-table w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <th className="px-4 py-3">Tanggal</th>
@@ -325,7 +295,7 @@ export function JurnalWorkspace({ initialWorkspace }: { initialWorkspace: ErpWor
             <tbody className="divide-y divide-gray-50">
               {filteredJournals.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={6} data-mobile-label="" className="px-4 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <BookOpen className="size-12 text-gray-300" />
                       <p>Belum ada jurnal</p>
@@ -339,27 +309,27 @@ export function JurnalWorkspace({ initialWorkspace }: { initialWorkspace: ErpWor
 
                   return (
                     <tr key={journal.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td data-mobile-label="Tanggal" className="px-4 py-3 text-sm text-gray-600">
                         {formatDate(journal.date)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td data-mobile-label="Deskripsi" className="px-4 py-3">
                         <p className="font-medium text-gray-900">{journal.description}</p>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td data-mobile-label="Sumber" className="px-4 py-3 text-sm text-gray-600">
                         {String(journal.source) === "manual" ? "Manual" :
                          String(journal.source) === "sales" ? "Penjualan" :
                          String(journal.source) === "purchase" ? "Pembelian" :
                          String(journal.source) === "payroll" ? "Gaji" : journal.source}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td data-mobile-label="Status" className="px-4 py-3 text-center">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${status.color}`}>
                           {status.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                      <td data-mobile-label="Total debit" className="px-4 py-3 text-right font-semibold text-gray-900">
                         {formatCurrency(totalDebit)}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td data-mobile-label="Aksi" className="px-4 py-3 text-center">
                         <button
                           onClick={() => setShowDetailModal(journal.id)}
                           className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-100"
@@ -383,7 +353,7 @@ export function JurnalWorkspace({ initialWorkspace }: { initialWorkspace: ErpWor
         title="Buat Jurnal Baru"
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Tanggal">
               <input
                 type="date"

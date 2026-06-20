@@ -240,7 +240,13 @@ export function DataTable({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200">
-      <div className="overflow-x-auto">
+      <p className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500 sm:hidden">Geser tabel untuk melihat kolom lain.</p>
+      <div
+        className="overflow-x-auto"
+        role="region"
+        aria-label="Tabel data. Geser horizontal untuk melihat kolom lain."
+        tabIndex={0}
+      >
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>

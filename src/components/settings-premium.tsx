@@ -478,7 +478,7 @@ function MasterDataPanel({
       {type === "warehouses" ? <WarehouseForm pending={pending} saveWarehouse={saveWarehouse} /> : null}
 
       <div className="overflow-hidden rounded-xl border border-slate-200">
-        <table className="w-full text-sm">
+        <table className="mobile-card-table w-full text-sm">
           <thead className="bg-slate-50">
             <tr>
               {config.columns.map((column) => (
@@ -492,12 +492,12 @@ function MasterDataPanel({
             {config.rows.map((row) => (
               <tr key={row.id} className="hover:bg-slate-50">
                 {row.cells.map((cell, index) => (
-                  <td key={`${row.id}-${index}`} className="px-4 py-3">{cell}</td>
+                  <td key={`${row.id}-${index}`} data-mobile-label={config.columns[index]} className="px-4 py-3">{cell}</td>
                 ))}
-                <td className="px-4 py-3">
+                <td data-mobile-label="Status" className="px-4 py-3">
                   <StatusPill tone={row.active ? "emerald" : "gray"}>{row.active ? "active" : "inactive"}</StatusPill>
                 </td>
-                <td className="px-4 py-3">
+                <td data-mobile-label="Aksi" className="px-4 py-3">
                   <button
                     type="button"
                     onClick={() => void archiveMaster(config.resource, row.id)}

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, CalendarClock, Check, Edit3, Landmark, Plus, Search, Trash2, X } from "lucide-react";
+import { Building2, CalendarClock, Check, Edit3, Landmark, Plus, Search, Trash2 } from "lucide-react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { FeedbackToast } from "@/components/feedback-toast";
+import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { ActionButton, MetricCard, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { money } from "@/lib/format";
 import {
@@ -69,34 +70,6 @@ function statusTone(status: FixedAsset["status"]): "emerald" | "amber" | "gray" 
   if (status === "active") return "emerald";
   if (status === "fully_depreciated") return "amber";
   return "red";
-}
-
-function Modal({
-  isOpen,
-  title,
-  onClose,
-  children,
-}: {
-  isOpen: boolean;
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
-          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
-            <X className="size-5" />
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
 }
 
 function Field({
@@ -337,7 +310,7 @@ export function AsetTetapWorkspace({ initialWorkspace }: { initialWorkspace: Erp
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="mobile-card-table w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <th className="py-3">Aset</th>
@@ -351,7 +324,7 @@ export function AsetTetapWorkspace({ initialWorkspace }: { initialWorkspace: Erp
               <tbody className="divide-y divide-slate-100">
                 {filteredAssets.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-500">
+                    <td colSpan={6} data-mobile-label="" className="py-12 text-center text-slate-500">
                       Belum ada aset tetap.
                     </td>
                   </tr>
@@ -364,17 +337,17 @@ export function AsetTetapWorkspace({ initialWorkspace }: { initialWorkspace: Erp
                         className={`cursor-pointer hover:bg-slate-50 ${selectedAsset?.id === asset.id ? "bg-emerald-50/50" : ""}`}
                         onClick={() => setSelectedAssetId(asset.id)}
                       >
-                        <td className="py-3">
+                        <td data-mobile-label="Aset" className="py-3">
                           <p className="font-semibold text-slate-950">{asset.assetNo}</p>
                           <p className="text-slate-600">{asset.name}</p>
                         </td>
-                        <td className="py-3 text-slate-600">{asset.category}</td>
-                        <td className="py-3 text-right font-medium text-slate-950">{money(asset.acquisitionCost)}</td>
-                        <td className="py-3 text-right font-medium text-slate-950">{money(bookValue)}</td>
-                        <td className="py-3 text-center">
+                        <td data-mobile-label="Kategori" className="py-3 text-slate-600">{asset.category}</td>
+                        <td data-mobile-label="Cost" className="py-3 text-right font-medium text-slate-950">{money(asset.acquisitionCost)}</td>
+                        <td data-mobile-label="Nilai buku" className="py-3 text-right font-medium text-slate-950">{money(bookValue)}</td>
+                        <td data-mobile-label="Status" className="py-3 text-center">
                           <StatusPill tone={statusTone(asset.status)}>{statusLabel(asset.status)}</StatusPill>
                         </td>
-                        <td className="py-3 text-right">
+                        <td data-mobile-label="Aksi" className="py-3 text-right">
                           <button
                             onClick={(event) => {
                               event.stopPropagation();
@@ -532,7 +505,7 @@ export function AsetTetapWorkspace({ initialWorkspace }: { initialWorkspace: Erp
         </div>
       </Panel>
 
-      <Modal isOpen={assetModalOpen} title={assetForm.id ? "Edit Aset Tetap" : "Tambah Aset Tetap"} onClose={() => setAssetModalOpen(false)}>
+      <Modal isOpen={assetModalOpen} title={assetForm.id ? "Edit Aset Tetap" : "Tambah Aset Tetap"} onClose={() => setAssetModalOpen(false)} maxWidth="max-w-2xl">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nomor aset">
             <input value={assetForm.assetNo} onChange={(event) => setAssetForm((current) => ({ ...current, assetNo: event.target.value }))} placeholder="Otomatis jika kosong" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -591,7 +564,7 @@ export function AsetTetapWorkspace({ initialWorkspace }: { initialWorkspace: Erp
         </div>
       </Modal>
 
-      <Modal isOpen={depreciationOpen} title="Jalankan Penyusutan" onClose={() => setDepreciationOpen(false)}>
+      <Modal isOpen={depreciationOpen} title="Jalankan Penyusutan" onClose={() => setDepreciationOpen(false)} maxWidth="max-w-2xl">
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Periode">
@@ -617,7 +590,7 @@ export function AsetTetapWorkspace({ initialWorkspace }: { initialWorkspace: Erp
         </div>
       </Modal>
 
-      <Modal isOpen={disposalOpen} title="Pelepasan Aset" onClose={() => setDisposalOpen(false)}>
+      <Modal isOpen={disposalOpen} title="Pelepasan Aset" onClose={() => setDisposalOpen(false)} maxWidth="max-w-2xl">
         <div className="space-y-4">
           <Field label="Aset">
             <select value={disposalForm.assetId} onChange={(event) => setDisposalForm((current) => ({ ...current, assetId: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">

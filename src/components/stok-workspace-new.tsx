@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { FeedbackToast } from "@/components/feedback-toast";
+import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { PageHeader } from "@/components/ui";
 import {
   Plus,
   Package,
   Search,
   ChevronRight,
-  X,
   Boxes,
   ArrowRight,
   AlertTriangle,
@@ -40,43 +40,13 @@ function formatCurrency(amount: number): string {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(amount);
 }
 
 // ============================================================================
 // MODAL
 // ============================================================================
-
-function Modal({
-  isOpen,
-  onClose,
-  title,
-  children,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-          >
-            <X className="size-5" />
-          </button>
-        </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 // ============================================================================
 // FORM FIELD
@@ -382,7 +352,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
       {/* Stock List */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="mobile-card-table w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <th className="px-4 py-3">SKU</th>
@@ -397,7 +367,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             <tbody className="divide-y divide-gray-50">
               {filteredPositions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={7} data-mobile-label="" className="px-4 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <Package className="size-12 text-gray-300" />
                       <p>Belum ada data stok</p>
@@ -412,27 +382,27 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
 
                   return (
                     <tr key={`${pos.itemId}-${pos.warehouseId}`} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
+                      <td data-mobile-label="SKU" className="px-4 py-3">
                         <p className="font-mono text-sm font-semibold text-gray-900">{product?.sku || "-"}</p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td data-mobile-label="Produk" className="px-4 py-3">
                         <p className="font-medium text-gray-900">{product?.name || "-"}</p>
                         <p className="text-xs text-gray-500">{product?.unit || "pcs"}</p>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td data-mobile-label="Gudang" className="px-4 py-3 text-sm text-gray-600">
                         {warehouse?.name || "-"}
                       </td>
-                      <td className={`px-4 py-3 text-right font-semibold ${isLow ? "text-amber-600" : "text-gray-900"}`}>
+                      <td data-mobile-label="Qty" className={`px-4 py-3 text-right font-semibold ${isLow ? "text-amber-600" : "text-gray-900"}`}>
                         {pos.quantity}
                         {isLow && <AlertTriangle className="inline size-3 ml-1 text-amber-500" />}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-600">
+                      <td data-mobile-label="Biaya rata-rata" className="px-4 py-3 text-right text-gray-600">
                         {formatCurrency(pos.averageCost)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                      <td data-mobile-label="Nilai" className="px-4 py-3 text-right font-semibold text-gray-900">
                         {formatCurrency(pos.value)}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td data-mobile-label="Aksi" className="px-4 py-3 text-center">
                         <button className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-100">
                           <ChevronRight className="size-4" />
                         </button>
@@ -468,7 +438,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             </select>
           </FormField>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Gudang">
               <select
                 value={newAdjustment.warehouseId}
@@ -490,7 +460,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             </FormField>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Qty Koreksi (negatif = kurang)">
               <input
                 type="number"
@@ -565,7 +535,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             </select>
           </FormField>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Dari Gudang">
               <select
                 value={transfer.fromWarehouseId}
@@ -590,7 +560,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             </FormField>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Qty Transfer">
               <input
                 type="number"

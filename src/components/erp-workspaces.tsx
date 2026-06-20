@@ -2030,7 +2030,7 @@ export function LoginWorkspace() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md items-center px-4">
+    <div className="mx-auto flex min-h-screen max-w-md items-center overflow-x-clip px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
       <div className="w-full">
         <a
           href={MARKETING_SITE_URL}

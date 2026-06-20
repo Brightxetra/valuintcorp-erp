@@ -236,9 +236,9 @@ function CommandPaletteModal({
   }, [flatItems, selectedIndex, navigate]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[max(1rem,12vh)]">
       <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
           <Search className="size-5 text-slate-400" />
           <input
@@ -253,7 +253,7 @@ function CommandPaletteModal({
           <kbd className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">ESC</kbd>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto p-2">
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {filteredGroups.length === 0 ? (
             <div className="py-8 text-center text-slate-500">
               <p className="text-sm">Tidak ada hasil untuk &quot;{query}&quot;</p>
@@ -347,9 +347,9 @@ function CommandPaletteModal({
 
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
       <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <div className="relative z-10 max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-950">Keyboard Shortcuts</h2>
           <button
@@ -593,8 +593,18 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [sidebarOpen]);
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
+    <div className="erp-mobile-shell min-h-screen bg-slate-50 text-slate-950">
       {/* ============================================================================
           HEADER - Premium Top Bar
           ============================================================================ */}
@@ -723,7 +733,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       {/* ============================================================================
           MAIN CONTENT AREA
           ============================================================================ */}
-      <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6 lg:pb-24">
+      <div className="erp-mobile-shell-content mx-auto max-w-[1600px] px-4 py-6 lg:px-6 lg:pb-24">
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
           {/* ============================================================================
               SIDEBAR - Desktop Navigation
@@ -763,7 +773,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       {/* ============================================================================
           MOBILE BOTTOM NAVIGATION
           ============================================================================ */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
+      <nav className="erp-mobile-nav fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
         <div className="grid grid-cols-5">
           {mobileNav.map((item) => {
             const active = isActive(pathname, item.href);
@@ -795,7 +805,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
             className="absolute inset-0 bg-slate-950/50"
             onClick={() => setSidebarOpen(false)}
           />
-          <aside className="absolute left-0 top-0 h-full w-[85vw] max-w-sm overflow-y-auto bg-white shadow-2xl">
+          <aside className="erp-mobile-drawer absolute left-0 top-0 h-full w-[85vw] max-w-sm overflow-y-auto bg-white shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white p-4">
               <div className="flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">

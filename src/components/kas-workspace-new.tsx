@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { FeedbackToast } from "@/components/feedback-toast";
+import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { PageHeader } from "@/components/ui";
-import { Wallet, Search, X, Building, ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { Wallet, Search, Building, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import type { ErpWorkspace } from "@/lib/erp/types";
 
 function formatDate(date: string): string {
@@ -14,21 +15,6 @@ function formatDate(date: string): string {
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
-}
-
-function Modal({ isOpen, onClose, title, children }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"><X className="size-5" /></button>
-        </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
 }
 
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
@@ -227,7 +213,7 @@ export function KasWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="mobile-card-table w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <th className="px-4 py-3">Tanggal</th>
@@ -240,7 +226,7 @@ export function KasWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
             <tbody className="divide-y divide-gray-50">
               {filteredEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={5} data-mobile-label="" className="px-4 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <Wallet className="size-12 text-gray-300" />
                       <p>Belum ada transaksi kas</p>
@@ -250,21 +236,21 @@ export function KasWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
               ) : (
                 filteredEntries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-600">{formatDate(entry.date)}</td>
-                    <td className="px-4 py-3">
+                    <td data-mobile-label="Tanggal" className="px-4 py-3 text-sm text-gray-600">{formatDate(entry.date)}</td>
+                    <td data-mobile-label="Jenis" className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${entry.type === "masuk" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
                         {entry.type === "masuk" ? <ArrowUpRight className="size-3" /> : <ArrowDownLeft className="size-3" />}
                         {entry.type === "masuk" ? "Masuk" : "Keluar"}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-mobile-label="Deskripsi" className="px-4 py-3">
                       <p className="font-medium text-gray-900">{entry.description}</p>
                       {entry.reference && <p className="text-xs text-gray-500">{entry.reference}</p>}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
+                    <td data-mobile-label="Metode" className="px-4 py-3 text-sm text-gray-600">
                       {entry.method === "cash" ? "Tunai" : entry.method === "bank_transfer" ? "Transfer" : entry.method === "qris" ? "QRIS" : "Marketplace"}
                     </td>
-                    <td className={`px-4 py-3 text-right font-semibold ${entry.type === "masuk" ? "text-emerald-600" : "text-red-600"}`}>
+                    <td data-mobile-label="Jumlah" className={`px-4 py-3 text-right font-semibold ${entry.type === "masuk" ? "text-emerald-600" : "text-red-600"}`}>
                       {entry.type === "masuk" ? "+" : "-"} {formatCurrency(entry.amount)}
                     </td>
                   </tr>
@@ -293,7 +279,7 @@ export function KasWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
           <FormField label="Deskripsi">
             <input type="text" value={newEntry.description} onChange={(e) => handleNewEntryChange("description", e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500" placeholder="Contoh: Pembayaran invoice" />
           </FormField>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Metode">
               <select value={newEntry.method} onChange={(e) => handleNewEntryChange("method", e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500">
                 <option value="cash">Tunai</option>

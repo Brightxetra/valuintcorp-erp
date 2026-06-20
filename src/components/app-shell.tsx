@@ -22,7 +22,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/components/ui";
 import { FeedbackToast } from "@/components/feedback-toast";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
@@ -200,8 +200,18 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   const searchResults = useMemo(() => searchWorkspace(workspace, query), [workspace, query]);
   const taskCount = workspace.tasks.length;
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-950">
+    <div className="erp-mobile-shell min-h-screen bg-slate-100 text-slate-950">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
@@ -314,7 +324,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1500px] gap-5 px-4 py-5 pb-24 sm:px-6 lg:grid-cols-[270px_1fr] lg:pb-8">
+      <div className="erp-mobile-shell-content mx-auto grid max-w-[1500px] gap-5 px-4 py-5 pb-24 sm:px-6 lg:grid-cols-[270px_1fr] lg:pb-8">
         <aside className="hidden lg:block">
           <div className="sticky top-20 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-4 rounded-lg bg-slate-50 p-3">
@@ -333,7 +343,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
         <main className="min-w-0 space-y-5">{children}</main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
+      <nav className="erp-mobile-nav fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
         <div className="grid grid-cols-5">
           {mobileNav.map((item) => {
             const active = isActive(pathname, item.href);
