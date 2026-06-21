@@ -6,6 +6,9 @@
   --erp-mobile-nav-base-height: 4.5rem;
   --erp-mobile-nav-height: calc(var(--erp-mobile-nav-base-height) + env(safe-area-inset-bottom));
   --erp-mobile-content-clearance: calc(var(--erp-mobile-nav-height) + 1.5rem);
+  --erp-header-height: 4.0625rem;
+  --erp-toast-top-offset: calc(env(safe-area-inset-top) + var(--erp-header-height) + 1rem);
+  --erp-toast-max-inline-size: calc(100vw - 2rem);
 }
 
 @theme inline {
@@ -31,7 +34,31 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Keep transient toasts above the ERP mobile navigation. */
+/* Keep transient toasts below the sticky header without exceeding the viewport. */
+[data-sonner-toaster][data-y-position="top"] {
+  --offset-top: var(--erp-toast-top-offset) !important;
+  --mobile-offset-top: var(--erp-toast-top-offset) !important;
+}
+
+[data-sonner-toaster][data-x-position="center"] {
+  width: min(var(--width), var(--erp-toast-max-inline-size)) !important;
+  max-width: var(--erp-toast-max-inline-size) !important;
+}
+
+[data-sonner-toaster][data-x-position="center"] [data-sonner-toast],
+[data-sonner-toaster][data-x-position="center"] .gooey-wrapper {
+  max-width: 100% !important;
+}
+
+[data-sonner-toaster][data-x-position="center"] .gooey-contentExpanded {
+  min-width: 0 !important;
+  max-width: min(380px, var(--erp-toast-max-inline-size)) !important;
+}
+
+[data-sonner-toaster][data-x-position="center"] .gooey-description {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1023px) {
   .erp-mobile-shell {
     overflow-x: clip;
@@ -126,11 +153,6 @@ a {
 
   #report-content table {
     min-width: 38rem;
-  }
-
-  [data-sonner-toaster][data-y-position="bottom"] {
-    --offset-bottom: calc(var(--erp-mobile-nav-height) + 1.5rem) !important;
-    --mobile-offset-bottom: calc(var(--erp-mobile-nav-height) + 1.5rem) !important;
   }
 }
 

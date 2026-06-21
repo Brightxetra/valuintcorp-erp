@@ -34,7 +34,7 @@ function withDuration(options: NotificationOptions, duration: number) {
   const toastOptions = { ...options };
   delete toastOptions.dedupeKey;
   delete toastOptions.duration;
-  return { ...toastOptions, duration } satisfies GooeyToastOptions;
+  return { ...toastOptions, duration, showTimestamp: false } satisfies GooeyToastOptions;
 }
 
 function show(
@@ -53,9 +53,11 @@ export const notify = {
   error: (title: string, options?: NotificationOptions) => show("error", title, options),
   info: (title: string, options?: NotificationOptions) => show("info", title, options),
   warning: (title: string, options?: NotificationOptions) => show("warning", title, options),
-  promise: <T,>(promise: Promise<T>, data: GooeyPromiseData<T>) => gooeyToast.promise(promise, data),
+  promise: <T,>(promise: Promise<T>, data: GooeyPromiseData<T>) =>
+    gooeyToast.promise(promise, { ...data, showTimestamp: false }),
   dismiss: gooeyToast.dismiss,
-  update: gooeyToast.update,
+  update: (...[id, options]: Parameters<typeof gooeyToast.update>) =>
+    gooeyToast.update(id, { ...options, showTimestamp: false }),
 };
 
 export const notificationDurations = {

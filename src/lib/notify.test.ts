@@ -26,9 +26,11 @@ describe("notify", () => {
     expect(toast.success).toHaveBeenCalledWith("Profil bisnis disimpan", {
       description: "Industri: Jasa",
       duration: notificationDurations.success,
+      showTimestamp: false,
     });
     expect(toast.info).toHaveBeenCalledWith("Favorit diperbarui", {
       duration: notificationDurations.success,
+      showTimestamp: false,
     });
   });
 
@@ -38,6 +40,7 @@ describe("notify", () => {
     expect(toast.error).toHaveBeenCalledWith("Operasi gagal", {
       description: "Industri tidak valid.",
       duration: notificationDurations.error,
+      showTimestamp: false,
     });
   });
 
@@ -60,6 +63,14 @@ describe("notify", () => {
 
     notify.promise(operation, lifecycle);
 
-    expect(toast.promise).toHaveBeenCalledWith(operation, lifecycle);
+    expect(toast.promise).toHaveBeenCalledWith(operation, { ...lifecycle, showTimestamp: false });
+  });
+  it("keeps timestamps hidden when an existing toast is updated", () => {
+    notify.update("toast-1", { title: "Profil bisnis disimpan", showTimestamp: true });
+
+    expect(toast.update).toHaveBeenCalledWith("toast-1", {
+      title: "Profil bisnis disimpan",
+      showTimestamp: false,
+    });
   });
 });

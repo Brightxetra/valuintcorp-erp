@@ -5,7 +5,7 @@ import { GooeyToaster } from "goey-toast";
 export function AppToaster() {
   return (
     <GooeyToaster
-      position="bottom-right"
+      position="top-center"
       offset={16}
       gap={14}
       theme="light"

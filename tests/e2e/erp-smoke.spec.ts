@@ -1,4 +1,24 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+async function expectToastBelowHeader(page: Page, toast: Locator) {
+  await expect
+    .poll(async () => {
+      const [toastBox, headerBox] = await Promise.all([
+        toast.boundingBox(),
+        page.locator("header").first().boundingBox(),
+      ]);
+      return toastBox && headerBox ? toastBox.y - (headerBox.y + headerBox.height) : Number.NEGATIVE_INFINITY;
+    })
+    .toBeGreaterThanOrEqual(12);
+}
+
+async function expectTopCenterToast(page: Page, toast: Locator) {
+  const toaster = page.locator("[data-sonner-toaster]");
+  await expect(toaster).toHaveAttribute("data-y-position", "top");
+  await expect(toaster).toHaveAttribute("data-x-position", "center");
+  await expect(toast.locator(".gooey-timestamp")).toHaveCount(0);
+  await expectToastBelowHeader(page, toast);
+}
 
 test("login form is visible before authentication work completes", async ({ page }) => {
   await page.goto("/login?next=/dashboard");
@@ -48,6 +68,15 @@ test("favorite changes use Goey toast notifications", async ({ page }) => {
   const addedToast = page.locator("[data-sonner-toast]").filter({ hasText: "Ditambahkan ke favorit" });
   await expect(addedToast).toBeVisible();
 
+  const [toastBox, viewport] = await Promise.all([
+    addedToast.boundingBox(),
+    page.viewportSize(),
+  ]);
+  expect(toastBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(Math.abs(toastBox!.x + toastBox!.width / 2 - viewport!.width / 2)).toBeLessThanOrEqual(2);
+  await expectTopCenterToast(page, addedToast);
+
   await page.keyboard.press("Escape");
   await expect(addedToast).toBeHidden();
 
@@ -58,7 +87,7 @@ test("favorite changes use Goey toast notifications", async ({ page }) => {
   await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Dihapus dari favorit" })).toBeVisible();
 });
 
-test("favorite toast clears mobile navigation", async ({ page }) => {
+test("favorite toast stays centered below the header on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/dashboard");
 
@@ -69,7 +98,40 @@ test("favorite toast clears mobile navigation", async ({ page }) => {
 
   const toastBox = await toast.boundingBox();
   expect(toastBox).not.toBeNull();
-  expect(toastBox!.y + toastBox!.height).toBeLessThanOrEqual(780);
+  expect(Math.abs(toastBox!.x + toastBox!.width / 2 - 195)).toBeLessThanOrEqual(2);
+  expect(toastBox!.x).toBeGreaterThanOrEqual(16);
+  expect(toastBox!.x + toastBox!.width).toBeLessThanOrEqual(374);
+  await expectTopCenterToast(page, toast);
+});
+
+test("top-center toast remains visible on short and narrow mobile viewports", async ({ page }) => {
+  for (const viewport of [
+    { width: 400, height: 545 },
+    { width: 320, height: 568 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/dashboard");
+    await page.getByRole("button", { name: "Buka menu" }).click();
+    await page.getByRole("button", { name: "Tambah Dashboard ke favorit" }).click();
+
+    const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Ditambahkan ke favorit" });
+    await expect(toast).toBeVisible();
+
+    const [toastBox, pageWidth] = await Promise.all([
+      toast.boundingBox(),
+      page.evaluate(() => document.documentElement.scrollWidth),
+    ]);
+    expect(toastBox).not.toBeNull();
+    expect(Math.abs(toastBox!.x + toastBox!.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
+    expect(toastBox!.x).toBeGreaterThanOrEqual(16);
+    expect(toastBox!.x + toastBox!.width).toBeLessThanOrEqual(viewport.width - 16);
+    await expectTopCenterToast(page, toast);
+    expect(pageWidth).toBeLessThanOrEqual(viewport.width);
+
+    await page.keyboard.press("Escape");
+    await expect(toast).toBeHidden();
+    await page.evaluate(() => window.localStorage.removeItem("erp-favorites-nav"));
+  }
 });
 
 test("header notification panel remains available", async ({ page }) => {
@@ -87,6 +149,7 @@ test("saving a business industry uses a Goey success toast instead of an inline 
 
   const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Profil bisnis disimpan" });
   await expect(toast).toBeVisible();
+  await expectTopCenterToast(page, toast);
   await expect(toast).toContainText("Industri: Jasa");
   await expect(page.getByText("business disimpan.", { exact: true })).toHaveCount(0);
 });
