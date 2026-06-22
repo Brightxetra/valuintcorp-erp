@@ -9,7 +9,6 @@ import {
   serverSessionIdCookie,
   serverSessionRememberCookie,
 } from "@/lib/auth/runtime";
-import { accessTokenCookieMaxAge } from "@/lib/auth/token";
 import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -44,11 +43,6 @@ export interface SessionSyncTokens {
 export interface SessionSyncOptions {
   rememberMe?: boolean;
   freshLogin?: boolean;
-}
-
-interface BrowserBusinessResolution {
-  businessId: string | null;
-  resolved: boolean;
 }
 
 export function isSupabaseBrowserEnabled() {
@@ -127,29 +121,6 @@ function writeBrowserCookie(name: string, value: string, maxAge: number) {
   document.cookie = buildBrowserCookie(name, value, maxAge, browserCookieSecure());
 }
 
-function persistServerSessionCookies(tokens: SessionSyncTokens, businessId: string | null, rememberMe: boolean) {
-  const sessionMaxAge = rememberMe ? 60 * 60 * 24 * 30 : Math.floor(idleSessionTimeoutMs() / 1000);
-  const sessionToken = crypto.randomUUID();
-  writeBrowserCookie(serverAccessTokenCookie, tokens.accessToken, Math.min(accessTokenCookieMaxAge(tokens.accessToken), sessionMaxAge));
-
-  if (tokens.refreshToken) {
-    writeBrowserCookie(serverRefreshTokenCookie, tokens.refreshToken, sessionMaxAge);
-  }
-
-  writeBrowserCookie(serverSessionIdCookie, sessionToken, sessionMaxAge);
-  writeBrowserCookie(serverSessionRememberCookie, rememberMe ? "1" : "0", sessionMaxAge);
-  writeBrowserCookie(serverLastActivityCookie, String(Math.floor(Date.now() / 1000)), sessionMaxAge);
-  storeBrowserSessionPolicy(rememberMe);
-
-  if (businessId) {
-    writeBrowserCookie(serverBusinessCookie, businessId, sessionMaxAge);
-    storeActiveBusinessId(businessId);
-  } else {
-    writeBrowserCookie(serverBusinessCookie, "", 0);
-    clearStoredActiveBusinessId();
-  }
-}
-
 function clearBrowserSessionCookies() {
   writeBrowserCookie(serverAccessTokenCookie, "", 0);
   writeBrowserCookie(serverRefreshTokenCookie, "", 0);
@@ -172,54 +143,6 @@ async function getBrowserSession() {
 
 async function getAccessToken() {
   return (await getBrowserSession())?.access_token ?? null;
-}
-
-async function resolveBrowserBusinessId(
-  businessId: string | null | undefined,
-  userId: string | null | undefined,
-): Promise<BrowserBusinessResolution> {
-  if (businessId) {
-    return { businessId, resolved: true };
-  }
-
-  const storedBusinessId = getStoredActiveBusinessId();
-  const sessionUserId = userId ?? (await getBrowserSession())?.user.id ?? null;
-
-  if (!sessionUserId) {
-    return { businessId: storedBusinessId, resolved: Boolean(storedBusinessId) };
-  }
-
-  const supabase = createBrowserSupabaseClient();
-  const { data, error } = await supabase
-    .from("business_members")
-    .select("business_id")
-    .eq("auth_user_id", sessionUserId)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    return { businessId: storedBusinessId, resolved: Boolean(storedBusinessId) };
-  }
-
-  const membership = data as { business_id?: string | null } | null;
-
-  return { businessId: membership?.business_id ?? null, resolved: true };
-}
-
-async function syncServerSessionWithBrowserCookies(
-  tokens: SessionSyncTokens,
-  businessId?: string | null,
-  rememberMe = false,
-): Promise<SessionSyncResult> {
-  const business = await resolveBrowserBusinessId(businessId, tokens.userId);
-  persistServerSessionCookies(tokens, business.businessId, rememberMe);
-
-  return {
-    ok: true,
-    defaultBusinessId: business.businessId,
-    hasBusiness: business.resolved ? Boolean(business.businessId) : true,
-  };
 }
 
 export async function syncServerSession(
@@ -263,12 +186,6 @@ export async function syncServerSession(
   payload.rememberMe = rememberMe;
   payload.freshLogin = freshLogin;
 
-  const fallbackTokens: SessionSyncTokens = {
-    accessToken,
-    refreshToken,
-    userId: explicitTokens?.userId ?? session?.user.id,
-  };
-
   try {
     const response = await fetch("/api/auth/session", {
       method: "POST",
@@ -292,10 +209,10 @@ export async function syncServerSession(
 
     if (response.status === 401) return null;
   } catch {
-    // Fall through to browser cookie persistence below.
+    return null;
   }
 
-  return syncServerSessionWithBrowserCookies(fallbackTokens, businessId, rememberMe);
+  return null;
 }
 
 export async function clearServerSession() {

@@ -1897,7 +1897,7 @@ export function LoginWorkspace() {
 
     let cancelled = false;
 
-    async function redirectActiveSession() {
+    async function clearStaleLoginSession() {
       try {
         const reason =
           typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("reason");
@@ -1917,38 +1917,12 @@ export function LoginWorkspace() {
           return;
         }
 
-        const supabase = createBrowserSupabaseClient();
-        const { data } = await supabase.auth.getSession();
-
-        if (!data.session) {
-          if (!cancelled) setCheckingSession(false);
-          return;
-        }
-
-        setPending(true);
-        const session = await Promise.race([
-          syncServerSession(null, {
-            accessToken: data.session.access_token,
-            refreshToken: data.session.refresh_token,
-            userId: data.session.user.id,
-          }),
-          new Promise<null>((resolve) => {
-            window.setTimeout(() => resolve(null), 8_000);
-          }),
-        ]);
-
-        if (cancelled) return;
-
-        if (session) {
-          router.replace(destinationAfterLogin(currentLoginNextPath(), session.hasBusiness));
-          return;
-        }
-
-        await supabase.auth.signOut().catch(() => undefined);
         await clearServerSession();
-        setPending(false);
-        setError("Sesi lama tidak bisa dipulihkan. Silakan login ulang.");
-        setCheckingSession(false);
+        await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+
+        if (!cancelled) {
+          setCheckingSession(false);
+        }
       } catch {
         if (!cancelled) {
           await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
@@ -1960,12 +1934,12 @@ export function LoginWorkspace() {
       }
     }
 
-    void redirectActiveSession();
+    void clearStaleLoginSession();
 
     return () => {
       cancelled = true;
     };
-  }, [router, supabaseEnabled]);
+  }, [supabaseEnabled]);
 
   function switchAuthMode(nextMode: "login" | "register") {
     setMode(nextMode);
