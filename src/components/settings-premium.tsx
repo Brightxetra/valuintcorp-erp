@@ -755,7 +755,7 @@ function SecurityPanel() {
         <div>
           <h2 className="text-xl font-semibold text-slate-950">Security</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Kelola perangkat login, sesi aktif, mode tetap login, dan force logout perangkat yang tidak dikenal.
+            Kelola perangkat yang sedang dipakai dan sesi aktif lain. Riwayat login yang sudah keluar atau kedaluwarsa tidak ditampilkan.
           </p>
         </div>
         <button
@@ -772,7 +772,7 @@ function SecurityPanel() {
         <p className="text-sm font-semibold text-slate-950">Timeout sesi</p>
         <p className="mt-1 text-sm text-slate-600">
           Jika opsi <span className="font-medium">Tetap login</span> tidak dicentang saat login, sesi akan berakhir otomatis setelah tidak aktif.
-          Perangkat yang memakai opsi tetap login tidak terkena idle timeout, tetapi tetap bisa dikeluarkan manual dari daftar ini.
+          Daftar di bawah hanya menampilkan perangkat dengan sesi yang masih aktif.
         </p>
       </div>
 
@@ -787,7 +787,7 @@ function SecurityPanel() {
       ) : (
         <div className="space-y-3">
           {sessions.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Belum ada sesi perangkat yang tercatat.</div>
+            <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Belum ada sesi aktif yang tercatat.</div>
           ) : null}
           {sessions.map((session) => {
             const active = session.status === "active";
@@ -803,7 +803,7 @@ function SecurityPanel() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold text-slate-950">{session.deviceLabel}</p>
                         {session.current ? <StatusPill tone="emerald">Perangkat ini</StatusPill> : null}
-                        <StatusPill tone={active ? "emerald" : "gray"}>{active ? "Aktif" : "Keluar"}</StatusPill>
+                        <StatusPill tone="emerald">Aktif</StatusPill>
                         {session.rememberMe ? <StatusPill tone="cyan">Tetap login</StatusPill> : <StatusPill tone="amber">Idle timeout</StatusPill>}
                       </div>
                       <dl className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">

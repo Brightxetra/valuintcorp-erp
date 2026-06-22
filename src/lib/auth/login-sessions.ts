@@ -38,12 +38,26 @@ interface LoginSessionRow {
   revoked_at?: string | null;
 }
 
+type RawLoginSessionStatus = "active" | "revoked" | "expired" | string | null | undefined;
+
 function serviceOrNull() {
   return isSupabaseServiceConfigured() ? createServiceSupabaseClient() : null;
 }
 
 function safeIp(ipAddress: string | null) {
   return ipAddress && /^[0-9a-fA-F:.]+$/.test(ipAddress) ? ipAddress : null;
+}
+
+export function loginSessionStatus(
+  status: RawLoginSessionStatus,
+  expiresAt: string | null | undefined,
+  timestamp = Date.now(),
+): LoginSessionDevice["status"] {
+  if (status === "revoked") return "revoked";
+  if (status === "expired") return "expired";
+  if (status !== "active" && status != null) return "revoked";
+  if (expiresAt && Date.parse(expiresAt) < timestamp) return "expired";
+  return "active";
 }
 
 export async function upsertLoginSession(params: {
@@ -118,11 +132,7 @@ export async function getLoginSessionStatus(sessionToken: string | null) {
   if (error || !data) return "active" as const;
 
   const row = data as { status?: string | null; expires_at?: string | null };
-
-  if (row.status !== "active") return "revoked" as const;
-  if (row.expires_at && Date.parse(row.expires_at) < Date.now()) return "expired" as const;
-
-  return "active" as const;
+  return loginSessionStatus(row.status, row.expires_at);
 }
 
 export async function revokeLoginSessionByToken(sessionToken: string | null, userId?: string | null, reason = "logout") {
@@ -158,24 +168,33 @@ export async function listLoginSessionsForUser(userId: string, currentSessionTok
     .from("user_login_sessions")
     .select("id, auth_user_id, session_token_hash, device_label, ip_address, location, user_agent, remember_me, status, created_at, last_seen_at, expires_at, revoked_at")
     .eq("auth_user_id", userId)
+    .eq("status", "active")
     .order("last_seen_at", { ascending: false });
 
   if (error || !Array.isArray(data)) return [] satisfies LoginSessionDevice[];
 
-  return (data as LoginSessionRow[]).map((row) => ({
-    id: row.id,
-    deviceLabel: row.device_label ?? "Perangkat tidak dikenal",
-    ipAddress: row.ip_address ?? null,
-    location: row.location ?? null,
-    userAgent: row.user_agent ?? null,
-    rememberMe: Boolean(row.remember_me),
-    status: row.status ?? "active",
-    createdAt: row.created_at ?? "",
-    lastSeenAt: row.last_seen_at ?? "",
-    expiresAt: row.expires_at ?? null,
-    revokedAt: row.revoked_at ?? null,
-    current: Boolean(currentHash && row.session_token_hash === currentHash),
-  }));
+  const timestamp = Date.now();
+
+  return (data as LoginSessionRow[])
+    .map((row) => {
+      const status = loginSessionStatus(row.status, row.expires_at, timestamp);
+
+      return {
+        id: row.id,
+        deviceLabel: row.device_label ?? "Perangkat tidak dikenal",
+        ipAddress: row.ip_address ?? null,
+        location: row.location ?? null,
+        userAgent: row.user_agent ?? null,
+        rememberMe: Boolean(row.remember_me),
+        status,
+        createdAt: row.created_at ?? "",
+        lastSeenAt: row.last_seen_at ?? "",
+        expiresAt: row.expires_at ?? null,
+        revokedAt: row.revoked_at ?? null,
+        current: Boolean(currentHash && row.session_token_hash === currentHash),
+      } satisfies LoginSessionDevice;
+    })
+    .filter((session) => session.current || session.status === "active");
 }
 
 export async function revokeLoginSessionForUser(sessionId: string, userId: string) {
