@@ -39,6 +39,15 @@ export async function validateRequestSession(request: Request): Promise<SessionG
   }
 
   const sessionToken = cookies.get(serverSessionIdCookie) ?? null;
+
+  if (!sessionToken) {
+    return {
+      ok: false,
+      reason: "session-expired",
+      response: sessionEndedResponse("session-expired"),
+    };
+  }
+
   const status = await getLoginSessionStatus(sessionToken);
 
   if (status === "revoked") {

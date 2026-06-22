@@ -1944,11 +1944,15 @@ export function LoginWorkspace() {
           return;
         }
 
+        await supabase.auth.signOut().catch(() => undefined);
+        await clearServerSession();
         setPending(false);
         setError("Sesi lama tidak bisa dipulihkan. Silakan login ulang.");
         setCheckingSession(false);
       } catch {
         if (!cancelled) {
+          await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+          await clearServerSession();
           setPending(false);
           setError("Sesi lama tidak bisa dipulihkan. Silakan login ulang.");
           setCheckingSession(false);

@@ -80,12 +80,17 @@ export async function getServerAccessToken() {
   const cookieStore = await cookies();
   const rememberMe = cookieStore.get(serverSessionRememberCookie)?.value === "1";
   const lastActivity = Number(cookieStore.get(serverLastActivityCookie)?.value ?? "");
+  const sessionToken = cookieStore.get(serverSessionIdCookie)?.value ?? null;
+
+  if (!sessionToken) {
+    return null;
+  }
 
   if (isIdleSessionExpired(Number.isFinite(lastActivity) ? lastActivity : null, rememberMe)) {
     return null;
   }
 
-  const sessionStatus = await getLoginSessionStatus(cookieStore.get(serverSessionIdCookie)?.value ?? null);
+  const sessionStatus = await getLoginSessionStatus(sessionToken);
 
   if (sessionStatus !== "active" && sessionStatus !== "missing") {
     return null;
