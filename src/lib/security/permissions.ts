@@ -30,9 +30,9 @@ export const permissionCatalog: ReadonlyArray<{
   { permission: "payroll:run", label: "Payroll", description: "Menjalankan dan memproses penggajian." },
   { permission: "tax:prepare", label: "Pajak", description: "Mengelola kesiapan dan dokumen pajak." },
   { permission: "admin:manage_users", label: "Team & akses", description: "Mengundang anggota dan mengatur akses." },
-  { permission: "pos:read", label: "POS cabang", description: "Melihat POS dan rekap cabang yang ditugaskan." },
-  { permission: "pos:sell", label: "Input penjualan POS", description: "Mencatat penjualan tunai/QRIS cabang." },
-  { permission: "pos:expenses", label: "Biaya cabang", description: "Mencatat biaya operasional cabang." },
+  { permission: "pos:read", label: "POS cabang", description: "Membuka menu POS untuk cabang yang ditugaskan." },
+  { permission: "pos:sell", label: "Kasir POS cabang", description: "Mencatat penjualan Tunai dan QRIS manual di cabang." },
+  { permission: "pos:expenses", label: "Supervisor biaya cabang", description: "Melihat rekap POS dan mencatat biaya operasional cabang." },
 ] as const;
 
 const permissionsByRole: Record<BusinessRole, Permission[]> = {
