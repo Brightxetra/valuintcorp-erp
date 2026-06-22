@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { permissionsForMember, permissionsForRole, type Permission } from "@/lib/security/permissions";
 import type { BusinessRole } from "@/lib/domain/types";
 import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { validateRequestSession } from "@/lib/auth/session-guard";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
 export interface ApiContext {
@@ -90,6 +91,12 @@ export async function requireApiPermission(
     return { ...demoContext, role, permissions: permissionsForRole(role) };
   }
 
+  const sessionGuard = await validateRequestSession(request);
+
+  if (!sessionGuard.ok) {
+    return sessionGuard.response;
+  }
+
   if (!businessId) {
     return jsonNoStore({ error: "x-business-id header is required." }, { status: 400 });
   }
@@ -169,6 +176,12 @@ export async function requireAuthenticatedUser(
       userEmail: "demo@valuintcorp.test",
       userName: "Demo Owner",
     };
+  }
+
+  const sessionGuard = await validateRequestSession(request);
+
+  if (!sessionGuard.ok) {
+    return sessionGuard.response;
   }
 
   const authorization = request.headers.get("authorization");

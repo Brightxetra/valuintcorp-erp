@@ -1,8 +1,27 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { serverAccessTokenCookie, serverBusinessCookie, serverRefreshTokenCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import {
+  serverAccessTokenCookie,
+  serverBusinessCookie,
+  serverLastActivityCookie,
+  serverRefreshTokenCookie,
+  serverSessionIdCookie,
+  serverSessionRememberCookie,
+  shouldUseDemoFallback,
+} from "@/lib/auth/runtime";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
+import { getLoginSessionStatus, revokeLoginSessionByToken, upsertLoginSession } from "@/lib/auth/login-sessions";
+import {
+  isIdleSessionExpired,
+  nowSeconds,
+  parseCookieHeader,
+  rememberCookieValue,
+  requestCookie,
+  sessionCookieMaxAge,
+  sessionCookieOptions,
+  sessionEndedResponse,
+} from "@/lib/auth/session-policy";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
@@ -10,16 +29,38 @@ const syncSessionSchema = z.object({
   accessToken: z.string().min(20),
   refreshToken: z.string().min(20).optional(),
   businessId: z.string().uuid().optional(),
+  rememberMe: z.boolean().optional(),
+  freshLogin: z.boolean().optional(),
 });
 
-function cookieOptions(maxAge = 60 * 60) {
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge,
-  };
+function setSessionCookies(
+  response: NextResponse,
+  params: {
+    accessToken: string;
+    refreshToken?: string;
+    businessId: string | null;
+    sessionToken: string;
+    rememberMe: boolean;
+  },
+) {
+  const maxAge = sessionCookieMaxAge(params.rememberMe);
+  const accessMaxAge = Math.min(accessTokenCookieMaxAge(params.accessToken), maxAge);
+
+  response.cookies.set(serverAccessTokenCookie, params.accessToken, sessionCookieOptions(accessMaxAge));
+
+  if (params.refreshToken) {
+    response.cookies.set(serverRefreshTokenCookie, params.refreshToken, sessionCookieOptions(maxAge));
+  }
+
+  response.cookies.set(serverSessionIdCookie, params.sessionToken, sessionCookieOptions(maxAge));
+  response.cookies.set(serverSessionRememberCookie, rememberCookieValue(params.rememberMe), sessionCookieOptions(maxAge));
+  response.cookies.set(serverLastActivityCookie, String(nowSeconds()), sessionCookieOptions(maxAge));
+
+  if (params.businessId) {
+    response.cookies.set(serverBusinessCookie, params.businessId, sessionCookieOptions(maxAge));
+  } else {
+    response.cookies.set(serverBusinessCookie, "", sessionCookieOptions(0));
+  }
 }
 
 function createTokenSupabaseClient(accessToken: string) {
@@ -87,25 +128,62 @@ export async function POST(request: Request) {
     { ok: true, defaultBusinessId, hasBusiness: Boolean(defaultBusinessId) },
     { headers: { "cache-control": "no-store" } },
   );
-  response.cookies.set(serverAccessTokenCookie, parsed.data.accessToken, cookieOptions(accessTokenCookieMaxAge(parsed.data.accessToken)));
+  const cookies = parseCookieHeader(request.headers.get("cookie"));
+  const existingRememberMe = cookies.get(serverSessionRememberCookie) === "1";
+  const rememberMe = parsed.data.rememberMe ?? existingRememberMe;
+  const existingSessionToken = requestCookie(request, serverSessionIdCookie);
+  const freshLogin = parsed.data.freshLogin === true;
+  const lastActivity = Number(cookies.get(serverLastActivityCookie) ?? "");
 
-  if (parsed.data.refreshToken) {
-    response.cookies.set(serverRefreshTokenCookie, parsed.data.refreshToken, cookieOptions(60 * 60 * 24 * 30));
+  if (!freshLogin && isIdleSessionExpired(Number.isFinite(lastActivity) ? lastActivity : null, rememberMe)) {
+    return sessionEndedResponse("session-expired");
   }
 
-  if (defaultBusinessId) {
-    response.cookies.set(serverBusinessCookie, defaultBusinessId, cookieOptions(60 * 60 * 24 * 30));
-  } else {
-    response.cookies.set(serverBusinessCookie, "", cookieOptions(0));
+  if (existingSessionToken && !freshLogin) {
+    const existingSessionStatus = await getLoginSessionStatus(existingSessionToken);
+
+    if (existingSessionStatus === "revoked") {
+      return sessionEndedResponse("session-revoked");
+    }
+
+    if (existingSessionStatus === "expired") {
+      return sessionEndedResponse("session-expired");
+    }
   }
+
+  if (existingSessionToken && freshLogin) {
+    await revokeLoginSessionByToken(existingSessionToken, null, "superseded_login");
+  }
+
+  const sessionToken = freshLogin || !existingSessionToken ? crypto.randomUUID() : existingSessionToken;
+
+  await upsertLoginSession({
+    request,
+    sessionToken,
+    userId: userData.user.id,
+    rememberMe,
+  });
+
+  setSessionCookies(response, {
+    accessToken: parsed.data.accessToken,
+    refreshToken: parsed.data.refreshToken,
+    businessId: defaultBusinessId,
+    sessionToken,
+    rememberMe,
+  });
 
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  await revokeLoginSessionByToken(requestCookie(request, serverSessionIdCookie), null, "logout");
+
   const response = NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
-  response.cookies.set(serverAccessTokenCookie, "", cookieOptions(0));
-  response.cookies.set(serverRefreshTokenCookie, "", cookieOptions(0));
-  response.cookies.set(serverBusinessCookie, "", cookieOptions(0));
+  response.cookies.set(serverAccessTokenCookie, "", sessionCookieOptions(0));
+  response.cookies.set(serverRefreshTokenCookie, "", sessionCookieOptions(0));
+  response.cookies.set(serverBusinessCookie, "", sessionCookieOptions(0));
+  response.cookies.set(serverSessionIdCookie, "", sessionCookieOptions(0));
+  response.cookies.set(serverSessionRememberCookie, "", sessionCookieOptions(0));
+  response.cookies.set(serverLastActivityCookie, "", sessionCookieOptions(0));
   return response;
 }

@@ -65,6 +65,7 @@ const requiredMigrations = [
   "supabase/migrations/018_lockdown_security_definer_rpcs.sql",
   "supabase/migrations/019_branch_pos_and_member_access.sql",
   "supabase/migrations/020_api_role_table_privileges.sql",
+  "supabase/migrations/021_user_login_sessions.sql",
 ];
 
 const requiredFiles = [
@@ -104,6 +105,8 @@ requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "
 requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "create or replace function public.post_branch_expense_internal");
 requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "grant select, insert, update, delete on all tables in schema public to authenticated, service_role");
 requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "alter default privileges in schema public");
+requireFileSnippet("supabase/migrations/021_user_login_sessions.sql", "create table if not exists public.user_login_sessions");
+requireFileSnippet("supabase/migrations/021_user_login_sessions.sql", "session_token_hash text not null unique");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");
@@ -139,6 +142,7 @@ async function runLiveSchemaCheck() {
     "settlement_records",
     "attachments",
     "branch_expenses",
+    "user_login_sessions",
   ];
 
   for (const table of requiredTables) {

@@ -38,7 +38,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 020", () => {
+  it("keeps production ERP migrations in order through 021", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -62,6 +62,7 @@ describe("Supabase migration contract", () => {
       "018_lockdown_security_definer_rpcs.sql",
       "019_branch_pos_and_member_access.sql",
       "020_api_role_table_privileges.sql",
+      "021_user_login_sessions.sql",
     ]);
   });
 
@@ -227,6 +228,19 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("grant usage, select on all sequences in schema public to authenticated, service_role");
     expect(migration).toContain("alter default privileges in schema public");
     expect(migration).toContain("grant select, insert, update, delete on tables to authenticated, service_role");
+  });
+
+  it("tracks app login sessions for idle timeout and device logout", () => {
+    const migration = readFileSync(join(migrationsDir, "021_user_login_sessions.sql"), "utf8");
+
+    expect(migration).toContain("create table if not exists public.user_login_sessions");
+    expect(migration).toContain("session_token_hash text not null unique");
+    expect(migration).toContain("remember_me boolean not null default false");
+    expect(migration).toContain("alter table public.user_login_sessions enable row level security");
+    expect(migration).toContain("users can read own login sessions");
+    expect(migration).toContain("revoke insert, update, delete on public.user_login_sessions from authenticated");
+    expect(migration).toContain("grant select on public.user_login_sessions to authenticated");
+    expect(migration).toContain("grant select, insert, update, delete on public.user_login_sessions to service_role");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {

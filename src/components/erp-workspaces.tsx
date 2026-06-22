@@ -45,6 +45,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   erpApiDownload,
   erpApiFetch,
+  clearServerSession,
   shouldUseDemoFallbackBrowser,
   syncServerSession,
 } from "@/lib/erp/client-api";
@@ -1898,6 +1899,24 @@ export function LoginWorkspace() {
 
     async function redirectActiveSession() {
       try {
+        const reason =
+          typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("reason");
+
+        if (reason === "session-expired" || reason === "session-revoked") {
+          await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+          await clearServerSession();
+
+          if (!cancelled) {
+            setError(
+              reason === "session-revoked"
+                ? "Sesi perangkat ini sudah dikeluarkan dari menu Security."
+                : "Sesi berakhir karena tidak aktif. Silakan login kembali.",
+            );
+            setCheckingSession(false);
+          }
+          return;
+        }
+
         const supabase = createBrowserSupabaseClient();
         const { data } = await supabase.auth.getSession();
 
@@ -1950,6 +1969,7 @@ export function LoginWorkspace() {
 
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
+    const rememberMe = formData.get("rememberMe") === "on";
 
     if (demoFallback) {
       setSuccess("Demo mode aktif. Supabase env belum dikonfigurasi.");
@@ -2002,7 +2022,7 @@ export function LoginWorkspace() {
         refreshToken: result.data.session.refresh_token,
         userId: result.data.session.user.id,
       };
-      const session = await syncServerSession(null, signedInTokens);
+      const session = await syncServerSession(null, signedInTokens, { rememberMe, freshLogin: true });
       const requestedNext = currentLoginNextPath();
 
       if (!session) {
@@ -2012,7 +2032,7 @@ export function LoginWorkspace() {
       const bootstrap = await tryBootstrapDemoAccount();
 
       if (bootstrap?.demoAccount && bootstrap.businessId) {
-        const syncedDemoSession = await syncServerSession(bootstrap.businessId, signedInTokens);
+        const syncedDemoSession = await syncServerSession(bootstrap.businessId, signedInTokens, { rememberMe });
         setSuccess("Login demo berhasil. Sandbox demo siap dipakai.");
         router.replace(destinationAfterLogin(requestedNext, Boolean(syncedDemoSession?.hasBusiness ?? true)));
         return;
@@ -2079,6 +2099,20 @@ export function LoginWorkspace() {
           <form action={submitAuth} className="space-y-3">
             <TextField name="email" label="Email" type="email" autoComplete="email" required />
             <TextField name="password" label="Password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
+            <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                name="rememberMe"
+                className="mt-0.5 size-4 rounded border-slate-300"
+                aria-label="Tetap login di perangkat ini"
+              />
+              <span>
+                <span className="block font-medium text-slate-800">Tetap login di perangkat ini</span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  Jika tidak dicentang, sesi otomatis berakhir setelah tidak aktif.
+                </span>
+              </span>
+            </label>
             {captchaEnabled ? (
               <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
                 <HCaptcha

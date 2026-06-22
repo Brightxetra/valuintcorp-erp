@@ -36,7 +36,7 @@ import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context"
 import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import type { Permission } from "@/lib/security/permissions";
-import { clearServerSession } from "@/lib/erp/client-api";
+import { browserIdleSessionExpired, clearServerSession, touchServerSessionActivity } from "@/lib/erp/client-api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 // ============================================================================
@@ -631,6 +631,57 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       document.body.style.overflow = previousOverflow;
     };
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (demoMode) return undefined;
+
+    let ended = false;
+
+    async function endExpiredSession() {
+      if (ended) return;
+      ended = true;
+      await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+      await clearServerSession();
+      router.push("/login?reason=session-expired");
+    }
+
+    function handleActivity() {
+      void touchServerSessionActivity().then((active) => {
+        if (!active) void endExpiredSession();
+      });
+    }
+
+    const activityEvents = ["click", "keydown", "pointerdown", "scroll", "touchstart"] as const;
+
+    for (const eventName of activityEvents) {
+      window.addEventListener(eventName, handleActivity, { passive: true });
+    }
+
+    const visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        if (browserIdleSessionExpired()) {
+          void endExpiredSession();
+        } else {
+          handleActivity();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", visibilityHandler);
+
+    const timer = window.setInterval(() => {
+      if (browserIdleSessionExpired()) {
+        void endExpiredSession();
+      }
+    }, 30_000);
+
+    return () => {
+      for (const eventName of activityEvents) {
+        window.removeEventListener(eventName, handleActivity);
+      }
+      document.removeEventListener("visibilitychange", visibilityHandler);
+      window.clearInterval(timer);
+    };
+  }, [demoMode, router]);
 
   async function signOut() {
     setAccountMenuOpen(false);

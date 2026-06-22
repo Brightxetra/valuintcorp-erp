@@ -1,7 +1,14 @@
 "use client";
 
 import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
-import { serverAccessTokenCookie, serverBusinessCookie, serverRefreshTokenCookie } from "@/lib/auth/runtime";
+import {
+  serverAccessTokenCookie,
+  serverBusinessCookie,
+  serverLastActivityCookie,
+  serverRefreshTokenCookie,
+  serverSessionIdCookie,
+  serverSessionRememberCookie,
+} from "@/lib/auth/runtime";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
 import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
 import type { ErpWorkspace } from "@/lib/erp/types";
@@ -9,6 +16,10 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { hasSupabasePublicConfig } from "@/lib/supabase/config";
 
 const activeBusinessKey = "valuintcorp.activeBusinessId";
+const browserSessionRememberKey = "valuintcorp.session.remember";
+const browserSessionLastActivityKey = "valuintcorp.session.lastActivity";
+const activityTouchIntervalMs = 60_000;
+let lastActivityTouchAt = 0;
 
 export interface BusinessOption {
   id: string;
@@ -30,6 +41,11 @@ export interface SessionSyncTokens {
   userId?: string | null;
 }
 
+export interface SessionSyncOptions {
+  rememberMe?: boolean;
+  freshLogin?: boolean;
+}
+
 interface BrowserBusinessResolution {
   businessId: string | null;
   resolved: boolean;
@@ -47,6 +63,12 @@ export function shouldUseDemoFallbackBrowser() {
   return !isSupabaseBrowserEnabled() || isExplicitDemoModeBrowser();
 }
 
+function idleSessionTimeoutMs() {
+  const configured = Number(process.env.NEXT_PUBLIC_SESSION_IDLE_TIMEOUT_SECONDS);
+  const seconds = Number.isFinite(configured) && configured >= 60 ? configured : 30 * 60;
+  return seconds * 1000;
+}
+
 export function getStoredActiveBusinessId() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(activeBusinessKey);
@@ -62,6 +84,36 @@ function clearStoredActiveBusinessId() {
   window.localStorage.removeItem(activeBusinessKey);
 }
 
+export function storeBrowserSessionPolicy(rememberMe: boolean, timestamp = Date.now()) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(browserSessionRememberKey, rememberMe ? "1" : "0");
+  window.localStorage.setItem(browserSessionLastActivityKey, String(timestamp));
+}
+
+export function clearBrowserSessionPolicy() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(browserSessionRememberKey);
+  window.localStorage.removeItem(browserSessionLastActivityKey);
+}
+
+export function browserSessionRemembered() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(browserSessionRememberKey) === "1";
+}
+
+export function browserIdleSessionExpired(timestamp = Date.now()) {
+  if (typeof window === "undefined" || browserSessionRemembered()) return false;
+  const lastActivity = Number(window.localStorage.getItem(browserSessionLastActivityKey) ?? "");
+  if (!Number.isFinite(lastActivity) || lastActivity <= 0) return false;
+  return timestamp - lastActivity > idleSessionTimeoutMs();
+}
+
+export function markBrowserSessionActivity(timestamp = Date.now()) {
+  if (typeof window === "undefined") return;
+  if (browserSessionRemembered()) return;
+  window.localStorage.setItem(browserSessionLastActivityKey, String(timestamp));
+}
+
 export function buildBrowserCookie(name: string, value: string, maxAge: number, secure: boolean) {
   return `${name}=${value}; Path=/; SameSite=Lax; Max-Age=${Math.max(0, Math.floor(maxAge))}${secure ? "; Secure" : ""}`;
 }
@@ -75,15 +127,22 @@ function writeBrowserCookie(name: string, value: string, maxAge: number) {
   document.cookie = buildBrowserCookie(name, value, maxAge, browserCookieSecure());
 }
 
-function persistServerSessionCookies(tokens: SessionSyncTokens, businessId: string | null) {
-  writeBrowserCookie(serverAccessTokenCookie, tokens.accessToken, accessTokenCookieMaxAge(tokens.accessToken));
+function persistServerSessionCookies(tokens: SessionSyncTokens, businessId: string | null, rememberMe: boolean) {
+  const sessionMaxAge = rememberMe ? 60 * 60 * 24 * 30 : Math.floor(idleSessionTimeoutMs() / 1000);
+  const sessionToken = crypto.randomUUID();
+  writeBrowserCookie(serverAccessTokenCookie, tokens.accessToken, Math.min(accessTokenCookieMaxAge(tokens.accessToken), sessionMaxAge));
 
   if (tokens.refreshToken) {
-    writeBrowserCookie(serverRefreshTokenCookie, tokens.refreshToken, 60 * 60 * 24 * 30);
+    writeBrowserCookie(serverRefreshTokenCookie, tokens.refreshToken, sessionMaxAge);
   }
 
+  writeBrowserCookie(serverSessionIdCookie, sessionToken, sessionMaxAge);
+  writeBrowserCookie(serverSessionRememberCookie, rememberMe ? "1" : "0", sessionMaxAge);
+  writeBrowserCookie(serverLastActivityCookie, String(Math.floor(Date.now() / 1000)), sessionMaxAge);
+  storeBrowserSessionPolicy(rememberMe);
+
   if (businessId) {
-    writeBrowserCookie(serverBusinessCookie, businessId, 60 * 60 * 24 * 30);
+    writeBrowserCookie(serverBusinessCookie, businessId, sessionMaxAge);
     storeActiveBusinessId(businessId);
   } else {
     writeBrowserCookie(serverBusinessCookie, "", 0);
@@ -95,7 +154,11 @@ function clearBrowserSessionCookies() {
   writeBrowserCookie(serverAccessTokenCookie, "", 0);
   writeBrowserCookie(serverRefreshTokenCookie, "", 0);
   writeBrowserCookie(serverBusinessCookie, "", 0);
+  writeBrowserCookie(serverSessionIdCookie, "", 0);
+  writeBrowserCookie(serverSessionRememberCookie, "", 0);
+  writeBrowserCookie(serverLastActivityCookie, "", 0);
   clearStoredActiveBusinessId();
+  clearBrowserSessionPolicy();
 }
 
 async function getBrowserSession() {
@@ -147,9 +210,10 @@ async function resolveBrowserBusinessId(
 async function syncServerSessionWithBrowserCookies(
   tokens: SessionSyncTokens,
   businessId?: string | null,
+  rememberMe = false,
 ): Promise<SessionSyncResult> {
   const business = await resolveBrowserBusinessId(businessId, tokens.userId);
-  persistServerSessionCookies(tokens, business.businessId);
+  persistServerSessionCookies(tokens, business.businessId, rememberMe);
 
   return {
     ok: true,
@@ -161,14 +225,28 @@ async function syncServerSessionWithBrowserCookies(
 export async function syncServerSession(
   businessId?: string | null,
   explicitTokens?: SessionSyncTokens | null,
+  options: SessionSyncOptions = {},
 ): Promise<SessionSyncResult | null> {
+  if (!explicitTokens && browserIdleSessionExpired()) {
+    await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+    clearBrowserSessionCookies();
+    return null;
+  }
+
   const session = explicitTokens ? null : await getBrowserSession();
   const accessToken = explicitTokens?.accessToken ?? session?.access_token;
   const refreshToken = explicitTokens?.refreshToken ?? session?.refresh_token;
+  const rememberMe = options.rememberMe ?? browserSessionRemembered();
 
   if (!accessToken) return null;
 
-  const payload: { accessToken: string; refreshToken?: string; businessId?: string } = {
+  const payload: {
+    accessToken: string;
+    refreshToken?: string;
+    businessId?: string;
+    rememberMe?: boolean;
+    freshLogin?: boolean;
+  } = {
     accessToken,
   };
 
@@ -179,6 +257,9 @@ export async function syncServerSession(
   if (businessId) {
     payload.businessId = businessId;
   }
+
+  payload.rememberMe = rememberMe;
+  payload.freshLogin = options.freshLogin === true;
 
   const fallbackTokens: SessionSyncTokens = {
     accessToken,
@@ -196,6 +277,7 @@ export async function syncServerSession(
 
     if (response.ok) {
       const synced = (await response.json()) as SessionSyncResult;
+      storeBrowserSessionPolicy(rememberMe);
 
       if (synced.defaultBusinessId) {
         storeActiveBusinessId(synced.defaultBusinessId);
@@ -211,7 +293,7 @@ export async function syncServerSession(
     // Fall through to browser cookie persistence below.
   }
 
-  return syncServerSessionWithBrowserCookies(fallbackTokens, businessId);
+  return syncServerSessionWithBrowserCookies(fallbackTokens, businessId, rememberMe);
 }
 
 export async function clearServerSession() {
@@ -223,10 +305,47 @@ export async function clearServerSession() {
   }).catch(() => undefined);
 }
 
+export async function touchServerSessionActivity(force = false) {
+  if (shouldUseDemoFallbackBrowser()) return true;
+  if (browserIdleSessionExpired()) {
+    await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+    clearBrowserSessionCookies();
+    return false;
+  }
+
+  const now = Date.now();
+  markBrowserSessionActivity(now);
+
+  if (!force && now - lastActivityTouchAt < activityTouchIntervalMs) {
+    return true;
+  }
+
+  lastActivityTouchAt = now;
+  const response = await fetch("/api/auth/session/activity", {
+    method: "POST",
+    cache: "no-store",
+  }).catch(() => null);
+
+  if (response?.status === 401) {
+    await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+    clearBrowserSessionCookies();
+    return false;
+  }
+
+  return true;
+}
+
 export async function erpApiFetch<T>(
   endpoint: string,
   options: RequestInit & { businessId?: string | null } = {},
 ): Promise<T> {
+  if (!(await touchServerSessionActivity())) {
+    if (typeof window !== "undefined") {
+      window.location.assign("/login?reason=session-expired");
+    }
+    throw new Error("Sesi berakhir karena tidak aktif.");
+  }
+
   const headers = new Headers(options.headers);
   const token = await getAccessToken();
 
@@ -265,6 +384,13 @@ export async function erpApiFetch<T>(
 }
 
 export async function erpApiDownload(endpoint: string, businessId: string | null | undefined) {
+  if (!(await touchServerSessionActivity())) {
+    if (typeof window !== "undefined") {
+      window.location.assign("/login?reason=session-expired");
+    }
+    throw new Error("Sesi berakhir karena tidak aktif.");
+  }
+
   const headers = new Headers();
   const token = await getAccessToken();
 

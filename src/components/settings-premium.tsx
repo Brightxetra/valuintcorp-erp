@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2,
   ChevronRight,
@@ -10,8 +10,11 @@ import {
   FileText,
   Globe,
   ImageIcon,
+  Laptop,
   MapPin,
   Package,
+  Power,
+  RefreshCw,
   Settings,
   Shield,
   ShoppingBag,
@@ -25,7 +28,7 @@ import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { permissionCatalog } from "@/lib/security/permissions";
-import { syncServerSession } from "@/lib/erp/client-api";
+import { clearServerSession, syncServerSession } from "@/lib/erp/client-api";
 import { notify } from "@/lib/notify";
 
 type SettingsCategory =
@@ -38,9 +41,10 @@ type SettingsCategory =
   | "warehouses"
   | "locations"
   | "onboarding"
+  | "security"
   | "integrations";
 
-type SettingsTab = "overview" | "business" | "team" | "data" | "integrations";
+type SettingsTab = "overview" | "business" | "team" | "data" | "security" | "integrations";
 
 const industryLabels: Record<string, string> = {
   food_beverage: "F&B ringan",
@@ -88,6 +92,21 @@ interface SettingsPanelProps {
   uploadBusinessLogo: (file: File) => Promise<void>;
   logoPreviewUrl: string | null;
   logoUploading: boolean;
+}
+
+interface LoginSessionDevice {
+  id: string;
+  deviceLabel: string;
+  ipAddress: string | null;
+  location: string | null;
+  userAgent: string | null;
+  rememberMe: boolean;
+  status: "active" | "revoked" | "expired";
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  current: boolean;
 }
 
 function fileToDataUrl(file: File) {
@@ -656,6 +675,179 @@ function IntegrationsPanel({ workspace }: { workspace: ErpWorkspace }) {
   );
 }
 
+function formatSessionDate(value: string | null) {
+  if (!value) return "Tidak tersedia";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Tidak tersedia";
+
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function SecurityPanel() {
+  const { request, demoMode } = useErpWorkspace();
+  const [sessions, setSessions] = useState<LoginSessionDevice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const loadSessions = useCallback(async () => {
+    setLoading(true);
+
+    try {
+      const body = await request<{ sessions: LoginSessionDevice[] }>("/api/auth/sessions", {
+        businessId: null,
+      });
+      setSessions(body.sessions);
+    } catch (caught) {
+      notify.error("Daftar perangkat gagal dimuat", {
+        description: caught instanceof Error ? caught.message : "Coba lagi.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [request]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadSessions();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadSessions]);
+
+  async function revokeSession(session: LoginSessionDevice) {
+    setRevokingId(session.id);
+
+    try {
+      const body = await request<{ current: boolean }>("/api/auth/sessions", {
+        method: "DELETE",
+        businessId: null,
+        body: JSON.stringify({ sessionId: session.id }),
+      });
+
+      notify.success(body.current ? "Perangkat ini dikeluarkan" : "Perangkat dikeluarkan", {
+        description: session.deviceLabel,
+      });
+
+      if (body.current) {
+        await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+        await clearServerSession();
+        window.location.assign("/login?reason=session-revoked");
+        return;
+      }
+
+      await loadSessions();
+    } catch (caught) {
+      notify.error("Perangkat gagal dikeluarkan", {
+        description: caught instanceof Error ? caught.message : "Coba lagi.",
+      });
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-950">Security</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Kelola perangkat login, sesi aktif, mode tetap login, dan force logout perangkat yang tidak dikenal.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadSessions()}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <RefreshCw className="size-4" aria-hidden />
+          Refresh
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-sm font-semibold text-slate-950">Timeout sesi</p>
+        <p className="mt-1 text-sm text-slate-600">
+          Jika opsi <span className="font-medium">Tetap login</span> tidak dicentang saat login, sesi akan berakhir otomatis setelah tidak aktif.
+          Perangkat yang memakai opsi tetap login tidak terkena idle timeout, tetapi tetap bisa dikeluarkan manual dari daftar ini.
+        </p>
+      </div>
+
+      {demoMode ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+          Mode demo fallback memakai perangkat simulasi. Data perangkat asli tersedia saat Supabase production aktif.
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Memuat perangkat login...</div>
+      ) : (
+        <div className="space-y-3">
+          {sessions.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Belum ada sesi perangkat yang tercatat.</div>
+          ) : null}
+          {sessions.map((session) => {
+            const active = session.status === "active";
+
+            return (
+              <div key={session.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                      <Laptop className="size-5" aria-hidden />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-slate-950">{session.deviceLabel}</p>
+                        {session.current ? <StatusPill tone="emerald">Perangkat ini</StatusPill> : null}
+                        <StatusPill tone={active ? "emerald" : "gray"}>{active ? "Aktif" : "Keluar"}</StatusPill>
+                        {session.rememberMe ? <StatusPill tone="cyan">Tetap login</StatusPill> : <StatusPill tone="amber">Idle timeout</StatusPill>}
+                      </div>
+                      <dl className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+                        <div>
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">IP</dt>
+                          <dd>{session.ipAddress ?? "Tidak tersedia"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Lokasi</dt>
+                          <dd>{session.location ?? "Tidak tersedia"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Terakhir aktif</dt>
+                          <dd>{formatSessionDate(session.lastSeenAt)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Kadaluarsa</dt>
+                          <dd>{session.rememberMe ? "Persistent" : formatSessionDate(session.expiresAt)}</dd>
+                        </div>
+                      </dl>
+                      {session.userAgent ? (
+                        <p className="mt-3 break-words rounded-lg bg-slate-50 p-2 text-xs text-slate-500">{session.userAgent}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void revokeSession(session)}
+                    disabled={!active || revokingId === session.id}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Power className="size-4" aria-hidden />
+                    {session.current ? "Logout perangkat ini" : "Force logout"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function OnboardingSettingsPanel({
   workspace,
   pending,
@@ -743,6 +935,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     { id: "business", label: "Bisnis" },
     { id: "team", label: "Team" },
     { id: "data", label: "Master Data" },
+    { id: "security", label: "Security" },
     { id: "integrations", label: "Integrasi" },
   ];
   const canManageUsers = workspace.permissions.includes("admin:manage_users");
@@ -757,6 +950,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     { id: "warehouses", tab: "data", title: "Warehouses", description: "Gudang dan lokasi stok", icon: Warehouse, count: workspace.warehouses.length },
     { id: "locations", tab: "data", title: "Lokasi/Cabang", description: "Branch, outlet, store", icon: MapPin, count: workspace.locations.length },
     { id: "onboarding", tab: "business", title: "Setup & Onboarding", description: "Apply template atau buat bisnis baru", icon: Settings },
+    { id: "security", tab: "security", title: "Security", description: "Perangkat login dan force logout", icon: Shield },
     { id: "integrations", tab: "integrations", title: "Integrasi", description: "Supabase dan modul aktif", icon: Globe },
   ], [workspace]);
 
@@ -1051,6 +1245,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     if (selectedCategory === "warehouses") return <MasterDataPanel {...panelProps} type="warehouses" />;
     if (selectedCategory === "locations") return <LocationsPanel {...panelProps} />;
     if (selectedCategory === "onboarding") return <OnboardingSettingsPanel {...panelProps} />;
+    if (selectedCategory === "security") return <SecurityPanel />;
     return <IntegrationsPanel workspace={workspace} />;
   }
 

@@ -2,7 +2,7 @@
 
 ## Deployment
 
-- Apply migrations `001` through `020` in order on a clean Supabase project before enabling production traffic. Migrations `019` and `020` are required before enabling branch POS or per-member menu access.
+- Apply migrations `001` through `021` in order on a clean Supabase project before enabling production traffic. Migrations `019` and `020` are required before enabling branch POS or per-member menu access; migration `021` is required for idle timeout, remembered sessions, and Settings > Security device logout.
 - Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_DEMO_MODE=false`, `NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true`, `SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments`, and `CRON_SECRET`.
 - Enable Supabase Auth leaked password protection before accepting production sign-ups.
 - Confirm `/login` creates a Supabase browser session and `/api/auth/session` writes the server session cookie.
