@@ -35,7 +35,7 @@ import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
 import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import type { Permission } from "@/lib/security/permissions";
+import { posExperienceForPermissions, type Permission } from "@/lib/security/permissions";
 import { browserIdleSessionExpired, clearServerSession, touchServerSessionActivity } from "@/lib/erp/client-api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
@@ -594,10 +594,37 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   const period = workspace.period;
   const user = workspace.user;
   const taskCount = workspace.tasks.length;
+  const posExperience = posExperienceForPermissions(workspace.permissions);
+  const isPosFocusedShell = posExperience !== "erp";
+  const posRoleLabel =
+    posExperience === "supervisor"
+      ? "Supervisor cabang"
+      : posExperience === "cashier"
+        ? "Kasir cabang"
+        : "Akses POS cabang";
+  const posRoleDescription =
+    posExperience === "supervisor"
+      ? "Input penjualan, pantau rekap, dan catat biaya cabang."
+      : posExperience === "cashier"
+        ? "Input penjualan cabang tanpa menu ERP lain."
+        : "Pantau akses POS cabang yang ditugaskan.";
+  const branchSummary = useMemo(() => {
+    if (workspace.locations.length === 0) return "Cabang belum ditugaskan";
+    if (workspace.locations.length === 1) return workspace.locations[0]?.name ?? "1 cabang";
+    return `${workspace.locations.length} cabang ditugaskan`;
+  }, [workspace.locations]);
 
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPosFocusedShell) {
+        if (e.key === "Escape") {
+          setAccountMenuOpen(false);
+          setSidebarOpen(false);
+        }
+        return;
+      }
+
       // Command Palette: Cmd/Ctrl + K
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
@@ -620,7 +647,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [isPosFocusedShell]);
 
   useEffect(() => {
     if (!sidebarOpen) return undefined;
@@ -683,6 +710,12 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
     };
   }, [demoMode, router]);
 
+  useEffect(() => {
+    if (isPosFocusedShell && !isActive(pathname, "/pos")) {
+      router.replace("/pos");
+    }
+  }, [isPosFocusedShell, pathname, router]);
+
   async function signOut() {
     setAccountMenuOpen(false);
 
@@ -692,6 +725,108 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
 
     await clearServerSession();
     router.push("/login");
+  }
+
+  if (isPosFocusedShell) {
+    return (
+      <div className="min-h-dvh bg-emerald-50/40 text-slate-950">
+        <header className="sticky top-0 z-30 border-b border-emerald-100 bg-white/95 backdrop-blur">
+          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 lg:px-6">
+            <Link href="/pos" className="flex min-w-0 items-center gap-3">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-950 text-white">
+                <ShoppingBag className="size-5" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-slate-950">Valuintcorp POS</span>
+                <span className="block truncate text-xs text-slate-500">{business.displayName}</span>
+              </div>
+            </Link>
+
+            <div className="hidden min-w-0 flex-1 items-center justify-center gap-2 md:flex">
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800">
+                <ShoppingBag className="size-4" aria-hidden />
+                {posRoleLabel}
+              </span>
+              <span className="truncate rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600">
+                {branchSummary}
+              </span>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800">
+                Tunai & QRIS manual
+              </span>
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAccountMenuOpen((open) => !open)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                aria-label="Menu akun POS"
+                aria-expanded={accountMenuOpen}
+              >
+                <User className="size-5" aria-hidden />
+                <span className="hidden max-w-40 truncate text-sm font-medium sm:inline">{user.name}</span>
+                <ChevronDown className="size-4" aria-hidden />
+              </button>
+
+              {accountMenuOpen ? (
+                <div className="absolute right-0 top-12 z-50 w-[min(320px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                  <div className="border-b border-slate-100 px-2 pb-3">
+                    <p className="truncate text-sm font-semibold text-slate-950">{user.name}</p>
+                    <p className="truncate text-xs text-slate-500">{user.email || user.role}</p>
+                    <p className="mt-1 text-xs text-slate-500">{posRoleLabel} - {business.displayName}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void signOut();
+                    }}
+                    className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"
+                  >
+                    <LogOut className="size-4" aria-hidden />
+                    Keluar
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-[1440px] px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4 lg:px-6 lg:pb-10">
+          <section className="mb-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Mode kerja</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">{posRoleLabel}</p>
+              <p className="mt-1 text-sm leading-5 text-slate-600">{posRoleDescription}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cabang</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">{branchSummary}</p>
+              <p className="mt-1 text-sm leading-5 text-slate-600">Data POS mengikuti cabang yang diberikan owner.</p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Pembayaran</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">Tunai dan QRIS manual</p>
+              <p className="mt-1 text-sm leading-5 text-slate-600">Mutasi QRIS tetap direkonsiliasi terpisah dari kas/bank.</p>
+            </div>
+          </section>
+
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5", period.locked ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700")}>
+              <span className={cn("size-2 rounded-full", period.locked ? "bg-red-500" : "bg-emerald-500")} aria-hidden />
+              Periode {period.label}
+            </span>
+            {runtimeMode !== "production" ? (
+              <span className="rounded-full bg-cyan-50 px-3 py-1.5 text-cyan-700">
+                {demoMode ? "Mode fallback demo" : demoAccount ? "Akun demo Supabase" : runtimeMode}
+              </span>
+            ) : null}
+          </div>
+
+          {children}
+        </main>
+      </div>
+    );
   }
 
   return (

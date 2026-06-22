@@ -35,6 +35,21 @@ export const permissionCatalog: ReadonlyArray<{
   { permission: "pos:expenses", label: "Supervisor biaya cabang", description: "Melihat rekap POS dan mencatat biaya operasional cabang." },
 ] as const;
 
+const posOnlyPermissions = new Set<Permission>(["pos:read", "pos:sell", "pos:expenses"]);
+
+export type PosExperienceMode = "erp" | "cashier" | "supervisor" | "viewer";
+
+export function isPosOnlyPermissionSet(permissions: readonly Permission[]): boolean {
+  return permissions.length > 0 && permissions.includes("pos:read") && permissions.every((permission) => posOnlyPermissions.has(permission));
+}
+
+export function posExperienceForPermissions(permissions: readonly Permission[]): PosExperienceMode {
+  if (!isPosOnlyPermissionSet(permissions)) return "erp";
+  if (permissions.includes("pos:expenses")) return "supervisor";
+  if (permissions.includes("pos:sell")) return "cashier";
+  return "viewer";
+}
+
 const permissionsByRole: Record<BusinessRole, Permission[]> = {
   owner: [
     "business:read",
