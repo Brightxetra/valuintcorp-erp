@@ -6,6 +6,7 @@ import { accessTokenCookieMaxAge } from "@/lib/auth/token";
 import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { hasSupabasePublicConfig } from "@/lib/supabase/config";
 
 const activeBusinessKey = "valuintcorp.activeBusinessId";
 
@@ -35,7 +36,7 @@ interface BrowserBusinessResolution {
 }
 
 export function isSupabaseBrowserEnabled() {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return hasSupabasePublicConfig();
 }
 
 export function isExplicitDemoModeBrowser() {

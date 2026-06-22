@@ -4,6 +4,7 @@ import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
 import { serverAccessTokenCookie, serverBusinessCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
 import { permissionsForMember } from "@/lib/security/permissions";
 import type { WorkspaceLoadContext } from "@/lib/erp/workspace-repository";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
 interface MembershipRow {
   business_id?: string;
@@ -33,7 +34,8 @@ export interface ServerBusinessOption {
 }
 
 function createCookieSupabaseClient(accessToken: string) {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  const { url, anonKey } = requireSupabasePublicConfig("Supabase cookie client");
+  return createClient(url, anonKey, {
     auth: { persistSession: false },
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
   });

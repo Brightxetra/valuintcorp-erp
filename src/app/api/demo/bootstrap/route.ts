@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
 const bootstrapSchema = z.object({
@@ -16,7 +17,8 @@ function demoLoginEnabled() {
 }
 
 function createTokenSupabaseClient(authorization: string) {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  const { url, anonKey } = requireSupabasePublicConfig("Supabase token client");
+  return createClient(url, anonKey, {
     auth: { persistSession: false },
     global: { headers: { Authorization: authorization } },
   });

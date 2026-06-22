@@ -22,8 +22,8 @@ describe("runtime demo detection", () => {
   });
 
   it("allows production mode when Supabase env is configured and explicit demo is false", () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co\u200b";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon\n";
     process.env.NEXT_PUBLIC_DEMO_MODE = "false";
 
     expect(isSupabaseEnvConfigured()).toBe(true);

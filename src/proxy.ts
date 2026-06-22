@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { serverAccessTokenCookie, serverRefreshTokenCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
 import { accessTokenCookieMaxAge, shouldRefreshAccessToken } from "@/lib/auth/token";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
 function cookieOptions(maxAge: number) {
   return {
@@ -27,7 +28,8 @@ function loginRedirect(request: NextRequest) {
 }
 
 async function refreshServerSession(refreshToken: string) {
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  const { url, anonKey } = requireSupabasePublicConfig("Supabase session refresh");
+  const supabase = createClient(url, anonKey, {
     auth: {
       autoRefreshToken: false,
       detectSessionInUrl: false,

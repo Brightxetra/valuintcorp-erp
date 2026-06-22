@@ -1,22 +1,19 @@
 import { createClient } from "@supabase/supabase-js";
+import { getSupabasePublicConfig, sanitizeSupabaseEnvValue } from "@/lib/supabase/config";
 
 export function isSupabaseServiceConfigured() {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-  );
+  return Boolean(getSupabasePublicConfig() && sanitizeSupabaseEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY));
 }
 
 export function createServiceSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const config = getSupabasePublicConfig();
+  const serviceRoleKey = sanitizeSupabaseEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  if (!url || !serviceRoleKey) {
+  if (!config || !serviceRoleKey) {
     throw new Error("Supabase service client requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
   }
 
-  return createClient(url, serviceRoleKey, {
+  return createClient(config.url, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

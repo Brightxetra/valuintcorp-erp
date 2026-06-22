@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { permissionsForMember, permissionsForRole, type Permission } from "@/lib/security/permissions";
 import type { BusinessRole } from "@/lib/domain/types";
 import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
 export interface ApiContext {
   businessId: string;
@@ -61,6 +62,15 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function createAuthorizedSupabaseClient(authorization: string) {
+  const { url, anonKey } = requireSupabasePublicConfig("Supabase API client");
+
+  return createClient(url, anonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: authorization } },
+  });
+}
+
 export async function requireApiPermission(
   request: Request,
   permission: Permission,
@@ -90,14 +100,7 @@ export async function requireApiPermission(
     return jsonNoStore({ error: "Authorization bearer token is required." }, { status: 401 });
   }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: { persistSession: false },
-      global: { headers: { Authorization: authorization } },
-    },
-  );
+  const supabase = createAuthorizedSupabaseClient(authorization);
   const { data: userData, error: userError } = await supabase.auth.getUser();
 
   if (userError || !userData.user) {
@@ -174,14 +177,7 @@ export async function requireAuthenticatedUser(
     return jsonNoStore({ error: "Authorization bearer token is required." }, { status: 401 });
   }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: { persistSession: false },
-      global: { headers: { Authorization: authorization } },
-    },
-  );
+  const supabase = createAuthorizedSupabaseClient(authorization);
   const { data, error } = await supabase.auth.getUser();
 
   if (error || !data.user) {

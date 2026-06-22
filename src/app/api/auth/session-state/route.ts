@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
 function json(body: unknown, status = 200) {
@@ -7,7 +8,8 @@ function json(body: unknown, status = 200) {
 }
 
 function createTokenSupabaseClient(authorization: string) {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  const { url, anonKey } = requireSupabasePublicConfig("Supabase token client");
+  return createClient(url, anonKey, {
     auth: { persistSession: false },
     global: { headers: { Authorization: authorization } },
   });

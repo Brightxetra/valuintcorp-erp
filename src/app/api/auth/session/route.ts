@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { serverAccessTokenCookie, serverBusinessCookie, serverRefreshTokenCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
 const syncSessionSchema = z.object({
@@ -22,7 +23,8 @@ function cookieOptions(maxAge = 60 * 60) {
 }
 
 function createTokenSupabaseClient(accessToken: string) {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  const { url, anonKey } = requireSupabasePublicConfig("Supabase token client");
+  return createClient(url, anonKey, {
     auth: { persistSession: false },
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
   });
