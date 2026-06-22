@@ -25,9 +25,14 @@ import {
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
+const optionalSessionTokenSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
+  z.string().min(1).optional(),
+);
+
 const syncSessionSchema = z.object({
-  accessToken: z.string().min(20),
-  refreshToken: z.string().min(20).optional(),
+  accessToken: z.string().trim().min(1),
+  refreshToken: optionalSessionTokenSchema,
   businessId: z.string().uuid().optional(),
   rememberMe: z.boolean().optional(),
   freshLogin: z.boolean().optional(),

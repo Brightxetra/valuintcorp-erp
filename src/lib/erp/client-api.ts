@@ -159,8 +159,8 @@ export async function syncServerSession(
   }
 
   const session = explicitTokens ? null : await getBrowserSession();
-  const accessToken = explicitTokens?.accessToken ?? session?.access_token;
-  const refreshToken = explicitTokens?.refreshToken ?? session?.refresh_token;
+  const accessToken = (explicitTokens?.accessToken ?? session?.access_token)?.trim();
+  const refreshToken = (explicitTokens?.refreshToken ?? session?.refresh_token)?.trim();
   const rememberMe = options.rememberMe ?? browserSessionRemembered();
 
   if (!accessToken) return null;
