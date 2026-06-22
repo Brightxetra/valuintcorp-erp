@@ -1887,6 +1887,7 @@ export function LoginWorkspace() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const demoFallback = shouldUseDemoFallbackBrowser();
   const supabaseEnabled = !demoFallback;
+  const [checkingSession, setCheckingSession] = useState(supabaseEnabled);
   const hcaptchaSiteKey = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY;
   const captchaEnabled = supabaseEnabled && Boolean(hcaptchaSiteKey);
 
@@ -1900,7 +1901,10 @@ export function LoginWorkspace() {
         const supabase = createBrowserSupabaseClient();
         const { data } = await supabase.auth.getSession();
 
-        if (!data.session) return;
+        if (!data.session) {
+          if (!cancelled) setCheckingSession(false);
+          return;
+        }
 
         setPending(true);
         const session = await syncServerSession(null, {
@@ -1917,8 +1921,12 @@ export function LoginWorkspace() {
         }
 
         setPending(false);
+        setCheckingSession(false);
       } catch {
-        if (!cancelled) setPending(false);
+        if (!cancelled) {
+          setPending(false);
+          setCheckingSession(false);
+        }
       }
     }
 
@@ -2027,6 +2035,18 @@ export function LoginWorkspace() {
       }
       setPending(false);
     }
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-md items-center overflow-x-clip px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+        <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <div className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-950" aria-hidden />
+          <p className="text-sm font-semibold text-slate-950">Memulihkan sesi...</p>
+          <p className="mt-1 text-sm text-slate-500">Anda akan diarahkan otomatis jika sesi login masih aktif.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
