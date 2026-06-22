@@ -733,7 +733,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       {/* ============================================================================
           MAIN CONTENT AREA
           ============================================================================ */}
-      <div className="erp-mobile-shell-content mx-auto max-w-[1600px] px-4 py-6 lg:px-6 lg:pb-24">
+      <div className="erp-mobile-shell-content mx-auto max-w-[1600px] px-4 pt-6 pb-[var(--erp-mobile-content-clearance)] lg:px-6 lg:pb-24">
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
           {/* ============================================================================
               SIDEBAR - Desktop Navigation

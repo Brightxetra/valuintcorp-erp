@@ -38,7 +38,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 018", () => {
+  it("keeps production ERP migrations in order through 020", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -60,6 +60,8 @@ describe("Supabase migration contract", () => {
       "016_reconciliation_rollup_rpc.sql",
       "017_workspace_route_performance.sql",
       "018_lockdown_security_definer_rpcs.sql",
+      "019_branch_pos_and_member_access.sql",
+      "020_api_role_table_privileges.sql",
     ]);
   });
 
@@ -198,6 +200,33 @@ describe("Supabase migration contract", () => {
       expect(migration).toContain(`grant execute on function public.${rpc}(jsonb) to service_role`);
       expect(migration).not.toContain(`grant execute on function public.${rpc}(jsonb) to authenticated`);
     }
+  });
+
+  it("adds branch POS posting, consolidated journals, and custom member access", () => {
+    const migration = readFileSync(join(migrationsDir, "019_branch_pos_and_member_access.sql"), "utf8");
+
+    expect(migration).toContain("add column if not exists access_scope text not null default 'role'");
+    expect(migration).toContain("add column if not exists access_permissions text[] not null default '{}'::text[]");
+    expect(migration).toContain("create table if not exists public.branch_expenses");
+    expect(migration).toContain("create or replace function app_private.require_pos_access");
+    expect(migration).toContain("create or replace function public.post_pos_sale_internal");
+    expect(migration).toContain("customer.code = 'POS-UMUM'");
+    expect(migration).toContain("'4000'");
+    expect(migration).toContain("'5000'");
+    expect(migration).toContain("'1200'");
+    expect(migration).toContain("create or replace function public.post_branch_expense_internal");
+    expect(migration).toContain("'5100'");
+    expect(migration).toContain("revoke execute on function public.post_pos_sale(jsonb) from public, anon, authenticated");
+    expect(migration).toContain("grant execute on function public.post_pos_sale(jsonb) to service_role");
+  });
+  it("grants API role table privileges for current and future public tables", () => {
+    const migration = readFileSync(join(migrationsDir, "020_api_role_table_privileges.sql"), "utf8");
+
+    expect(migration).toContain("grant usage on schema public to authenticated, service_role");
+    expect(migration).toContain("grant select, insert, update, delete on all tables in schema public to authenticated, service_role");
+    expect(migration).toContain("grant usage, select on all sequences in schema public to authenticated, service_role");
+    expect(migration).toContain("alter default privileges in schema public");
+    expect(migration).toContain("grant select, insert, update, delete on tables to authenticated, service_role");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {

@@ -10,6 +10,7 @@ import type {
   ErpWorkspace,
   FixedAsset,
   FixedAssetDepreciationLine,
+  BusinessMember,
   FixedAssetDepreciationRun,
   FixedAssetDisposal,
   ImportBatch,
@@ -46,13 +47,16 @@ import type {
 } from "@/lib/domain/types";
 import { buildErpTasks, calculateErpMetrics } from "@/lib/erp/operations";
 import { buildLocationMetrics, industryTemplates as fallbackIndustryTemplates } from "@/lib/erp/horizontal";
-import { permissionsForRole } from "@/lib/security/permissions";
+import { permissionsForRole, type Permission } from "@/lib/security/permissions";
 
 type Row = Record<string, unknown>;
 
 export interface WorkspaceLoadContext {
   businessId: string;
   role: BusinessRole;
+  permissions?: Permission[];
+  assignedLocationIds?: string[];
+  accessScope?: "role" | "custom";
   userId: string;
   userEmail?: string;
   userName?: string;
@@ -75,6 +79,7 @@ export type WorkspaceLoadProfile =
   | "assets"
   | "settings"
   | "onboarding"
+  | "pos"
   | "document-detail";
 
 export interface WorkspaceLoadOptions {
@@ -281,10 +286,30 @@ function mapMemberInvites(rows: Row[]): MemberInvite[] {
     email: text(row, "email"),
     role: text(row, "role", "staff") as MemberInvite["role"],
     status: text(row, "status", "pending") as MemberInvite["status"],
+    accessScope: text(row, "access_scope", "role") as MemberInvite["accessScope"],
+    accessPermissions: Array.isArray(row.access_permissions) ? row.access_permissions.filter((permission): permission is Permission => typeof permission === "string") : [],
+    locationIds: Array.isArray(row.location_ids) ? row.location_ids.filter((locationId): locationId is string => typeof locationId === "string") : [],
     expiresAt: text(row, "expires_at"),
     createdAt: text(row, "created_at"),
   }));
 }
+function mapBusinessMembers(rows: Row[]): BusinessMember[] {
+  return rows.map((row) => ({
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    authUserId: text(row, "auth_user_id"),
+    role: text(row, "role", "staff") as BusinessMember["role"],
+    accessScope: text(row, "access_scope", "role") === "custom" ? "custom" : "role",
+    accessPermissions: Array.isArray(row.access_permissions)
+      ? row.access_permissions.filter((permission): permission is Permission => typeof permission === "string")
+      : [],
+    locationIds: Array.isArray(row.location_ids)
+      ? row.location_ids.filter((locationId): locationId is string => typeof locationId === "string")
+      : [],
+    createdAt: text(row, "created_at"),
+  }));
+}
+
 
 function mapWarehouses(rows: Row[]): Warehouse[] {
   return rows.map((row) => ({
@@ -322,6 +347,8 @@ function mapSalesInvoices(rows: Row[]): SalesInvoice[] {
     total: numberValue(row, "total"),
     paidAmount: numberValue(row, "paid_amount"),
     journalEntryId: optionalText(row, "journal_entry_id"),
+    locationId: optionalText(row, "location_id"),
+    source: text(row, "source", "manual") as SalesInvoice["source"],
     createdAt: text(row, "created_at"),
   }));
 }
@@ -762,6 +789,7 @@ export async function loadSupabaseWorkspace(
   options: WorkspaceLoadOptions = {},
 ): Promise<ErpWorkspace> {
   const profile = options.profile ?? "full";
+  const canManageMembers = (context.permissions ?? permissionsForRole(context.role)).includes("admin:manage_users");
   const salesLimit = listLimit(profile);
   const purchaseLimit = listLimit(profile);
   const paymentsLimit = listLimit(profile, 250, 10);
@@ -857,6 +885,7 @@ export async function loadSupabaseWorkspace(
     templates,
     transactionSources,
     memberInvites,
+    members,
     customers,
     suppliers,
     products,
@@ -903,13 +932,20 @@ export async function loadSupabaseWorkspace(
     needs(profile, "settings", "reports", "dashboard")
       ? supabase.from("transaction_sources").select("*").eq("business_id", context.businessId).order("name")
       : skipRows(),
-    needs(profile, "settings")
+    needs(profile, "settings") && canManageMembers
       ? supabase
           .from("member_invites")
           .select("*")
           .eq("business_id", context.businessId)
           .order("created_at", { ascending: false })
           .limit(25)
+      : skipRows(),
+    needs(profile, "settings") && canManageMembers
+      ? supabase
+          .from("business_members")
+          .select("id, business_id, auth_user_id, role, access_scope, access_permissions, location_ids, created_at")
+          .eq("business_id", context.businessId)
+          .order("created_at", { ascending: true })
       : skipRows(),
     needs(profile, "dashboard", "sales", "cash", "settings", "document-detail")
       ? (masterLimit
@@ -1180,6 +1216,7 @@ export async function loadSupabaseWorkspace(
       featureFlags,
       templates,
       transactionSources,
+      members,
       memberInvites,
       rawImportBatches,
       rawTransactions,
@@ -1209,14 +1246,16 @@ export async function loadSupabaseWorkspace(
   };
   const baseWorkspace = {
     user,
-    permissions: permissionsForRole(context.role),
+    permissions: context.permissions ?? permissionsForRole(context.role),
     business: businessData,
+    assignedLocationIds: context.assignedLocationIds ?? [],
     period,
     taxProfile: taxProfileFromRow(asRow(taxProfiles.data), context.businessId),
-    locations: mapLocations(asRows(locations.data)),
+    locations: mapLocations(asRows(locations.data)).filter((location) => context.role === "owner" || context.role === "system_admin" || context.accessScope !== "custom" || (context.assignedLocationIds ?? []).includes(location.id)),
     featureFlags: mapFeatureFlags(asRows(featureFlags.data)),
     industryTemplates: mapIndustryTemplates(asRows(templates.data)),
     transactionSources: mapTransactionSources(asRows(transactionSources.data)),
+    members: mapBusinessMembers(asRows(members.data)),
     memberInvites: mapMemberInvites(asRows(memberInvites.data)),
     customers: mapCustomers(asRows(customers.data)),
     suppliers: mapSuppliers(asRows(suppliers.data)),

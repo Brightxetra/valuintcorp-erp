@@ -63,6 +63,8 @@ const requiredMigrations = [
   "supabase/migrations/016_reconciliation_rollup_rpc.sql",
   "supabase/migrations/017_workspace_route_performance.sql",
   "supabase/migrations/018_lockdown_security_definer_rpcs.sql",
+  "supabase/migrations/019_branch_pos_and_member_access.sql",
+  "supabase/migrations/020_api_role_table_privileges.sql",
 ];
 
 const requiredFiles = [
@@ -97,6 +99,11 @@ requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql",
 requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql", "revoke execute on function public.upload_raw_transactions(jsonb) from public, anon, authenticated");
 requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql", "grant execute on function public.upload_raw_transactions(jsonb) to service_role");
 requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql", "create_business_with_owner_for_actor");
+requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "create table if not exists public.branch_expenses");
+requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "create or replace function public.post_pos_sale_internal");
+requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "create or replace function public.post_branch_expense_internal");
+requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "grant select, insert, update, delete on all tables in schema public to authenticated, service_role");
+requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "alter default privileges in schema public");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");
@@ -131,6 +138,7 @@ async function runLiveSchemaCheck() {
     "daily_transaction_summaries",
     "settlement_records",
     "attachments",
+    "branch_expenses",
   ];
 
   for (const table of requiredTables) {

@@ -66,6 +66,9 @@ export async function GET(request: Request) {
         demoMode: true,
         role: workspace.user.role,
         userId: workspace.user.id,
+        permissions: workspace.permissions,
+        assignedLocationIds: workspace.assignedLocationIds ?? [],
+        accessScope: "role",
       },
     );
   }
@@ -114,6 +117,9 @@ export async function POST(request: Request) {
         demoMode: true,
         role: workspace.user.role,
         userId: workspace.user.id,
+        permissions: workspace.permissions,
+        assignedLocationIds: workspace.assignedLocationIds ?? [],
+        accessScope: "role",
       },
     );
   }

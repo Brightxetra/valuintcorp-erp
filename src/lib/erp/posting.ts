@@ -56,6 +56,8 @@ import {
 type PostingOptions = {
   actorName?: string;
   nowIso?: string;
+  locationId?: string;
+  source?: "manual" | "pos";
 };
 
 function timestamp(options?: PostingOptions): string {
@@ -216,6 +218,8 @@ export function postSalesInvoice(
     total: 0,
     paidAmount: 0,
     createdAt: timestamp(options),
+    locationId: options?.locationId,
+    source: options?.source,
   };
   invoice.total = salesInvoiceTotal(invoice);
 

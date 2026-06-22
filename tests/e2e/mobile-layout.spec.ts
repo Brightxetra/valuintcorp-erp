@@ -17,6 +17,7 @@ const erpRoutes = [
   "/transaksi/kas",
   "/produk/stok",
   "/produk/harga",
+  "/pos",
   "/karyawan",
   "/karyawan/gaji",
   "/karyawan/bpjs",

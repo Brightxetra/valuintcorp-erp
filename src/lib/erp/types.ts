@@ -124,12 +124,28 @@ export interface TransactionSource {
   isActive: boolean;
 }
 
+export type MemberAccessScope = "role" | "custom";
+
+export interface BusinessMember {
+  id: string;
+  businessId: string;
+  authUserId: string;
+  role: BusinessRole;
+  accessScope: MemberAccessScope;
+  accessPermissions: Permission[];
+  locationIds: string[];
+  createdAt: string;
+}
+
 export interface MemberInvite {
   id: string;
   businessId: string;
   email: string;
   role: BusinessRole;
   status: "pending" | "accepted" | "revoked" | "expired";
+  accessScope?: MemberAccessScope;
+  accessPermissions?: Permission[];
+  locationIds?: string[];
   expiresAt: string;
   createdAt: string;
 }
@@ -157,6 +173,8 @@ export interface SalesInvoice {
   paidAmount: Money;
   journalEntryId?: string;
   createdAt: string;
+  locationId?: string;
+  source?: "manual" | "pos";
 }
 
 export interface PurchaseBillLine {
@@ -455,6 +473,8 @@ export interface ErpWorkspace {
   user: AppUser;
   permissions: Permission[];
   business: Business;
+  assignedLocationIds?: string[];
+  members?: BusinessMember[];
   period: ReportPeriod;
   taxProfile: TaxProfile;
   locations: Location[];

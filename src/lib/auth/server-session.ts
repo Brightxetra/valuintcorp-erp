@@ -2,11 +2,15 @@ import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
 import { serverAccessTokenCookie, serverBusinessCookie, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { permissionsForMember } from "@/lib/security/permissions";
 import type { WorkspaceLoadContext } from "@/lib/erp/workspace-repository";
 
 interface MembershipRow {
   business_id?: string;
   role?: BusinessRole;
+  access_scope?: "role" | "custom";
+  access_permissions?: unknown;
+  location_ids?: unknown;
   businesses?: {
     id?: string;
     legal_name?: string;
@@ -47,9 +51,21 @@ function businessOptionFromMembership(row: MembershipRow): ServerBusinessOption 
   };
 }
 
-export async function getServerAccessToken() {
-  if (shouldUseDemoFallback()) return null;
 
+function memberWorkspaceAccess(row: MembershipRow) {
+  const locationIds = Array.isArray(row.location_ids)
+    ? row.location_ids.filter((locationId): locationId is string => typeof locationId === "string")
+    : [];
+  const permissions = permissionsForMember(
+    (row.role ?? "staff") as BusinessRole,
+    row.access_scope === "custom" ? "custom" : "role",
+    Array.isArray(row.access_permissions) ? row.access_permissions.filter((permission): permission is string => typeof permission === "string") : [],
+  );
+  return { permissions, assignedLocationIds: locationIds, accessScope: row.access_scope === "custom" ? "custom" as const : "role" as const };
+}
+export async function getServerAccessToken() {
+
+  if (shouldUseDemoFallback()) return null;
   const cookieStore = await cookies();
   return cookieStore.get(serverAccessTokenCookie)?.value ?? null;
 }
@@ -68,7 +84,7 @@ export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext 
 
   const baseMembershipQuery = supabase
     .from("business_members")
-    .select("business_id, role, businesses(id, legal_name, display_name, industry)")
+    .select("business_id, role, access_scope, access_permissions, location_ids, businesses(id, legal_name, display_name, industry)")
     .eq("auth_user_id", userData.user.id)
     .order("created_at", { ascending: true });
 
@@ -79,7 +95,7 @@ export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext 
   if (requestedBusinessId && !membershipError && Array.isArray(memberships) && memberships.length === 0) {
     const { data: fallbackMemberships, error: fallbackError } = await supabase
       .from("business_members")
-      .select("business_id, role, businesses(id, legal_name, display_name, industry)")
+      .select("business_id, role, access_scope, access_permissions, location_ids, businesses(id, legal_name, display_name, industry)")
       .eq("auth_user_id", userData.user.id)
       .order("created_at", { ascending: true })
       .limit(1);
@@ -91,6 +107,7 @@ export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext 
       return {
         businessId: String(fallbackMembership.business_id),
         role: fallbackRole,
+        ...memberWorkspaceAccess(fallbackMembership),
         userId: userData.user.id,
         userEmail: userData.user.email ?? undefined,
         userName:
@@ -111,6 +128,7 @@ export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext 
   return {
     businessId: String(membership.business_id),
     role,
+    ...memberWorkspaceAccess(membership),
     userId: userData.user.id,
     userEmail: userData.user.email ?? undefined,
     userName:

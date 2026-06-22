@@ -25,6 +25,7 @@ import {
   Settings,
   ShoppingCart,
   Star,
+  ShoppingBag,
   User,
   UsersRound,
   X,
@@ -34,7 +35,7 @@ import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
 import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import { can, type Permission } from "@/lib/security/permissions";
+import type { Permission } from "@/lib/security/permissions";
 import { clearServerSession } from "@/lib/erp/client-api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
@@ -56,6 +57,13 @@ const navGroups = [
       { href: "/transaksi/invoice", label: "Invoice Penjualan", icon: ReceiptText, permission: "accounting:write" as Permission },
       { href: "/transaksi/tagihan", label: "Tagihan Supplier", icon: ShoppingCart, permission: "accounting:write" as Permission },
       { href: "/transaksi/kas", label: "Kas & Bank", icon: Building2, permission: "accounting:write" as Permission },
+    ],
+    defaultOpen: true,
+  },
+  {
+    label: "POS Cabang",
+    items: [
+      { href: "/pos", label: "Kasir & Rekap Cabang", icon: ShoppingBag, permission: "pos:read" as Permission },
     ],
     defaultOpen: true,
   },
@@ -92,11 +100,12 @@ const navGroups = [
 ];
 
 const mobileNav = [
-  { href: "/dashboard", label: "Beranda", icon: Home },
-  { href: "/transaksi/invoice", label: "Invoice", icon: ReceiptText },
-  { href: "/karyawan", label: "Karyawan", icon: UsersRound },
-  { href: "/keuangan/aset", label: "Aset", icon: Building2 },
-  { href: "/settings", label: "Lainnya", icon: Menu },
+  { href: "/dashboard", label: "Beranda", icon: Home, permission: "business:read" as Permission },
+  { href: "/pos", label: "POS", icon: ShoppingBag, permission: "pos:read" as Permission },
+  { href: "/transaksi/invoice", label: "Invoice", icon: ReceiptText, permission: "accounting:write" as Permission },
+  { href: "/karyawan", label: "Karyawan", icon: UsersRound, permission: "hr:manage" as Permission },
+  { href: "/keuangan/aset", label: "Aset", icon: Building2, permission: "accounting:read" as Permission },
+  { href: "/settings", label: "Lainnya", icon: Menu, permission: "business:read" as Permission },
 ];
 
 // ============================================================================
@@ -180,6 +189,7 @@ function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClo
       { id: "nav-hr", label: "HR & Payroll", icon: UsersRound, href: "/hr", category: "Navigasi" },
       { id: "nav-tax", label: "Pajak", icon: Landmark, href: "/tax", category: "Navigasi" },
       { id: "nav-settings", label: "Pengaturan", icon: Settings, href: "/settings", category: "Navigasi" },
+      { id: "nav-pos", label: "POS Cabang", icon: ShoppingBag, href: "/pos", category: "Navigasi" },
       { id: "action-new-invoice", label: "Buat Invoice Baru", icon: PackagePlus, href: "/sales?action=new", category: "Aksi Cepat", shortcut: "N I" },
       { id: "action-new-bill", label: "Buat Purchase Bill", icon: ShoppingCart, href: "/purchases?action=new", category: "Aksi Cepat", shortcut: "N B" },
       { id: "action-new-product", label: "Tambah Produk", icon: Boxes, href: "/settings?tab=products&action=new", category: "Aksi Cepat" },
@@ -197,7 +207,17 @@ function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClo
       });
     });
 
-    return items;
+    const permissionForItem = (item: CommandItem): Permission => {
+      if (item.id.includes("pos")) return "pos:read";
+      if (item.id.includes("inventory") || item.id.includes("product")) return "inventory:manage";
+      if (item.id.includes("reports")) return "reports:export";
+      if (item.id.includes("hr")) return "hr:manage";
+      if (item.id.includes("tax")) return "tax:prepare";
+      if (item.id.includes("accounting") || item.id.includes("fixed-assets")) return "accounting:read";
+      if (item.id.includes("sales") || item.id.includes("purchases") || item.id.includes("invoice") || item.id.includes("bill")) return "accounting:write";
+      return "business:read";
+    };
+    return items.filter((item) => workspace.permissions.includes(permissionForItem(item)));
   }, [workspace]);
 
   const groupedItems = useMemo(() => {
@@ -448,7 +468,7 @@ function NavLinks({ workspace, onNavigate }: {
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const role = workspace.user.role;
+  const permissions = new Set(workspace.permissions);
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
 
   return (
@@ -497,7 +517,7 @@ function NavLinks({ workspace, onNavigate }: {
         <div key={group.label}>
           <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">{group.label}</p>
           <div className="space-y-1">
-            {group.items.filter((item) => can(role, item.permission)).map((item) => {
+            {group.items.filter((item) => permissions.has(item.permission)).map((item) => {
               const active = isActive(pathname, item.href);
               const Icon = item.icon;
               const favId = `nav-${item.href}`;
@@ -680,7 +700,8 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
           {/* Right Actions */}
           <div className="flex items-center gap-2">
             {/* Quick Actions - Desktop */}
-            <div className="hidden items-center gap-2 sm:flex">
+            {workspace.permissions.includes("accounting:write") ? (
+              <div className="hidden items-center gap-2 sm:flex">
               <Link
                 href="/sales?action=new"
                 className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
@@ -694,7 +715,8 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
               >
                 Bill
               </Link>
-            </div>
+              </div>
+            ) : null}
 
             {/* Notifications */}
             <div className="relative">
@@ -863,7 +885,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       {/* ============================================================================
           MAIN CONTENT
           ============================================================================ */}
-      <div className="erp-mobile-shell-content mx-auto max-w-[1600px] px-4 py-6 lg:px-6 lg:pb-24">
+      <div className="erp-mobile-shell-content mx-auto max-w-[1600px] px-4 pt-6 pb-[var(--erp-mobile-content-clearance)] lg:px-6 lg:pb-24">
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
           {/* ============================================================================
               SIDEBAR - Desktop
@@ -922,7 +944,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
           ============================================================================ */}
       <nav className="erp-mobile-nav fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
         <div className="grid grid-cols-5">
-          {mobileNav.map((item) => {
+          {mobileNav.filter((item) => workspace.permissions.includes(item.permission)).slice(0, 5).map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
 
@@ -977,7 +999,8 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
 
               <NavLinks workspace={workspace} onNavigate={() => setSidebarOpen(false)} />
 
-              <div className="mt-6 space-y-2">
+              {workspace.permissions.includes("accounting:write") ? (
+                <div className="mt-6 space-y-2">
                 <p className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Aksi Cepat</p>
                 <Link
                   href="/sales?action=new"
@@ -995,7 +1018,8 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                   <ShoppingCart className="size-5" aria-hidden />
                   Buat Purchase Bill
                 </Link>
-              </div>
+                </div>
+              ) : null}
             </div>
           </aside>
         </div>

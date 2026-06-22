@@ -137,4 +137,34 @@ describe("erp posting engine", () => {
       }),
     ).toThrow(/gross pay/);
   });
+  it("posts a branch POS sale into the consolidated stock and accounting ledgers", () => {
+    const workspace = createDemoErpWorkspace();
+    const invoiceWorkspace = postSalesInvoice(
+      workspace,
+      {
+        customerId: "cust-001",
+        productId: "item-rendang",
+        warehouseId: "wh-kitchen",
+        quantity: 1,
+        unitPrice: 45_000,
+        date: "2026-06-22",
+        dueDate: "2026-06-22",
+      },
+      { locationId: "loc-kitchen", source: "pos" },
+    );
+    const invoice = invoiceWorkspace.salesInvoices[0];
+    const paidWorkspace = postPayment(invoiceWorkspace, {
+      direction: "inbound",
+      documentType: "sales_invoice",
+      documentId: invoice.id,
+      amount: invoice.total,
+      method: "cash",
+      date: "2026-06-22",
+    });
+
+    expect(invoice).toMatchObject({ locationId: "loc-kitchen", source: "pos", status: "posted" });
+    expect(paidWorkspace.salesInvoices.find((item) => item.id === invoice.id)).toMatchObject({ status: "paid", paidAmount: 45_000 });
+    expect(paidWorkspace.stockMovements).toHaveLength(workspace.stockMovements.length + 1);
+    expect(paidWorkspace.journals).toHaveLength(workspace.journals.length + 2);
+  });
 });

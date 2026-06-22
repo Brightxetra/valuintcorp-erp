@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Permission } from "@/lib/security/permissions";
-import { can } from "@/lib/security/permissions";
+import { permissionsForMember, permissionsForRole, type Permission } from "@/lib/security/permissions";
 import type { BusinessRole } from "@/lib/domain/types";
 import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
 
@@ -11,6 +10,9 @@ export interface ApiContext {
   userId: string;
   userEmail?: string;
   userName?: string;
+  permissions: Permission[];
+  assignedLocationIds: string[];
+  accessScope: "role" | "custom";
 }
 
 export interface AuthenticatedUserContext {
@@ -25,6 +27,9 @@ const demoContext: ApiContext = {
   demoMode: true,
   role: "owner",
   userId: "demo-user",
+  permissions: permissionsForRole("owner"),
+  assignedLocationIds: [],
+  accessScope: "role",
 };
 
 function jsonNoStore(body: unknown, init?: ResponseInit) {
@@ -51,6 +56,11 @@ function roleFromHeader(request: Request): BusinessRole {
   return roles.includes(raw as BusinessRole) ? (raw as BusinessRole) : demoContext.role;
 }
 
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 export async function requireApiPermission(
   request: Request,
   permission: Permission,
@@ -60,14 +70,14 @@ export async function requireApiPermission(
   if (shouldUseDemoFallback()) {
     const role = roleFromHeader(request);
 
-    if (!can(role, permission)) {
+    if (!permissionsForRole(role).includes(permission)) {
       return jsonNoStore(
         { error: `Role ${role} is not allowed to perform ${permission}.` },
         { status: 403 },
       );
     }
 
-    return { ...demoContext, role };
+    return { ...demoContext, role, permissions: permissionsForRole(role) };
   }
 
   if (!businessId) {
@@ -96,7 +106,7 @@ export async function requireApiPermission(
 
   const { data: membership, error: membershipError } = await supabase
     .from("business_members")
-    .select("role")
+    .select("role, access_scope, access_permissions, location_ids")
     .eq("business_id", businessId)
     .eq("auth_user_id", userData.user.id)
     .maybeSingle();
@@ -108,11 +118,19 @@ export async function requireApiPermission(
   if (!membership?.role) {
     return jsonNoStore({ error: "User is not a member of this business." }, { status: 403 });
   }
+  const accessScope = membership.access_scope === "custom" ? "custom" : "role";
 
   const role = membership.role as BusinessRole;
 
-  if (!can(role, permission)) {
+  const permissions = permissionsForMember(
+    role,
+    accessScope,
+    stringArray(membership.access_permissions),
+  );
+  const assignedLocationIds = stringArray(membership.location_ids);
+  if (!permissions.includes(permission)) {
     return jsonNoStore(
+
       { error: `Role ${role} is not allowed to perform ${permission}.` },
       { status: 403 },
     );
@@ -121,6 +139,9 @@ export async function requireApiPermission(
   return {
     businessId,
     demoMode: false,
+    permissions,
+    assignedLocationIds,
+    accessScope,
     role,
     userId: userData.user.id,
     userEmail: userData.user.email ?? undefined,

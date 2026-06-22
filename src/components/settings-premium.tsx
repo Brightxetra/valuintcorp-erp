@@ -21,11 +21,12 @@ import {
   Warehouse,
 } from "lucide-react";
 import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/components/ui";
-import { FeedbackToast } from "@/components/feedback-toast";
 import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { permissionCatalog } from "@/lib/security/permissions";
 import { syncServerSession } from "@/lib/erp/client-api";
+import { notify } from "@/lib/notify";
 
 type SettingsCategory =
   | "business"
@@ -48,6 +49,19 @@ const industryLabels: Record<string, string> = {
   online_seller: "Online seller",
   general: "General",
 };
+
+const resourceLabels: Record<string, string> = {
+  business: "Profil bisnis",
+  tax_profile: "Profil pajak",
+  customer: "Pelanggan",
+  supplier: "Supplier",
+  product: "Produk",
+  warehouse: "Gudang",
+};
+
+function resourceLabel(resource: string) {
+  return resourceLabels[resource] ?? "Data";
+}
 
 interface CategoryCard {
   id: SettingsCategory | "onboarding";
@@ -245,11 +259,14 @@ function TaxProfilePanel({ workspace, pending, saveTax }: SettingsPanelProps) {
 }
 
 function MembersPanel({ workspace, pending, saveMember }: SettingsPanelProps) {
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const members = workspace.members ?? [];
+  const editingMember = members.find((member) => member.id === editingMemberId);
   return (
     <section className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-slate-950">Team & Akses</h2>
-        <p className="mt-1 text-sm text-slate-500">Invite anggota, role akses, dan status invite pending.</p>
+        <p className="mt-1 text-sm text-slate-500">Atur menu dan cabang untuk anggota aktif, atau buat invite baru dengan akses yang sudah ditentukan.</p>
       </div>
 
       <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -263,20 +280,53 @@ function MembersPanel({ workspace, pending, saveMember }: SettingsPanelProps) {
         <StatusPill tone="emerald">{workspace.user.role}</StatusPill>
       </div>
 
-      <form action={saveMember} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
+      <form key={editingMember?.id ?? "new-member"} action={saveMember} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
+        <h3 className="sm:col-span-2 text-sm font-semibold text-slate-900">{editingMember ? "Ubah akses anggota" : "Invite anggota baru"}</h3>
         <TextField name="email" label="Email invite" type="email" placeholder="finance@usaha.co.id" />
-        <TextField name="authUserId" label="Supabase auth user id opsional" placeholder="Isi jika user sudah ada" />
-        <SelectField name="role" label="Role">
+        <TextField name="authUserId" label="Supabase auth user id" defaultValue={editingMember?.authUserId ?? ""} readOnly={Boolean(editingMember)} placeholder="Isi jika user sudah ada" />
+        <SelectField name="role" label="Role" defaultValue={editingMember?.role ?? "staff"}>
           <option value="staff">Staff</option>
           <option value="finance_admin">Finance/Admin</option>
           <option value="hr">HR</option>
           <option value="external_advisor">External advisor</option>
           <option value="owner">Owner</option>
         </SelectField>
-        <div className="flex items-end">
-          <ActionButton disabled={pending}>Invite/update member</ActionButton>
+        <SelectField name="accessScope" label="Mode akses" defaultValue={editingMember?.accessScope ?? "role"}>
+          <option value="custom">Akses spesifik</option>
+          <option value="role">Ikuti role bawaan</option>
+        </SelectField>
+        <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
+          <p className="text-sm font-semibold text-slate-800">Menu yang diizinkan</p>
+          <p className="mt-1 text-xs text-slate-500">Pilih akses spesifik untuk karyawan cabang, HR, atau finance. Owner selalu memakai akses penuh.</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {permissionCatalog.map((entry) => <label key={entry.permission} className="flex gap-2 rounded-lg border border-slate-100 p-2 text-sm"><input name="permissions" value={entry.permission} type="checkbox" defaultChecked={editingMember?.accessScope === "custom" && editingMember.accessPermissions.includes(entry.permission)} className="mt-0.5 size-4" /><span><strong className="block text-slate-800">{entry.label}</strong><span className="text-xs text-slate-500">{entry.description}</span></span></label>)}
+          </div>
+        </div>
+        <label className="sm:col-span-2 text-sm font-medium text-slate-700">Cabang yang ditugaskan<select name="locationIds" multiple defaultValue={editingMember?.locationIds ?? []} className="mt-1 min-h-28 w-full rounded-xl border border-slate-300 bg-white p-2 text-sm">{workspace.locations.filter((location) => ["branch", "outlet", "store"].includes(location.type) && location.isActive).map((location) => <option key={location.id} value={location.id}>{location.name} ({location.code})</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-500">Gunakan Ctrl/Cmd untuk memilih beberapa cabang. Akses POS spesifik harus memiliki minimal satu cabang.</span></label>
+        <div className="flex items-end gap-2">
+          <ActionButton disabled={pending}>{editingMember ? "Simpan akses anggota" : "Kirim invite"}</ActionButton>
+          {editingMember ? <button type="button" onClick={() => setEditingMemberId(null)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Batal</button> : null}
         </div>
       </form>
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-slate-700">Anggota aktif</h3>
+        <p className="mt-1 text-xs text-slate-500">Pilih anggota untuk mengubah role, menu, dan cabang tanpa perlu menyalin ID.</p>
+        <div className="mt-3 space-y-2">
+          {members.map((member) => (
+            <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 p-3 text-sm">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-slate-900">{member.authUserId}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{member.accessScope === "custom" ? `${member.accessPermissions.length} menu spesifik` : "Mengikuti role bawaan"} - {member.locationIds.length ? member.locationIds.map((locationId) => workspace.locations.find((location) => location.id === locationId)?.name ?? locationId).join(", ") : "Semua cabang"}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusPill tone={member.accessScope === "custom" ? "cyan" : "gray"}>{member.role}</StatusPill>
+                <button type="button" aria-label={`Ubah akses ${member.authUserId}`} onClick={() => setEditingMemberId(member.id)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Ubah akses</button>
+              </div>
+            </div>
+          ))}
+          {members.length === 0 ? <p className="text-sm text-slate-500">Belum ada anggota aktif selain data fallback yang sedang dipakai.</p> : null}
+        </div>
+      </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-700">Pending invites</h3>
@@ -687,9 +737,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
   const [pending, setPending] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [successDescription, setSuccessDescription] = useState<string | null>(null);
 
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "overview", label: "Overview" },
@@ -698,11 +745,12 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     { id: "data", label: "Master Data" },
     { id: "integrations", label: "Integrasi" },
   ];
+  const canManageUsers = workspace.permissions.includes("admin:manage_users");
 
   const categories: CategoryCard[] = useMemo(() => [
     { id: "business", tab: "business", title: "Profil Bisnis", description: "Nama, industri, NPWP, periode", icon: Building2 },
     { id: "tax", tab: "business", title: "Profil Pajak", description: "PPh UMKM dan Coretax", icon: FileText, count: workspace.taxProfile ? 1 : 0 },
-    { id: "team", tab: "team", title: "Team & Akses", description: "Invite member dan role akses", icon: Users, count: workspace.memberInvites.length },
+    { id: "team", tab: "team", title: "Team & Akses", description: "Invite member dan role akses", icon: Users, count: (workspace.members?.length ?? 0) + workspace.memberInvites.length },
     { id: "customers", tab: "data", title: "Customers", description: "Master data pelanggan", icon: CreditCard, count: workspace.customers.length },
     { id: "suppliers", tab: "data", title: "Suppliers", description: "Master data supplier", icon: ShoppingBag, count: workspace.suppliers.length },
     { id: "products", tab: "data", title: "Products", description: "SKU, harga, stok", icon: Package, count: workspace.products.length },
@@ -750,16 +798,12 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     description?: string,
   ) {
     setPending(true);
-    setError(null);
-    setSuccess(null);
-    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/master-data", { resource, id, values });
-      setSuccess(`${resource} disimpan.`);
-      setSuccessDescription(description ?? null);
+      notify.success(`${resourceLabel(resource)} disimpan`, { description });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `${resource} gagal disimpan.`);
+      notify.error(`${resourceLabel(resource)} gagal disimpan`, { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -767,15 +811,12 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
   async function archiveMaster(resource: string, id: string) {
     setPending(true);
-    setError(null);
-    setSuccess(null);
-    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/master-data", { resource, id }, "DELETE");
-      setSuccess(`${resource} dinonaktifkan.`);
+      notify.info(`${resourceLabel(resource)} dinonaktifkan`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `${resource} gagal dinonaktifkan.`);
+      notify.error(`${resourceLabel(resource)} gagal dinonaktifkan`, { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -795,9 +836,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
   async function uploadBusinessLogo(file: File) {
     setLogoUploading(true);
-    setError(null);
-    setSuccess(null);
-    setSuccessDescription(null);
 
     try {
       if (!["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.type)) {
@@ -857,9 +895,9 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
           periodStartMonth: workspace.business.periodStartMonth,
         },
       });
-      setSuccess("Logo bisnis disimpan.");
+      notify.success("Logo bisnis disimpan");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Logo bisnis gagal diunggah.");
+      notify.error("Logo bisnis gagal diunggah", { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setLogoUploading(false);
     }
@@ -876,19 +914,21 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
   async function saveMember(formData: FormData) {
     setPending(true);
-    setError(null);
-    setSuccess(null);
-    setSuccessDescription(null);
 
     try {
       const body = await postObject("/api/erp/members", {
         email: String(formData.get("email") || "") || undefined,
         authUserId: String(formData.get("authUserId") || "") || undefined,
         role: String(formData.get("role")),
+        accessScope: String(formData.get("accessScope") || "role"),
+        permissions: formData.getAll("permissions").map(String),
+        locationIds: formData.getAll("locationIds").map(String),
       });
-      setSuccess(body.invite ? "Invite email dibuat dan menunggu diterima." : "Member bisnis disimpan.");
+      notify.success(body.invite ? "Invite anggota dibuat" : "Akses anggota disimpan", {
+        description: body.invite ? "Invite email menunggu diterima." : "Role, menu, dan cabang anggota telah diperbarui.",
+      });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Member gagal disimpan.");
+      notify.error("Akses anggota gagal disimpan", { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -896,9 +936,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
   async function saveLocation(formData: FormData) {
     setPending(true);
-    setError(null);
-    setSuccess(null);
-    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/locations", {
@@ -908,9 +945,9 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
         warehouseId: String(formData.get("warehouseId")),
         isActive: true,
       });
-      setSuccess("Lokasi disimpan.");
+      notify.success("Lokasi disimpan");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Lokasi gagal disimpan.");
+      notify.error("Lokasi gagal disimpan", { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -927,17 +964,14 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
   async function applyTemplate(formData: FormData) {
     setPending(true);
-    setError(null);
-    setSuccess(null);
-    setSuccessDescription(null);
 
     try {
       await postObject("/api/erp/templates/apply", {
         templateId: String(formData.get("templateId")),
       });
-      setSuccess("Template diterapkan ke bisnis aktif.");
+      notify.success("Template diterapkan ke bisnis aktif");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Template gagal diterapkan.");
+      notify.error("Template gagal diterapkan", { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -945,9 +979,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
   async function createBusinessFromSettings(formData: FormData) {
     setPending(true);
-    setError(null);
-    setSuccess(null);
-    setSuccessDescription(null);
 
     try {
       const body = await request<{ businessId: string }>("/api/erp/businesses", {
@@ -968,9 +999,11 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
         await refreshWorkspace();
       }
 
-      setSuccess(demoMode ? "Demo mode aktif; bisnis demo digunakan." : "Bisnis baru dibuat dan setup awal dijalankan.");
+      notify.success(demoMode ? "Demo mode aktif" : "Bisnis baru dibuat", {
+        description: demoMode ? "Bisnis demo digunakan." : "Setup awal sudah dijalankan.",
+      });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Bisnis baru gagal dibuat.");
+      notify.error("Bisnis baru gagal dibuat", { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -993,7 +1026,8 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     logoUploading,
   };
 
-  const visibleCategories = activeTab === "overview" ? categories : categories.filter((category) => category.tab === activeTab);
+  const visibleTabs = tabs.filter((tab) => tab.id !== "team" || canManageUsers);
+  const visibleCategories = (activeTab === "overview" ? categories : categories.filter((category) => category.tab === activeTab)).filter((category) => category.id !== "team" || canManageUsers);
 
   function renderContent() {
     if (!selectedCategory) {
@@ -1010,7 +1044,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
 
     if (selectedCategory === "business") return <BusinessProfilePanel {...panelProps} />;
     if (selectedCategory === "tax") return <TaxProfilePanel {...panelProps} />;
-    if (selectedCategory === "team") return <MembersPanel {...panelProps} />;
+    if (selectedCategory === "team") return canManageUsers ? <MembersPanel {...panelProps} /> : <p className="text-sm text-slate-600">Anda tidak memiliki akses untuk mengatur anggota.</p>;
     if (selectedCategory === "customers") return <MasterDataPanel {...panelProps} type="customers" />;
     if (selectedCategory === "suppliers") return <MasterDataPanel {...panelProps} type="suppliers" />;
     if (selectedCategory === "products") return <MasterDataPanel {...panelProps} type="products" />;
@@ -1046,11 +1080,9 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
         </div>
       ) : null}
 
-      <FeedbackToast error={error} success={success} successDescription={successDescription} />
-
       <div className="border-b border-slate-200">
         <div className="flex gap-1 overflow-x-auto">
-          {tabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"

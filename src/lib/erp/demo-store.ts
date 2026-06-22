@@ -2,6 +2,7 @@ import { createDemoErpWorkspace } from "@/lib/erp/demo-workspace";
 import type {
   CreatePaymentInput,
   CreatePayrollRunInput,
+  CreateBranchExpenseInput,
   CreatePurchaseBillInput,
   ApplyIndustryTemplateInput,
   FixedAssetDepreciationRunInput,
@@ -32,6 +33,8 @@ import type {
   RawTransactionLine,
   Supplier,
 } from "@/lib/erp/types";
+import { accountCodes, systemAccounts } from "@/lib/accounting/chart";
+import { createJournalEntry, makeLine } from "@/lib/accounting/engine";
 import type { Employee, StockMovement, Warehouse } from "@/lib/domain/types";
 import {
   postPayment,
@@ -55,13 +58,25 @@ import {
   validateRawTransactions,
 } from "@/lib/erp/horizontal";
 import { valueInventory } from "@/lib/inventory/valuation";
+type DemoBranchExpense = {
+  id: string;
+  locationId: string;
+  date: string;
+  amount: number;
+  category: string;
+  memo?: string;
+  journalEntryId: string;
+};
+
 
 const demoGlobal = globalThis as typeof globalThis & {
   __valuintcorpDemoWorkspace?: ErpWorkspace;
+  __valuintcorpDemoBranchExpenses?: DemoBranchExpense[];
 };
 
 let workspace = demoGlobal.__valuintcorpDemoWorkspace ?? createDemoErpWorkspace();
 demoGlobal.__valuintcorpDemoWorkspace = workspace;
+let branchExpenses = demoGlobal.__valuintcorpDemoBranchExpenses ?? [];
 
 function currentWorkspace(): ErpWorkspace {
   workspace = demoGlobal.__valuintcorpDemoWorkspace ?? workspace;
@@ -117,12 +132,58 @@ export function getDemoErpStore(): ErpWorkspace {
 }
 
 export function resetDemoErpStore(): ErpWorkspace {
+  branchExpenses = [];
+  demoGlobal.__valuintcorpDemoBranchExpenses = branchExpenses;
   return setDemoWorkspace(createDemoErpWorkspace());
 }
+export function getDemoBranchExpenses(locationId: string, date: string): DemoBranchExpense[] {
+  return branchExpenses.filter((expense) => expense.locationId === locationId && expense.date === date);
+}
 
-export function createDemoSalesInvoice(input: CreateSalesInvoiceInput): ErpWorkspace {
+export function createDemoBranchExpense(input: CreateBranchExpenseInput & { date: string }): { expenseId: string; workspace: ErpWorkspace } {
   workspace = currentWorkspace();
-  workspace = postSalesInvoice(workspace, input);
+  const location = workspace.locations.find((item) => item.id === input.locationId && item.isActive && ["branch", "outlet", "store"].includes(item.type));
+  if (!location) throw new Error("Cabang aktif tidak ditemukan.");
+  if (workspace.period.locked && workspace.period.startDate <= input.date && input.date <= workspace.period.endDate) throw new Error(`Periode ${workspace.period.label} sudah dikunci.`);
+  const expenseId = generatedId("branch-expense");
+  const journal = createJournalEntry({
+    businessId: workspace.business.id,
+    date: input.date,
+    description: `Biaya cabang ${input.category}`,
+    source: "manual_transaction",
+    referenceId: expenseId,
+    createdByRole: workspace.user.role,
+    lines: [
+      makeLine(systemAccounts, accountCodes.operatingExpense, "debit", input.amount, input.memo),
+      makeLine(systemAccounts, accountCodes.cash, "credit", input.amount, input.memo),
+    ],
+  });
+  const expense: DemoBranchExpense = {
+    id: expenseId,
+    locationId: input.locationId,
+    date: input.date,
+    amount: input.amount,
+    category: input.category,
+    memo: input.memo,
+    journalEntryId: journal.id,
+  };
+  branchExpenses = [expense, ...branchExpenses];
+  demoGlobal.__valuintcorpDemoBranchExpenses = branchExpenses;
+  workspace = refresh({
+    ...workspace,
+    journals: [journal, ...workspace.journals],
+    activities: [
+      activity("accounting", "posted branch expense", `Biaya ${input.category} dicatat untuk ${location.name}.`),
+      ...workspace.activities,
+    ],
+  });
+  return { expenseId, workspace };
+}
+
+
+export function createDemoSalesInvoice(input: CreateSalesInvoiceInput, metadata?: { locationId?: string; source?: "manual" | "pos" }): ErpWorkspace {
+  workspace = currentWorkspace();
+  workspace = postSalesInvoice(workspace, input, metadata);
   return setDemoWorkspace(workspace);
 }
 

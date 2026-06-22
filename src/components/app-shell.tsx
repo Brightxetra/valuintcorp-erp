@@ -324,7 +324,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="erp-mobile-shell-content mx-auto grid max-w-[1500px] gap-5 px-4 py-5 pb-24 sm:px-6 lg:grid-cols-[270px_1fr] lg:pb-8">
+      <div className="erp-mobile-shell-content mx-auto grid max-w-[1500px] gap-5 px-4 pt-5 pb-[var(--erp-mobile-content-clearance)] sm:px-6 lg:grid-cols-[270px_1fr] lg:pb-8">
         <aside className="hidden lg:block">
           <div className="sticky top-20 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-4 rounded-lg bg-slate-50 p-3">

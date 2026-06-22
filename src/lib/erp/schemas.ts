@@ -89,6 +89,28 @@ export const createPaymentSchema = z.object({
   date: isoDate,
 });
 
+const posLineSchema = z.object({
+  productId: z.string().min(1),
+  quantity: positiveQuantity,
+  unitPrice: nonNegativeMoney,
+});
+
+export const postPosSaleSchema = z.object({
+  locationId: z.string().min(1),
+  date: isoDate.optional(),
+  paymentMethod: z.enum(["cash", "bank_transfer", "qris", "marketplace", "other"]).default("cash"),
+  items: z.array(posLineSchema).min(1, "Minimal satu produk harus diisi."),
+});
+
+export const createBranchExpenseSchema = z.object({
+  locationId: z.string().min(1),
+  date: isoDate.optional(),
+  amount: positiveMoney,
+  paymentMethod: z.enum(["cash", "bank_transfer", "qris", "marketplace", "other"]).default("cash"),
+  category: z.string().trim().min(2),
+  memo: z.string().trim().max(500).optional(),
+});
+
 export const createStockAdjustmentSchema = z.object({
   itemId: z.string().min(1),
   warehouseId: z.string().min(1),
@@ -362,6 +384,8 @@ export const reverseFixedAssetDocumentSchema = z.object({
 export type CreateSalesInvoiceInput = z.infer<typeof createSalesInvoiceSchema>;
 export type CreatePurchaseBillInput = z.infer<typeof createPurchaseBillSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
+export type PostPosSaleInput = z.infer<typeof postPosSaleSchema>;
+export type CreateBranchExpenseInput = z.infer<typeof createBranchExpenseSchema>;
 export type CreateStockAdjustmentInput = z.infer<typeof createStockAdjustmentSchema>;
 export type CreatePayrollRunInput = z.infer<typeof createPayrollRunSchema>;
 export type CreateStockTransferInput = z.infer<typeof createStockTransferSchema>;

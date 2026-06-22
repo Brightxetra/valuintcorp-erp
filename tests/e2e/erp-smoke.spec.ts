@@ -168,7 +168,7 @@ test("failed business changes show an eight-second Goey error without an inline 
   await page.getByLabel("Industri").selectOption("service");
   await page.getByRole("button", { name: "Simpan profil" }).click();
 
-  const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Operasi gagal" });
+  const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Profil bisnis gagal disimpan" });
   await expect(toast).toBeVisible();
   await expect(toast).toContainText("Industri tidak valid.");
   await expect(page.getByText("Industri tidak valid.", { exact: true })).toHaveCount(1);
@@ -208,4 +208,39 @@ test("financial export enforces demo roles and returns a workbook for owners", a
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   );
   expect((await exported.body()).byteLength).toBeGreaterThan(1_000);
+});
+
+test("branch POS exposes a daily recap and branch product picker", async ({ page }) => {
+  await page.goto("/pos");
+  await expect(page.getByRole("heading", { name: "Kasir & rekap harian" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Cabang" })).toHaveValue("loc-kitchen");
+  await expect(page.getByText("Produk cabang")).toBeVisible();
+  await expect(page.getByText("Stok awal")).toBeVisible();
+  await expect(page.getByText("Stok akhir")).toBeVisible();
+});
+
+test("branch POS posts a demo sale into the daily recap", async ({ page }) => {
+  await page.goto("/pos");
+  await expect(page.getByText("Rendang Bowl", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Tambah Rendang Bowl" }).click();
+  await page.getByRole("button", { name: "Post penjualan" }).click();
+
+  const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Penjualan POS diposting" });
+  await expect(toast).toBeVisible();
+  await expectTopCenterToast(page, toast);
+
+  const revenueCard = page.getByText("Omzet", { exact: true }).locator("..");
+  await expect(revenueCard).toContainText("Rp 45.000");
+  await expect(page.getByText(/INV-2026-/).first()).toBeVisible();
+  const expenseForm = page.locator("#branch-expense-form");
+  await expenseForm.getByLabel("Kategori").fill("Transport");
+  await expenseForm.getByLabel("Nominal").fill("25000");
+  await expenseForm.getByLabel("Catatan").fill("Antar pesanan");
+  await expenseForm.getByRole("button", { name: "Simpan biaya" }).click();
+
+  const expenseToast = page.locator("[data-sonner-toast]").filter({ hasText: "Biaya cabang dicatat" });
+  await expect(expenseToast).toBeVisible();
+  await expectTopCenterToast(page, expenseToast);
+  const expenseCard = page.getByText("Biaya lain", { exact: true }).locator("..");
+  await expect(expenseCard).toContainText("Rp 25.000");
 });
