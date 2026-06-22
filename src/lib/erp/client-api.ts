@@ -323,8 +323,16 @@ export async function touchServerSessionActivity(force = false) {
   }
 
   lastActivityTouchAt = now;
+  const token = await getAccessToken();
+  const headers = new Headers();
+
+  if (token) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+
   const response = await fetch("/api/auth/session/activity", {
     method: "POST",
+    headers,
     cache: "no-store",
   }).catch(() => null);
 

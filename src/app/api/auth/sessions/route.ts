@@ -1,21 +1,36 @@
 import { z } from "zod";
+import { NextResponse } from "next/server";
 import { isApiResponse, requireAuthenticatedUser } from "@/lib/auth/api";
 import {
   listLoginSessionsForUser,
   revokeLoginSessionForUser,
+  upsertLoginSession,
 } from "@/lib/auth/login-sessions";
 import {
   appendClearSessionCookies,
+  nowSeconds,
+  parseCookieHeader,
   requestCookie,
+  rememberCookieValue,
+  sessionCookieMaxAge,
+  sessionCookieOptions,
 } from "@/lib/auth/session-policy";
-import { serverSessionIdCookie } from "@/lib/auth/runtime";
+import { serverLastActivityCookie, serverSessionIdCookie, serverSessionRememberCookie } from "@/lib/auth/runtime";
 
 const revokeSessionSchema = z.object({
   sessionId: z.string().uuid(),
 });
 
 function json(body: unknown, status = 200) {
-  return Response.json(body, { status, headers: { "cache-control": "no-store" } });
+  return NextResponse.json(body, { status, headers: { "cache-control": "no-store" } });
+}
+
+function setCurrentSessionCookies(response: NextResponse, sessionToken: string, rememberMe: boolean) {
+  const maxAge = sessionCookieMaxAge(rememberMe);
+  response.cookies.set(serverSessionIdCookie, sessionToken, sessionCookieOptions(maxAge));
+  response.cookies.set(serverSessionRememberCookie, rememberCookieValue(rememberMe), sessionCookieOptions(maxAge));
+  response.cookies.set(serverLastActivityCookie, String(nowSeconds()), sessionCookieOptions(maxAge));
+  return response;
 }
 
 export async function GET(request: Request) {
@@ -44,9 +59,24 @@ export async function GET(request: Request) {
     });
   }
 
-  return json({
-    sessions: await listLoginSessionsForUser(user.userId, requestCookie(request, serverSessionIdCookie)),
+  const cookies = parseCookieHeader(request.headers.get("cookie"));
+  const rememberMe = cookies.get(serverSessionRememberCookie) === "1";
+  const sessionToken = requestCookie(request, serverSessionIdCookie) ?? crypto.randomUUID();
+
+  await upsertLoginSession({
+    request,
+    sessionToken,
+    userId: user.userId,
+    rememberMe,
   });
+
+  return setCurrentSessionCookies(
+    json({
+      sessions: await listLoginSessionsForUser(user.userId, sessionToken),
+    }),
+    sessionToken,
+    rememberMe,
+  );
 }
 
 export async function DELETE(request: Request) {
