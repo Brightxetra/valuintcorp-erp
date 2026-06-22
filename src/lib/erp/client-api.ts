@@ -227,7 +227,9 @@ export async function syncServerSession(
   explicitTokens?: SessionSyncTokens | null,
   options: SessionSyncOptions = {},
 ): Promise<SessionSyncResult | null> {
-  if (!explicitTokens && browserIdleSessionExpired()) {
+  const freshLogin = options.freshLogin === true;
+
+  if (!freshLogin && browserIdleSessionExpired()) {
     await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
     clearBrowserSessionCookies();
     return null;
@@ -259,7 +261,7 @@ export async function syncServerSession(
   }
 
   payload.rememberMe = rememberMe;
-  payload.freshLogin = options.freshLogin === true;
+  payload.freshLogin = freshLogin;
 
   const fallbackTokens: SessionSyncTokens = {
     accessToken,

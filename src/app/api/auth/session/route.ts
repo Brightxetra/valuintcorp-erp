@@ -139,6 +139,10 @@ export async function POST(request: Request) {
     return sessionEndedResponse("session-expired");
   }
 
+  if (!freshLogin && !existingSessionToken) {
+    return sessionEndedResponse("session-expired");
+  }
+
   if (existingSessionToken && !freshLogin) {
     const existingSessionStatus = await getLoginSessionStatus(existingSessionToken);
 
