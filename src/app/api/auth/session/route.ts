@@ -156,7 +156,7 @@ export async function POST(request: Request) {
   }
 
   if (existingSessionToken && freshLogin) {
-    await revokeLoginSessionByToken(existingSessionToken, null, "superseded_login");
+    await revokeLoginSessionByToken(existingSessionToken, userData.user.id, "superseded_login");
   }
 
   const sessionToken = freshLogin || !existingSessionToken ? crypto.randomUUID() : existingSessionToken;
