@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isApiResponse, requireAuthenticatedUser } from "@/lib/auth/api";
+import { createClient } from "@supabase/supabase-js";
 import {
   serverAccessTokenCookie,
   serverBusinessCookie,
@@ -19,6 +19,16 @@ import {
   sessionCookieMaxAge,
   sessionCookieOptions,
 } from "@/lib/auth/session-policy";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
+
+function createAuthorizedSupabaseClient(authorization: string) {
+  const { url, anonKey } = requireSupabasePublicConfig("Supabase session activity");
+
+  return createClient(url, anonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: authorization } },
+  });
+}
 
 function touchCookie(
   response: NextResponse,
@@ -42,10 +52,6 @@ export async function POST(request: Request) {
     return guard.response;
   }
 
-  const user = await requireAuthenticatedUser(request);
-
-  if (isApiResponse(user)) return user;
-
   const cookies = parseCookieHeader(request.headers.get("cookie"));
   const maxAge = sessionCookieMaxAge(guard.rememberMe);
   const accessToken = cookies.get(serverAccessTokenCookie);
@@ -68,12 +74,21 @@ export async function POST(request: Request) {
   response.cookies.set(serverSessionRememberCookie, rememberCookieValue(guard.rememberMe), sessionCookieOptions(maxAge));
   response.cookies.set(serverLastActivityCookie, String(nowSeconds()), sessionCookieOptions(maxAge));
 
-  await upsertLoginSession({
-    request,
-    sessionToken,
-    userId: user.userId,
-    rememberMe: guard.rememberMe,
-  });
+  const authorization = request.headers.get("authorization");
+
+  if (authorization) {
+    const supabase = createAuthorizedSupabaseClient(authorization);
+    const { data } = await supabase.auth.getUser();
+
+    if (data.user) {
+      await upsertLoginSession({
+        request,
+        sessionToken,
+        userId: data.user.id,
+        rememberMe: guard.rememberMe,
+      });
+    }
+  }
 
   return response;
 }

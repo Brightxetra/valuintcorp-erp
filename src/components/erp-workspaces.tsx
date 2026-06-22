@@ -1926,11 +1926,16 @@ export function LoginWorkspace() {
         }
 
         setPending(true);
-        const session = await syncServerSession(null, {
-          accessToken: data.session.access_token,
-          refreshToken: data.session.refresh_token,
-          userId: data.session.user.id,
-        });
+        const session = await Promise.race([
+          syncServerSession(null, {
+            accessToken: data.session.access_token,
+            refreshToken: data.session.refresh_token,
+            userId: data.session.user.id,
+          }),
+          new Promise<null>((resolve) => {
+            window.setTimeout(() => resolve(null), 8_000);
+          }),
+        ]);
 
         if (cancelled) return;
 
@@ -1940,10 +1945,12 @@ export function LoginWorkspace() {
         }
 
         setPending(false);
+        setError("Sesi lama tidak bisa dipulihkan. Silakan login ulang.");
         setCheckingSession(false);
       } catch {
         if (!cancelled) {
           setPending(false);
+          setError("Sesi lama tidak bisa dipulihkan. Silakan login ulang.");
           setCheckingSession(false);
         }
       }
