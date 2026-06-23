@@ -2,6 +2,7 @@ import type {
   Attendance,
   Business,
   BusinessRole,
+  ChartOfAccount,
   Employee,
   InventoryItem,
   JournalEntry,
@@ -474,6 +475,24 @@ export interface DemoSandboxMetadata {
   nextResetAt?: string;
 }
 
+export interface BpjsPolicy {
+  id: string;
+  businessId: string;
+  effectiveDate: string;
+  grossSalaryMultiplier: number;
+  healthEmployeeRate: number;
+  healthEmployerRate: number;
+  healthSalaryCap: number;
+  jhtEmployeeRate: number;
+  jhtEmployerRate: number;
+  jhtSalaryCap: number;
+  jpnEmployeeRate: number;
+  jpnEmployerRate: number;
+  jpnSalaryCap: number;
+  jkkEmployerRate: number;
+  jkmEmployerRate: number;
+  updatedAt?: string;
+}
 export interface ErpWorkspace {
   user: AppUser;
   permissions: Permission[];
@@ -482,6 +501,8 @@ export interface ErpWorkspace {
   members?: BusinessMember[];
   period: ReportPeriod;
   taxProfile: TaxProfile;
+  bpjsPolicy?: BpjsPolicy;
+  accounts: ChartOfAccount[];
   locations: Location[];
   featureFlags: BusinessFeatureFlag[];
   industryTemplates: IndustryTemplate[];

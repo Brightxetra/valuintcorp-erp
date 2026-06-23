@@ -169,12 +169,23 @@ export interface Employee {
   businessId: string;
   employeeNo: string;
   name: string;
+  department?: string;
   role: string;
   contractType: ContractType;
   status: EmployeeStatus;
   baseSalary: Money;
   dailyRate?: Money;
   joinedAt: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  taxStatus?: string;
+  npwp?: string;
+  bankName?: string;
+  bankAccountNo?: string;
+  bankAccountName?: string;
+  bpjsHealthNo?: string;
+  bpjsEmploymentNo?: string;
 }
 
 export interface Attendance {

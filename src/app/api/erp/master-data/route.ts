@@ -109,12 +109,23 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       business_id: businessId,
       employee_no: values.employeeNo,
       name: values.name,
+      department: values.department ?? null,
       role: values.role,
       contract_type: values.contractType,
       status: values.status,
       base_salary: values.baseSalary,
       daily_rate: values.dailyRate ?? null,
       joined_at: values.joinedAt,
+      phone: values.phone ?? null,
+      email: values.email ?? null,
+      address: values.address ?? null,
+      tax_status: values.taxStatus ?? null,
+      npwp: values.npwp ?? null,
+      bank_name: values.bankName ?? null,
+      bank_account_no: values.bankAccountNo ?? null,
+      bank_account_name: values.bankAccountName ?? null,
+      bpjs_health_no: values.bpjsHealthNo ?? null,
+      bpjs_employment_no: values.bpjsEmploymentNo ?? null,
     };
   }
 

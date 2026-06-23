@@ -38,7 +38,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 021", () => {
+  it("keeps production ERP migrations in order through 022", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -63,6 +63,7 @@ describe("Supabase migration contract", () => {
       "019_branch_pos_and_member_access.sql",
       "020_api_role_table_privileges.sql",
       "021_user_login_sessions.sql",
+      "022_employee_profiles_and_bpjs_policy.sql",
     ]);
   });
 
@@ -241,6 +242,21 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("revoke insert, update, delete on public.user_login_sessions from authenticated");
     expect(migration).toContain("grant select on public.user_login_sessions to authenticated");
     expect(migration).toContain("grant select, insert, update, delete on public.user_login_sessions to service_role");
+  });
+
+
+  it("adds employee profile fields and configurable BPJS policy", () => {
+    const migration = readFileSync(join(migrationsDir, "022_employee_profiles_and_bpjs_policy.sql"), "utf8");
+
+    expect(migration).toContain("add column if not exists department text");
+    expect(migration).toContain("add column if not exists bank_account_no text");
+    expect(migration).toContain("add column if not exists bpjs_employment_no text");
+    expect(migration).toContain("create table if not exists public.bpjs_policies");
+    expect(migration).toContain("health_employee_rate numeric(8, 6) not null default 0.01");
+    expect(migration).toContain("jkk_employer_rate numeric(8, 6) not null default 0.0054");
+    expect(migration).toContain("alter table public.bpjs_policies enable row level security");
+    expect(migration).toContain("hr can manage bpjs policies");
+    expect(migration).toContain("grant select, insert, update, delete on public.bpjs_policies to authenticated, service_role");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {

@@ -13,6 +13,7 @@ import type {
   ReverseFixedAssetDocumentInput,
   CreateSalesInvoiceInput,
   CreateStockAdjustmentInput,
+  CreateStockReceiptInput,
   CreateStockTransferInput,
   LockPeriodInput,
   SummaryActionInput,
@@ -35,7 +36,7 @@ import type {
 } from "@/lib/erp/types";
 import { accountCodes, systemAccounts } from "@/lib/accounting/chart";
 import { createJournalEntry, makeLine } from "@/lib/accounting/engine";
-import type { Employee, StockMovement, Warehouse } from "@/lib/domain/types";
+import type { ChartOfAccount, Employee, StockMovement, Warehouse } from "@/lib/domain/types";
 import {
   postPayment,
   postPurchaseBill,
@@ -205,6 +206,38 @@ export function createDemoStockAdjustment(input: CreateStockAdjustmentInput): Er
   return setDemoWorkspace(workspace);
 }
 
+export function createDemoStockReceipt(input: CreateStockReceiptInput): ErpWorkspace {
+  workspace = currentWorkspace();
+  const product = workspace.products.find((item) => item.id === input.itemId);
+  const warehouse = workspace.warehouses.find((item) => item.id === input.warehouseId);
+
+  if (!product || product.isActive === false || !product.trackStock || !product.isPurchasable) {
+    throw new Error("Produk stok tidak ditemukan atau tidak bisa dibeli.");
+  }
+
+  if (!warehouse || !warehouse.isActive) {
+    throw new Error("Gudang tidak ditemukan atau tidak aktif.");
+  }
+
+  const movement: StockMovement = {
+    id: generatedId("sm"),
+    businessId: workspace.business.id,
+    itemId: input.itemId,
+    warehouseId: input.warehouseId,
+    date: input.date,
+    type: "purchase",
+    quantity: input.quantity,
+    value: input.quantity * input.unitCost,
+    memo: input.memo ?? "Stok masuk manual",
+  };
+
+  return refresh({
+    ...workspace,
+    stockMovements: [...workspace.stockMovements, movement],
+    activities: [activity("inventory", "stock receipt", `${product.sku} stok masuk ${input.quantity} ${product.unit}.`), ...workspace.activities],
+  });
+}
+
 export function createDemoPayrollRun(input: CreatePayrollRunInput): ErpWorkspace {
   workspace = currentWorkspace();
   workspace = runPayroll(workspace, input);
@@ -356,12 +389,23 @@ export function saveDemoMasterData(
     businessId: workspace.business.id,
     employeeNo: String(values.employeeNo),
     name: String(values.name),
+    department: typeof values.department === "string" ? values.department : undefined,
     role: String(values.role),
     contractType: String(values.contractType ?? "contract") as Employee["contractType"],
     status: String(values.status ?? "active") as Employee["status"],
     baseSalary: Number(values.baseSalary ?? 0),
     dailyRate: Number(values.dailyRate ?? 0) || undefined,
     joinedAt: String(values.joinedAt),
+    phone: typeof values.phone === "string" ? values.phone : undefined,
+    email: typeof values.email === "string" ? values.email : undefined,
+    address: typeof values.address === "string" ? values.address : undefined,
+    taxStatus: typeof values.taxStatus === "string" ? values.taxStatus : undefined,
+    npwp: typeof values.npwp === "string" ? values.npwp : undefined,
+    bankName: typeof values.bankName === "string" ? values.bankName : undefined,
+    bankAccountNo: typeof values.bankAccountNo === "string" ? values.bankAccountNo : undefined,
+    bankAccountName: typeof values.bankAccountName === "string" ? values.bankAccountName : undefined,
+    bpjsHealthNo: typeof values.bpjsHealthNo === "string" ? values.bpjsHealthNo : undefined,
+    bpjsEmploymentNo: typeof values.bpjsEmploymentNo === "string" ? values.bpjsEmploymentNo : undefined,
   };
 
   return refresh({
@@ -371,6 +415,35 @@ export function saveDemoMasterData(
   });
 }
 
+export function saveDemoChartOfAccount(id: string | undefined, values: Record<string, unknown>): ErpWorkspace {
+  workspace = currentWorkspace();
+  const account: ChartOfAccount = {
+    id: id ?? generatedId("coa"),
+    businessId: workspace.business.id,
+    code: String(values.code),
+    name: String(values.name),
+    type: String(values.type) as ChartOfAccount["type"],
+    normalBalance: String(values.normalBalance) as ChartOfAccount["normalBalance"],
+    category: String(values.category) as ChartOfAccount["category"],
+    isSystem: false,
+    isActive: Boolean(values.isActive ?? true),
+  };
+
+  return refresh({
+    ...workspace,
+    accounts: upsertById(workspace.accounts, id, account, account),
+    activities: [activity("accounting", id ? "account updated" : "account created", `${account.code} - ${account.name} disimpan.`), ...workspace.activities],
+  });
+}
+
+export function archiveDemoChartOfAccount(id: string): ErpWorkspace {
+  workspace = currentWorkspace();
+  return refresh({
+    ...workspace,
+    accounts: workspace.accounts.map((item) => (item.id === id ? { ...item, isActive: false } : item)),
+    activities: [activity("accounting", "account archived", `Akun ${id} dinonaktifkan.`), ...workspace.activities],
+  });
+}
 export function saveDemoLocation(input: LocationInput, id?: string): ErpWorkspace {
   workspace = currentWorkspace();
   const location: Location = {

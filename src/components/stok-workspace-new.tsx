@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
-import { FeedbackToast } from "@/components/feedback-toast";
 import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { PageHeader } from "@/components/ui";
 import {
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { valueInventory } from "@/lib/inventory/valuation";
+import { notify } from "@/lib/notify";
 
 // ============================================================================
 // TYPES
@@ -72,15 +72,14 @@ function FormField({
 // ============================================================================
 
 export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { workspace, setWorkspace } = useErpWorkspace(initialWorkspace);
+  const { workspace, setWorkspace, request } = useErpWorkspace(initialWorkspace);
   const [searchQuery, setSearchQuery] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   // Calculate stock positions
   const positions = valueInventory(workspace.stockMovements);
@@ -122,6 +121,15 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   const totalSKU = new Set(positions.map((pos) => pos.itemId)).size;
   const alertCount = alerts.length;
 
+  const [stockReceipt, setStockReceipt] = useState({
+    itemId: "",
+    warehouseId: workspace.warehouses[0]?.id || "",
+    quantity: 1,
+    unitCost: 0,
+    memo: "",
+    date: new Date().toISOString().split("T")[0],
+  });
+
   // New adjustment form state
   const [newAdjustment, setNewAdjustment] = useState({
     itemId: "",
@@ -141,6 +149,10 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
     date: new Date().toISOString().split("T")[0],
   });
 
+  function handleReceiptChange(field: string, value: string | number) {
+    setStockReceipt((prev) => ({ ...prev, [field]: value }));
+  }
+
   function handleAdjustmentChange(field: string, value: string | number) {
     setNewAdjustment((prev) => ({ ...prev, [field]: value }));
   }
@@ -151,29 +163,39 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
 
   async function handleCreateAdjustment() {
     setLoading(true);
-    setError(null);
-    setSuccess(null);
 
     try {
-      const response = await fetch("/api/erp/stock-adjustments", {
+      const data = await request<{ workspace: ErpWorkspace }>("/api/erp/stock-adjustments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newAdjustment),
       });
 
-      if (!response.ok) {
-        throw new Error("Gagal membuat penyesuaian stok");
-      }
-
-      const data = await response.json();
-      if (data.workspace) {
-        setWorkspace(data.workspace);
-      }
-
-      setSuccess("Penyesuaian stok berhasil disimpan!");
+      setWorkspace(data.workspace);
+      notify.success("Penyesuaian stok disimpan", { description: newAdjustment.reason });
       setShowNewModal(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Terjadi kesalahan");
+      notify.error("Penyesuaian stok gagal", { description: err instanceof Error ? err.message : "Terjadi kesalahan" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCreateReceipt() {
+    setLoading(true);
+
+    try {
+      const data = await request<{ workspace: ErpWorkspace }>("/api/erp/stock-receipts", {
+        method: "POST",
+        body: JSON.stringify(stockReceipt),
+      });
+
+      setWorkspace(data.workspace);
+      const product = workspace.products.find((item) => item.id === stockReceipt.itemId);
+      notify.success("Stok masuk dicatat", { description: product ? product.sku + " +" + stockReceipt.quantity : undefined });
+      setShowReceiptModal(false);
+      setStockReceipt((prev) => ({ ...prev, quantity: 1, unitCost: 0, memo: "" }));
+    } catch (err) {
+      notify.error("Stok masuk gagal", { description: err instanceof Error ? err.message : "Terjadi kesalahan" });
     } finally {
       setLoading(false);
     }
@@ -181,29 +203,18 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
 
   async function handleCreateTransfer() {
     setLoading(true);
-    setError(null);
-    setSuccess(null);
 
     try {
-      const response = await fetch("/api/erp/stock-transfers", {
+      const data = await request<{ workspace: ErpWorkspace }>("/api/erp/stock-transfers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(transfer),
       });
 
-      if (!response.ok) {
-        throw new Error("Gagal membuat transfer stok");
-      }
-
-      const data = await response.json();
-      if (data.workspace) {
-        setWorkspace(data.workspace);
-      }
-
-      setSuccess("Transfer stok berhasil disimpan!");
+      setWorkspace(data.workspace);
+      notify.success("Transfer stok disimpan");
       setShowTransferModal(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Terjadi kesalahan");
+      notify.error("Transfer stok gagal", { description: err instanceof Error ? err.message : "Terjadi kesalahan" });
     } finally {
       setLoading(false);
     }
@@ -216,7 +227,14 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
         title="Stok & Persediaan"
         description="Kelola stok barang, penyesuaian, dan transfer antar gudang"
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setShowReceiptModal(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50"
+            >
+              <Plus className="size-4" />
+              Stok Masuk
+            </button>
             <button
               onClick={() => setShowTransferModal(true)}
               className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
@@ -347,7 +365,6 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
         </div>
       </div>
 
-      <FeedbackToast error={error} success={success} />
 
       {/* Stock List */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -415,6 +432,89 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
           </table>
         </div>
       </div>
+
+      {/* Stock Receipt Modal */}
+      <Modal
+        isOpen={showReceiptModal}
+        onClose={() => setShowReceiptModal(false)}
+        title="Stok Masuk"
+      >
+        <div className="space-y-4">
+          <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Gunakan ini untuk mencatat stok fisik masuk tanpa membuat tagihan supplier. Jika pembelian perlu hutang dan jurnal AP, gunakan menu Bill.</p>
+          <FormField label="Produk">
+            <select
+              value={stockReceipt.itemId}
+              onChange={(e) => handleReceiptChange("itemId", e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            >
+              <option value="">Pilih Produk</option>
+              {workspace.products.filter((p) => p.trackStock && p.isPurchasable !== false && p.isActive !== false).map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.sku} - {product.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Gudang tujuan">
+              <select
+                value={stockReceipt.warehouseId}
+                onChange={(e) => handleReceiptChange("warehouseId", e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              >
+                {workspace.warehouses.filter((wh) => wh.isActive).map((wh) => (
+                  <option key={wh.id} value={wh.id}>{wh.name}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Tanggal">
+              <input
+                type="date"
+                value={stockReceipt.date}
+                onChange={(e) => handleReceiptChange("date", e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              />
+            </FormField>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Qty masuk">
+              <input
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                value={stockReceipt.quantity}
+                onChange={(e) => handleReceiptChange("quantity", Number(e.target.value) || 0)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              />
+            </FormField>
+            <FormField label="Biaya per unit">
+              <input
+                type="number"
+                min="0"
+                value={stockReceipt.unitCost}
+                onChange={(e) => handleReceiptChange("unitCost", Number(e.target.value) || 0)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Catatan">
+            <input
+              value={stockReceipt.memo}
+              onChange={(e) => handleReceiptChange("memo", e.target.value)}
+              placeholder="Contoh: stok awal, restock manual, koreksi pembelian"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            />
+          </FormField>
+
+          <div className="flex gap-3 pt-4">
+            <button onClick={() => setShowReceiptModal(false)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Batal</button>
+            <button onClick={handleCreateReceipt} disabled={loading || !stockReceipt.itemId || !stockReceipt.warehouseId || stockReceipt.quantity <= 0} className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">{loading ? "Memproses..." : "Catat Stok Masuk"}</button>
+          </div>
+        </div>
+      </Modal>
 
       {/* New Adjustment Modal */}
       <Modal

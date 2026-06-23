@@ -25,6 +25,7 @@ import {
   monthlyDepreciation,
 } from "@/lib/erp/fixed-assets";
 import { buildLocationMetrics, featureFlagsForTemplate, industryTemplates, summarizeRawTransactions } from "@/lib/erp/horizontal";
+import { systemAccounts } from "@/lib/accounting/chart";
 import { permissionsForRole } from "@/lib/security/permissions";
 
 export function createDemoErpWorkspace(): ErpWorkspace {
@@ -564,6 +565,7 @@ export function createDemoErpWorkspace(): ErpWorkspace {
     business: demoBusiness,
     period: demoPeriod,
     taxProfile: demoTaxProfile,
+    accounts: systemAccounts.map((account) => ({ ...account, businessId: demoBusiness.id })),
     locations,
     featureFlags: featureFlagsForTemplate(demoBusiness.id, "food_beverage"),
     industryTemplates,

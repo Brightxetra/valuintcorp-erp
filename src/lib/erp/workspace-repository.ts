@@ -36,6 +36,7 @@ import type {
 import type {
   Attendance,
   Business,
+  ChartOfAccount,
   Employee,
   JournalEntry,
   JournalLine,
@@ -184,6 +185,20 @@ function taxProfileFromRow(row: Row, businessId: string): TaxProfile {
     finalUmkmRate: numberValue(row, "final_umkm_rate", 0.005),
     coretaxStatus: text(row, "coretax_status", "not_started") as TaxProfile["coretaxStatus"],
   };
+}
+
+function mapChartOfAccounts(rows: Row[]): ChartOfAccount[] {
+  return rows.map((row) => ({
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    code: text(row, "code"),
+    name: text(row, "name"),
+    type: text(row, "type", "expense") as ChartOfAccount["type"],
+    normalBalance: text(row, "normal_balance", "debit") as ChartOfAccount["normalBalance"],
+    category: text(row, "category", "operating_expense") as ChartOfAccount["category"],
+    isSystem: booleanValue(row, "is_system"),
+    isActive: booleanValue(row, "is_active", true),
+  }));
 }
 
 function mapCustomers(rows: Row[]): Customer[] {
@@ -484,12 +499,23 @@ function mapEmployees(rows: Row[]): Employee[] {
     businessId: text(row, "business_id"),
     employeeNo: text(row, "employee_no"),
     name: text(row, "name"),
+    department: optionalText(row, "department"),
     role: text(row, "role"),
     contractType: text(row, "contract_type", "contract") as Employee["contractType"],
     status: text(row, "status", "active") as Employee["status"],
     baseSalary: numberValue(row, "base_salary"),
     dailyRate: numberValue(row, "daily_rate") || undefined,
     joinedAt: text(row, "joined_at"),
+    phone: optionalText(row, "phone"),
+    email: optionalText(row, "email"),
+    address: optionalText(row, "address"),
+    taxStatus: optionalText(row, "tax_status"),
+    npwp: optionalText(row, "npwp"),
+    bankName: optionalText(row, "bank_name"),
+    bankAccountNo: optionalText(row, "bank_account_no"),
+    bankAccountName: optionalText(row, "bank_account_name"),
+    bpjsHealthNo: optionalText(row, "bpjs_health_no"),
+    bpjsEmploymentNo: optionalText(row, "bpjs_employment_no"),
   }));
 }
 
@@ -902,6 +928,7 @@ export async function loadSupabaseWorkspace(
     business,
     periods,
     taxProfiles,
+    accounts,
     locations,
     featureFlags,
     templates,
@@ -946,6 +973,9 @@ export async function loadSupabaseWorkspace(
       .order("start_date", { ascending: false })
       .limit(1),
     supabase.from("tax_profiles").select("*").eq("business_id", context.businessId).maybeSingle(),
+    needs(profile, "dashboard", "accounting", "reports", "tax", "document-detail")
+      ? supabase.from("chart_of_accounts").select("*").eq("business_id", context.businessId).order("code")
+      : skipRows(),
     supabase.from("locations").select("*").eq("business_id", context.businessId).order("code"),
     needs(profile, "shell", "settings", "onboarding")
       ? supabase.from("business_feature_flags").select("*").eq("business_id", context.businessId).order("module")
@@ -1214,6 +1244,7 @@ export async function loadSupabaseWorkspace(
       business,
       periods,
       taxProfiles,
+      accounts,
       customers,
       suppliers,
       products,
@@ -1278,6 +1309,7 @@ export async function loadSupabaseWorkspace(
     assignedLocationIds: context.assignedLocationIds ?? [],
     period,
     taxProfile: taxProfileFromRow(asRow(taxProfiles.data), context.businessId),
+    accounts: mapChartOfAccounts(asRows(accounts.data)),
     locations: mapLocations(asRows(locations.data)).filter((location) => context.role === "owner" || context.role === "system_admin" || context.accessScope !== "custom" || (context.assignedLocationIds ?? []).includes(location.id)),
     featureFlags: mapFeatureFlags(asRows(featureFlags.data)),
     industryTemplates: mapIndustryTemplates(asRows(templates.data)),

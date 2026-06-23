@@ -120,6 +120,15 @@ export const createStockAdjustmentSchema = z.object({
   date: isoDate,
 });
 
+export const createStockReceiptSchema = z.object({
+  itemId: z.string().min(1),
+  warehouseId: z.string().min(1),
+  quantity: positiveQuantity,
+  unitCost: nonNegativeMoney,
+  date: isoDate,
+  memo: optionalText,
+});
+
 export const createPayrollRunSchema = z
   .object({
     employeeId: z.string().min(1),
@@ -203,12 +212,48 @@ export const locationSchema = z.object({
 export const employeeSchema = z.object({
   employeeNo: z.string().min(2),
   name: z.string().min(2),
+  department: optionalText,
   role: z.string().min(2),
   contractType: z.enum(["permanent", "contract", "daily"]),
   status: z.enum(["active", "inactive", "contract"]).default("active"),
   baseSalary: nonNegativeMoney.default(0),
   dailyRate: nonNegativeMoney.optional(),
   joinedAt: isoDate,
+  phone: optionalText,
+  email: optionalText,
+  address: optionalText,
+  taxStatus: optionalText,
+  npwp: optionalText,
+  bankName: optionalText,
+  bankAccountNo: optionalText,
+  bankAccountName: optionalText,
+  bpjsHealthNo: optionalText,
+  bpjsEmploymentNo: optionalText,
+});
+
+export const chartOfAccountSchema = z.object({
+  code: z.string().trim().min(2),
+  name: z.string().trim().min(2),
+  type: z.enum(["asset", "liability", "equity", "revenue", "expense"]),
+  normalBalance: z.enum(["debit", "credit"]),
+  category: z.string().trim().min(2),
+  isActive: booleanFlag.default(true),
+});
+
+export const bpjsPolicySchema = z.object({
+  effectiveDate: isoDate,
+  grossSalaryMultiplier: z.coerce.number().min(0).max(5).default(1),
+  healthEmployeeRate: z.coerce.number().min(0).max(1),
+  healthEmployerRate: z.coerce.number().min(0).max(1),
+  healthSalaryCap: nonNegativeMoney,
+  jhtEmployeeRate: z.coerce.number().min(0).max(1),
+  jhtEmployerRate: z.coerce.number().min(0).max(1),
+  jhtSalaryCap: nonNegativeMoney,
+  jpnEmployeeRate: z.coerce.number().min(0).max(1),
+  jpnEmployerRate: z.coerce.number().min(0).max(1),
+  jpnSalaryCap: nonNegativeMoney,
+  jkkEmployerRate: z.coerce.number().min(0).max(1),
+  jkmEmployerRate: z.coerce.number().min(0).max(1),
 });
 
 export const businessUpdateSchema = z.object({
@@ -387,6 +432,7 @@ export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 export type PostPosSaleInput = z.infer<typeof postPosSaleSchema>;
 export type CreateBranchExpenseInput = z.infer<typeof createBranchExpenseSchema>;
 export type CreateStockAdjustmentInput = z.infer<typeof createStockAdjustmentSchema>;
+export type CreateStockReceiptInput = z.infer<typeof createStockReceiptSchema>;
 export type CreatePayrollRunInput = z.infer<typeof createPayrollRunSchema>;
 export type CreateStockTransferInput = z.infer<typeof createStockTransferSchema>;
 export type VoidDocumentInput = z.infer<typeof voidDocumentSchema>;
