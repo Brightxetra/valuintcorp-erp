@@ -86,6 +86,7 @@ interface SettingsPanelProps {
   saveMember: (formData: FormData) => void;
   deleteMember: (memberId: string) => Promise<void>;
   cancelInvite: (inviteId: string) => Promise<void>;
+  resendInvite: (inviteId: string) => Promise<void>;
   saveLocation: (formData: FormData) => void;
   saveWarehouse: (formData: FormData) => void;
   saveMaster: (resource: string, values: Record<string, unknown>, id?: string) => Promise<void>;
@@ -298,7 +299,7 @@ function memberSecondaryLabel(member: NonNullable<ErpWorkspace["members"]>[numbe
   return `${access} - ${locations} - ${status}`;
 }
 
-function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvite }: SettingsPanelProps) {
+function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvite, resendInvite }: SettingsPanelProps) {
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const members = workspace.members ?? [];
   const editingMember = members.find((member) => member.id === editingMemberId);
@@ -405,6 +406,17 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
               </div>
               <div className="flex items-center gap-2">
                 <StatusPill tone="amber">{invite.role}</StatusPill>
+                <button
+                  type="button"
+                  aria-label={`Kirim ulang invite ${invite.email}`}
+                  disabled={pending}
+                  onClick={() => {
+                    void resendInvite(invite.id);
+                  }}
+                  className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Kirim ulang
+                </button>
                 <button
                   type="button"
                   aria-label={`Batalkan invite ${invite.email}`}
@@ -1223,6 +1235,23 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     }
   }
 
+  async function resendInvite(inviteId: string) {
+    setPending(true);
+
+    try {
+      const body = await postObject("/api/erp/members", { inviteId }, "PATCH");
+      notify.success(body.member ? "Anggota diaktifkan" : "Invite dikirim ulang", {
+        description: body.member
+          ? "Email tersebut sudah terdaftar, jadi akses anggota langsung aktif."
+          : "Email invite baru sudah dikirim.",
+      });
+    } catch (caught) {
+      notify.error("Invite gagal dikirim ulang", { description: caught instanceof Error ? caught.message : "Coba lagi." });
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function saveLocation(formData: FormData) {
     setPending(true);
 
@@ -1306,6 +1335,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     saveMember,
     deleteMember,
     cancelInvite,
+    resendInvite,
     saveLocation,
     saveWarehouse,
     saveMaster,

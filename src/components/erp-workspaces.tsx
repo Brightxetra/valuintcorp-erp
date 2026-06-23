@@ -1569,6 +1569,22 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
     }
   }
 
+  async function resendInvite(inviteId: string) {
+    setPending(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const body = await postObject(request, "/api/erp/members", { inviteId }, "PATCH");
+      if (body.workspace) setWorkspace(body.workspace);
+      setSuccess(body.member ? "Anggota sudah terdaftar dan langsung diaktifkan." : "Invite email dikirim ulang.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Invite gagal dikirim ulang.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <>
       <WorkspaceHeader
@@ -1633,6 +1649,16 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
                     <span className="truncate">{invite.email}</span>
                     <div className="flex items-center gap-2">
                       <StatusPill tone="amber">{invite.role}</StatusPill>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          void resendInvite(invite.id);
+                        }}
+                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 disabled:opacity-50"
+                      >
+                        Kirim ulang
+                      </button>
                       <button
                         type="button"
                         disabled={pending}

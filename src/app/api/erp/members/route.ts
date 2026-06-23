@@ -29,6 +29,10 @@ const deleteMemberSchema = z.object({
   message: "Pilih anggota atau invite yang akan dihapus.",
 });
 
+const resendInviteSchema = z.object({
+  inviteId: z.string().uuid(),
+});
+
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
@@ -255,6 +259,111 @@ export async function POST(request: Request) {
   });
 
   return withDemoHeader(json({ invite: { email, role: parsed.data.role, emailSent: true }, workspace: await loadSupabaseWorkspace(supabase, context) }, 201), context);
+}
+
+export async function PATCH(request: Request) {
+  const context = await requireApiPermission(request, "admin:manage_users");
+
+  if (isApiResponse(context)) {
+    return context;
+  }
+
+  const payload = await request.json().catch(() => null);
+  const parsed = resendInviteSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return withDemoHeader(json({ errors: parsed.error.flatten() }, 400), context);
+  }
+
+  if (context.demoMode) {
+    return withDemoHeader(json({ workspace: getDemoErpStore(), invite: { resent: true } }), context);
+  }
+
+  if (!isSupabaseServiceConfigured()) {
+    return withDemoHeader(json({ error: "Supabase service role key wajib dikonfigurasi agar invite email bisa dikirim." }, 503), context);
+  }
+
+  const supabase = createRequestSupabaseClient(request);
+  const { data: invite, error: inviteError } = await supabase
+    .from("member_invites")
+    .select("id, email, role, access_scope, access_permissions, location_ids")
+    .eq("business_id", context.businessId)
+    .eq("id", parsed.data.inviteId)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (inviteError) {
+    return withDemoHeader(json({ error: inviteError.message }, 422), context);
+  }
+
+  if (!invite?.id || !invite.email || !invite.role) {
+    return withDemoHeader(json({ error: "Invite pending tidak ditemukan atau sudah tidak aktif." }, 404), context);
+  }
+
+  const service = createServiceSupabaseClient();
+  const email = normalizeInviteEmail(invite.email);
+  const existingAuthUser = await findAuthUserByEmail(service, email);
+  const accessScope = invite.access_scope === "custom" ? "custom" : "role";
+  const accessPermissions = Array.isArray(invite.access_permissions)
+    ? invite.access_permissions.filter((permission): permission is Permission => typeof permission === "string")
+    : [];
+  const locationIds = Array.isArray(invite.location_ids)
+    ? invite.location_ids.filter((locationId): locationId is string => typeof locationId === "string")
+    : [];
+
+  if (existingAuthUser) {
+    const { error: memberError } = await supabase.from("business_members").upsert(
+      {
+        business_id: context.businessId,
+        auth_user_id: existingAuthUser.id,
+        role: invite.role,
+        access_scope: accessScope,
+        access_permissions: accessPermissions,
+        location_ids: locationIds,
+      },
+      { onConflict: "business_id,auth_user_id" },
+    );
+
+    if (memberError) {
+      return withDemoHeader(json({ error: memberError.message }, 422), context);
+    }
+
+    await supabase
+      .from("member_invites")
+      .update({
+        status: "accepted",
+        accepted_by: existingAuthUser.id,
+        accepted_at: new Date().toISOString(),
+      })
+      .eq("id", invite.id);
+
+    return withDemoHeader(json({
+      member: { email, existingUser: true },
+      workspace: await loadSupabaseWorkspace(supabase, context),
+    }), context);
+  }
+
+  const resent = await service.auth.admin.inviteUserByEmail(email, {
+    redirectTo: inviteRedirectUrl(request),
+    data: {
+      invited_by: context.userId,
+      business_id: context.businessId,
+      business_role: invite.role,
+    },
+  });
+
+  if (resent.error) {
+    return withDemoHeader(json({ error: resent.error.message }, 422), context);
+  }
+
+  await supabase
+    .from("member_invites")
+    .update({
+      expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    })
+    .eq("id", invite.id);
+
+  return withDemoHeader(json({ invite: { email, role: invite.role, resent: true }, workspace: await loadSupabaseWorkspace(supabase, context) }), context);
 }
 
 export async function DELETE(request: Request) {
