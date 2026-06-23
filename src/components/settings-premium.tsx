@@ -22,6 +22,7 @@ import {
   Upload,
   Users,
   Warehouse,
+  XCircle,
 } from "lucide-react";
 import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
@@ -83,6 +84,8 @@ interface SettingsPanelProps {
   saveBusiness: (formData: FormData) => void;
   saveTax: (formData: FormData) => void;
   saveMember: (formData: FormData) => void;
+  deleteMember: (memberId: string) => Promise<void>;
+  cancelInvite: (inviteId: string) => Promise<void>;
   saveLocation: (formData: FormData) => void;
   saveWarehouse: (formData: FormData) => void;
   saveMaster: (resource: string, values: Record<string, unknown>, id?: string) => Promise<void>;
@@ -277,10 +280,30 @@ function TaxProfilePanel({ workspace, pending, saveTax }: SettingsPanelProps) {
   );
 }
 
-function MembersPanel({ workspace, pending, saveMember }: SettingsPanelProps) {
+function memberDisplayName(member: NonNullable<ErpWorkspace["members"]>[number], workspace: ErpWorkspace) {
+  return member.email || (member.authUserId === workspace.user.id ? workspace.user.email : "") || `Anggota ${member.authUserId.slice(0, 8)}`;
+}
+
+function memberSecondaryLabel(member: NonNullable<ErpWorkspace["members"]>[number], workspace: ErpWorkspace) {
+  const access = member.accessScope === "custom" ? `${member.accessPermissions.length} menu spesifik` : "Mengikuti role bawaan";
+  const locations = member.locationIds.length
+    ? member.locationIds.map((locationId) => workspace.locations.find((location) => location.id === locationId)?.name ?? locationId).join(", ")
+    : "Semua cabang";
+  const status = member.emailConfirmedAt
+    ? "Email terverifikasi"
+    : member.invitedAt
+      ? "Menunggu aktivasi email"
+      : "Akun aktif";
+
+  return `${access} - ${locations} - ${status}`;
+}
+
+function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvite }: SettingsPanelProps) {
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const members = workspace.members ?? [];
   const editingMember = members.find((member) => member.id === editingMemberId);
+  const pendingInvites = workspace.memberInvites.filter((invite) => invite.status === "pending");
+
   return (
     <section className="space-y-6">
       <div>
@@ -301,8 +324,18 @@ function MembersPanel({ workspace, pending, saveMember }: SettingsPanelProps) {
 
       <form key={editingMember?.id ?? "new-member"} action={saveMember} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
         <h3 className="sm:col-span-2 text-sm font-semibold text-slate-900">{editingMember ? "Ubah akses anggota" : "Invite anggota baru"}</h3>
-        <TextField name="email" label="Email invite" type="email" placeholder="finance@usaha.co.id" />
-        <TextField name="authUserId" label="Supabase auth user id" defaultValue={editingMember?.authUserId ?? ""} readOnly={Boolean(editingMember)} placeholder="Isi jika user sudah ada" />
+        {editingMember ? (
+          <div className="sm:col-span-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
+            <input type="hidden" name="memberId" value={editingMember.id} />
+            <p className="text-sm font-semibold text-slate-900">{memberDisplayName(editingMember, workspace)}</p>
+            <p className="mt-1 text-xs text-slate-500">Sistem mendeteksi akun dari email atau data login. Anda tidak perlu mengisi ID teknis manual.</p>
+          </div>
+        ) : (
+          <div className="sm:col-span-2">
+            <TextField name="email" label="Email anggota" type="email" placeholder="finance@usaha.co.id" required />
+            <p className="mt-1 text-xs text-slate-500">Jika email sudah terdaftar di Supabase, anggota langsung ditambahkan. Jika belum, sistem mengirim email invite otomatis.</p>
+          </div>
+        )}
         <SelectField name="role" label="Role" defaultValue={editingMember?.role ?? "staff"}>
           <option value="staff">Staff</option>
           <option value="finance_admin">Finance/Admin</option>
@@ -334,12 +367,26 @@ function MembersPanel({ workspace, pending, saveMember }: SettingsPanelProps) {
           {members.map((member) => (
             <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 p-3 text-sm">
               <div className="min-w-0">
-                <p className="truncate font-medium text-slate-900">{member.authUserId}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{member.accessScope === "custom" ? `${member.accessPermissions.length} menu spesifik` : "Mengikuti role bawaan"} - {member.locationIds.length ? member.locationIds.map((locationId) => workspace.locations.find((location) => location.id === locationId)?.name ?? locationId).join(", ") : "Semua cabang"}</p>
+                <p className="truncate font-medium text-slate-900">{memberDisplayName(member, workspace)}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{memberSecondaryLabel(member, workspace)}</p>
               </div>
               <div className="flex items-center gap-2">
                 <StatusPill tone={member.accessScope === "custom" ? "cyan" : "gray"}>{member.role}</StatusPill>
-                <button type="button" aria-label={`Ubah akses ${member.authUserId}`} onClick={() => setEditingMemberId(member.id)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Ubah akses</button>
+                <button type="button" aria-label={`Ubah akses ${memberDisplayName(member, workspace)}`} onClick={() => setEditingMemberId(member.id)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Ubah akses</button>
+                {member.authUserId !== workspace.user.id && member.role !== "owner" ? (
+                  <button
+                    type="button"
+                    aria-label={`Hapus anggota ${memberDisplayName(member, workspace)}`}
+                    disabled={pending}
+                    onClick={() => {
+                      void deleteMember(member.id);
+                    }}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-red-200 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <XCircle className="size-4" aria-hidden />
+                    Hapus
+                  </button>
+                ) : null}
               </div>
             </div>
           ))}
@@ -350,13 +397,29 @@ function MembersPanel({ workspace, pending, saveMember }: SettingsPanelProps) {
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-700">Pending invites</h3>
         <div className="mt-3 space-y-2">
-          {workspace.memberInvites.filter((invite) => invite.status === "pending").map((invite) => (
-            <div key={invite.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 p-3 text-sm">
-              <span className="truncate">{invite.email}</span>
-              <StatusPill tone="amber">{invite.role}</StatusPill>
+          {pendingInvites.map((invite) => (
+            <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 p-3 text-sm">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-slate-900">{invite.email}</p>
+                <p className="mt-0.5 text-xs text-slate-500">Menunggu staff membuka email invite. Akses belum aktif sebelum invite diterima.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusPill tone="amber">{invite.role}</StatusPill>
+                <button
+                  type="button"
+                  aria-label={`Batalkan invite ${invite.email}`}
+                  disabled={pending}
+                  onClick={() => {
+                    void cancelInvite(invite.id);
+                  }}
+                  className="min-h-10 rounded-lg border border-amber-200 px-3 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                >
+                  Batalkan invite
+                </button>
+              </div>
             </div>
           ))}
-          {workspace.memberInvites.filter((invite) => invite.status === "pending").length === 0 ? (
+          {pendingInvites.length === 0 ? (
             <p className="text-sm text-slate-500">Belum ada invite pending.</p>
           ) : null}
         </div>
@@ -977,7 +1040,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
   }, [request, workspace.business.logoUrl]);
 
   async function postObject(endpoint: string, payload: Record<string, unknown>, method: "POST" | "PATCH" | "DELETE" = "POST") {
-    const body = await request<{ workspace?: ErpWorkspace; invite?: unknown }>(endpoint, {
+    const body = await request<{ workspace?: ErpWorkspace; invite?: unknown; member?: unknown }>(endpoint, {
       method,
       body: JSON.stringify(payload),
     });
@@ -1112,17 +1175,49 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     try {
       const body = await postObject("/api/erp/members", {
         email: String(formData.get("email") || "") || undefined,
-        authUserId: String(formData.get("authUserId") || "") || undefined,
+        memberId: String(formData.get("memberId") || "") || undefined,
         role: String(formData.get("role")),
         accessScope: String(formData.get("accessScope") || "role"),
         permissions: formData.getAll("permissions").map(String),
         locationIds: formData.getAll("locationIds").map(String),
       });
-      notify.success(body.invite ? "Invite anggota dibuat" : "Akses anggota disimpan", {
-        description: body.invite ? "Invite email menunggu diterima." : "Role, menu, dan cabang anggota telah diperbarui.",
+      notify.success(body.invite ? "Invite anggota dikirim" : "Akses anggota disimpan", {
+        description: body.invite
+          ? "Email invite sudah dikirim. Staff akan aktif setelah membuka email dan login."
+          : body.member
+            ? "Email sudah terdaftar, jadi anggota langsung ditambahkan."
+            : "Role, menu, dan cabang anggota telah diperbarui.",
       });
     } catch (caught) {
       notify.error("Akses anggota gagal disimpan", { description: caught instanceof Error ? caught.message : "Coba lagi." });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function deleteMember(memberId: string) {
+    if (!window.confirm("Hapus akses anggota ini dari bisnis?")) return;
+    setPending(true);
+
+    try {
+      await postObject("/api/erp/members", { memberId }, "DELETE");
+      notify.info("Anggota dihapus", { description: "Akses bisnis dan sesi aktif anggota tersebut dicabut." });
+    } catch (caught) {
+      notify.error("Anggota gagal dihapus", { description: caught instanceof Error ? caught.message : "Coba lagi." });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function cancelInvite(inviteId: string) {
+    if (!window.confirm("Batalkan invite pending ini?")) return;
+    setPending(true);
+
+    try {
+      await postObject("/api/erp/members", { inviteId }, "DELETE");
+      notify.info("Invite dibatalkan", { description: "Staff tidak akan mendapat akses dari invite tersebut." });
+    } catch (caught) {
+      notify.error("Invite gagal dibatalkan", { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -1209,6 +1304,8 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     saveBusiness,
     saveTax,
     saveMember,
+    deleteMember,
+    cancelInvite,
     saveLocation,
     saveWarehouse,
     saveMaster,

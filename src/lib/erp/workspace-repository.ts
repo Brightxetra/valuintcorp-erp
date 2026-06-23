@@ -48,6 +48,8 @@ import type {
 import { buildErpTasks, calculateErpMetrics } from "@/lib/erp/operations";
 import { buildLocationMetrics, industryTemplates as fallbackIndustryTemplates } from "@/lib/erp/horizontal";
 import { permissionsForRole, type Permission } from "@/lib/security/permissions";
+import { authUserSummariesById } from "@/lib/auth/member-invites";
+import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
 type Row = Record<string, unknown>;
 
@@ -308,6 +310,26 @@ function mapBusinessMembers(rows: Row[]): BusinessMember[] {
       : [],
     createdAt: text(row, "created_at"),
   }));
+}
+
+async function hydrateBusinessMemberProfiles(members: BusinessMember[]): Promise<BusinessMember[]> {
+  if (members.length === 0 || !isSupabaseServiceConfigured()) return members;
+
+  const service = createServiceSupabaseClient();
+  const summaries = await authUserSummariesById(service, members.map((member) => member.authUserId));
+
+  return members.map((member) => {
+    const summary = summaries.get(member.authUserId);
+    if (!summary) return member;
+    return {
+      ...member,
+      email: summary.email,
+      name: summary.name,
+      emailConfirmedAt: summary.emailConfirmedAt,
+      invitedAt: summary.invitedAt,
+      lastSignInAt: summary.lastSignInAt,
+    };
+  });
 }
 
 
@@ -1244,6 +1266,11 @@ export async function loadSupabaseWorkspace(
     email: context.userEmail ?? "",
     role: context.role,
   };
+  const mappedMembers = mapBusinessMembers(asRows(members.data));
+  const hydratedMembers = needs(profile, "settings") && canManageMembers
+    ? await hydrateBusinessMemberProfiles(mappedMembers)
+    : mappedMembers;
+
   const baseWorkspace = {
     user,
     permissions: context.permissions ?? permissionsForRole(context.role),
@@ -1255,7 +1282,7 @@ export async function loadSupabaseWorkspace(
     featureFlags: mapFeatureFlags(asRows(featureFlags.data)),
     industryTemplates: mapIndustryTemplates(asRows(templates.data)),
     transactionSources: mapTransactionSources(asRows(transactionSources.data)),
-    members: mapBusinessMembers(asRows(members.data)),
+    members: hydratedMembers,
     memberInvites: mapMemberInvites(asRows(memberInvites.data)),
     customers: mapCustomers(asRows(customers.data)),
     suppliers: mapSuppliers(asRows(suppliers.data)),

@@ -174,6 +174,16 @@ test("failed business changes show an eight-second Goey error without an inline 
   await expect(page.getByText("Industri tidak valid.", { exact: true })).toHaveCount(1);
 });
 
+test("team settings use email-driven invites without exposing Supabase auth user ids", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /Team & Akses/ }).click();
+
+  await expect(page.getByRole("heading", { name: "Team & Akses" })).toBeVisible();
+  await expect(page.getByLabel("Email anggota")).toBeVisible();
+  await expect(page.getByText("Supabase auth user id")).toHaveCount(0);
+  await expect(page.getByText("Auth User ID")).toHaveCount(0);
+});
+
 test("dashboard quick actions open existing create forms", async ({ page }) => {
   await page.goto("/dashboard");
 

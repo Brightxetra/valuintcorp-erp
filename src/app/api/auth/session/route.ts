@@ -24,6 +24,7 @@ import {
 } from "@/lib/auth/session-policy";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
+import { acceptPendingMemberInvitesForUser } from "@/lib/auth/member-invites";
 
 const optionalSessionTokenSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
@@ -95,7 +96,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid or expired Supabase token." }, { status: 401, headers: { "cache-control": "no-store" } });
   }
 
-  const membershipSupabase = isSupabaseServiceConfigured() ? createServiceSupabaseClient() : supabase;
+  const serviceSupabase = isSupabaseServiceConfigured() ? createServiceSupabaseClient() : null;
+  if (serviceSupabase && userData.user.email) {
+    await acceptPendingMemberInvitesForUser(serviceSupabase, userData.user);
+  }
+
+  const membershipSupabase = serviceSupabase ?? supabase;
   let defaultBusinessId = parsed.data.businessId ?? null;
 
   if (parsed.data.businessId) {

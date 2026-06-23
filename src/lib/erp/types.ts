@@ -130,6 +130,11 @@ export interface BusinessMember {
   id: string;
   businessId: string;
   authUserId: string;
+  email?: string;
+  name?: string;
+  emailConfirmedAt?: string;
+  invitedAt?: string;
+  lastSignInAt?: string;
   role: BusinessRole;
   accessScope: MemberAccessScope;
   accessPermissions: Permission[];

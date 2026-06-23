@@ -1542,13 +1542,28 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
     try {
       const body = await postObject(request, "/api/erp/members", {
         email: String(formData.get("email") || "") || undefined,
-        authUserId: String(formData.get("authUserId") || "") || undefined,
         role: String(formData.get("role")),
       });
       if (body.workspace) setWorkspace(body.workspace);
-      setSuccess(body.invite ? "Invite email dibuat dan menunggu diterima." : "Member bisnis disimpan.");
+      setSuccess(body.invite ? "Invite email dikirim dan menunggu diterima." : "Member bisnis disimpan.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Member gagal disimpan.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function cancelInvite(inviteId: string) {
+    setPending(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const body = await postObject(request, "/api/erp/members", { inviteId }, "DELETE");
+      if (body.workspace) setWorkspace(body.workspace);
+      setSuccess("Invite dibatalkan.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Invite gagal dibatalkan.");
     } finally {
       setPending(false);
     }
@@ -1599,8 +1614,8 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
               ))}
             </SelectField>
             <form action={saveMember} className="grid gap-3 rounded-lg border border-slate-200 p-3">
-              <TextField name="email" label="Email invite" type="email" placeholder="finance@usaha.co.id" />
-              <TextField name="authUserId" label="Supabase auth user id opsional" placeholder="Isi hanya jika user sudah terdaftar" />
+              <TextField name="email" label="Email anggota" type="email" placeholder="finance@usaha.co.id" required />
+              <p className="text-xs text-slate-500">Jika email sudah terdaftar, akses ditambahkan otomatis. Jika belum, Supabase mengirim email invite.</p>
               <SelectField name="role" label="Role">
                 <option value="staff">Staff</option>
                 <option value="finance_admin">Finance/Admin</option>
@@ -1616,7 +1631,19 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
                 {workspace.memberInvites.filter((invite) => invite.status === "pending").map((invite) => (
                   <div key={invite.id} className="flex items-center justify-between gap-3 text-sm">
                     <span className="truncate">{invite.email}</span>
-                    <StatusPill tone="amber">{invite.role}</StatusPill>
+                    <div className="flex items-center gap-2">
+                      <StatusPill tone="amber">{invite.role}</StatusPill>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          void cancelInvite(invite.id);
+                        }}
+                        className="rounded-lg border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700 disabled:opacity-50"
+                      >
+                        Batalkan
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {workspace.memberInvites.filter((invite) => invite.status === "pending").length === 0 ? (
@@ -1899,6 +1926,47 @@ export function LoginWorkspace() {
 
     async function clearStaleLoginSession() {
       try {
+        const currentUrl = typeof window === "undefined" ? null : new URL(window.location.href);
+        const hasSupabaseCallback =
+          Boolean(currentUrl?.hash.includes("access_token=")) ||
+          Boolean(currentUrl?.hash.includes("refresh_token=")) ||
+          currentUrl?.searchParams.has("code") === true;
+
+        if (hasSupabaseCallback) {
+          const supabase = createBrowserSupabaseClient();
+          let session = (await supabase.auth.getSession()).data.session;
+
+          for (let attempt = 0; !session && attempt < 8; attempt += 1) {
+            await new Promise((resolve) => window.setTimeout(resolve, 250));
+            session = (await supabase.auth.getSession()).data.session;
+          }
+
+          if (!session) {
+            if (!cancelled) {
+              setError("Link invite tidak bisa dipulihkan. Coba buka ulang link email atau minta owner mengirim invite baru.");
+              setCheckingSession(false);
+            }
+            return;
+          }
+
+          const synced = await syncServerSession(null, {
+            accessToken: session.access_token,
+            refreshToken: session.refresh_token,
+            userId: session.user.id,
+          }, { rememberMe: false, freshLogin: true });
+
+          if (!cancelled) {
+            if (synced) {
+              setSuccess("Invite berhasil diterima.");
+              router.replace(destinationAfterLogin(currentLoginNextPath(), synced.hasBusiness));
+            } else {
+              setError("Invite berhasil dibuka, tetapi sesi server belum tersimpan. Coba login manual sekali.");
+              setCheckingSession(false);
+            }
+          }
+          return;
+        }
+
         const reason =
           typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("reason");
 
@@ -1939,7 +2007,7 @@ export function LoginWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [supabaseEnabled]);
+  }, [router, supabaseEnabled]);
 
   function switchAuthMode(nextMode: "login" | "register") {
     setMode(nextMode);
