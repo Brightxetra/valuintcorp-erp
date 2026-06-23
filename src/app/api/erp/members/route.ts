@@ -38,7 +38,7 @@ function json(body: unknown, status = 200) {
 }
 
 function inviteRedirectUrl(request: Request) {
-  const url = new URL("/login", request.url);
+  const url = new URL("/auth/invite", request.url);
   url.searchParams.set("next", "/dashboard");
   return url.toString();
 }

@@ -1946,18 +1946,34 @@ export function LoginWorkspace() {
   const captchaEnabled = supabaseEnabled && Boolean(hcaptchaSiteKey);
 
   useEffect(() => {
-    if (!supabaseEnabled) return;
-
     let cancelled = false;
+    const currentUrl = typeof window === "undefined" ? null : new URL(window.location.href);
+    const hashParams = new URLSearchParams(currentUrl?.hash.startsWith("#") ? currentUrl.hash.slice(1) : currentUrl?.hash ?? "");
+    const callbackType = hashParams.get("type") || currentUrl?.searchParams.get("type");
+    const hasSupabaseCallback =
+      Boolean(currentUrl?.hash.includes("access_token=")) ||
+      Boolean(currentUrl?.hash.includes("refresh_token=")) ||
+      currentUrl?.searchParams.has("code") === true;
+
+    if (hasSupabaseCallback && callbackType === "invite" && currentUrl) {
+      const inviteUrl = new URL("/auth/invite", window.location.origin);
+      const nextParam = currentUrl.searchParams.get("next");
+
+      if (nextParam) {
+        inviteUrl.searchParams.set("next", nextParam);
+      }
+
+      inviteUrl.hash = currentUrl.hash;
+      window.location.replace(inviteUrl.toString());
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!supabaseEnabled) return undefined;
 
     async function clearStaleLoginSession() {
       try {
-        const currentUrl = typeof window === "undefined" ? null : new URL(window.location.href);
-        const hasSupabaseCallback =
-          Boolean(currentUrl?.hash.includes("access_token=")) ||
-          Boolean(currentUrl?.hash.includes("refresh_token=")) ||
-          currentUrl?.searchParams.has("code") === true;
-
         if (hasSupabaseCallback) {
           const supabase = createBrowserSupabaseClient();
           let session = (await supabase.auth.getSession()).data.session;

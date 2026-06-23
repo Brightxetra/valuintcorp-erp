@@ -27,6 +27,17 @@ test("login form is visible before authentication work completes", async ({ page
   await expect(page.getByLabel("Password")).toBeVisible();
 });
 
+test("invite verification uses a dedicated password setup page", async ({ page }) => {
+  await page.goto("/auth/invite");
+
+  await expect(page.getByRole("heading", { name: "Link invite tidak valid" })).toBeVisible();
+  await expect(page.getByText("Token invite tidak ditemukan")).toBeVisible();
+
+  await page.goto("/login#access_token=invalid&refresh_token=invalid&type=invite");
+  await expect(page).toHaveURL(/\/auth\/invite/);
+  await expect(page.getByRole("heading", { name: "Link invite tidak valid" })).toBeVisible();
+});
+
 test("demo fallback login reaches the dashboard workspace", async ({ page }) => {
   await page.goto("/login?next=/dashboard");
   await page.getByLabel("Email").fill("demo.owner@valuintcorp.test");
