@@ -38,7 +38,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 023", () => {
+  it("keeps production ERP migrations in order through 024", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -65,6 +65,7 @@ describe("Supabase migration contract", () => {
       "021_user_login_sessions.sql",
       "022_employee_profiles_and_bpjs_policy.sql",
       "023_fix_post_hardening_rls_policies.sql",
+      "024_supabase_advisor_rls_and_pos_trigger_hardening.sql",
     ]);
   });
 
@@ -270,6 +271,23 @@ describe("Supabase migration contract", () => {
     expect(branchMigration).not.toContain("public.has_business_role(business_id");
     expect(repairMigration).toContain("alter policy \"hr and finance can read bpjs policies\"");
     expect(repairMigration).toContain("app_private.has_business_role(business_id");
+  });
+
+  it("resolves Supabase Advisor RLS and exposed POS trigger findings", () => {
+    const migration = readFileSync(join(migrationsDir, "024_supabase_advisor_rls_and_pos_trigger_hardening.sql"), "utf8");
+
+    expect(migration).toContain('drop policy if exists "hr can manage bpjs policies"');
+    expect(migration).toContain('on public.bpjs_policies for select');
+    expect(migration).toContain('on public.bpjs_policies for insert');
+    expect(migration).toContain('on public.bpjs_policies for update');
+    expect(migration).toContain('on public.bpjs_policies for delete');
+    expect(migration).toContain('drop policy if exists "owners can manage branch expenses"');
+    expect(migration).toContain('on public.branch_expenses for select');
+    expect(migration).toContain('on public.branch_expenses for insert');
+    expect(migration).toContain('on public.branch_expenses for update');
+    expect(migration).toContain('on public.branch_expenses for delete');
+    expect(migration).toContain("alter function public.ensure_pos_walk_in_customer() set schema app_private");
+    expect(migration).toContain("revoke all on function app_private.ensure_pos_walk_in_customer() from public");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {
