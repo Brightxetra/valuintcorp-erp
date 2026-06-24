@@ -48,12 +48,12 @@ alter table public.bpjs_policies enable row level security;
 drop policy if exists "hr and finance can read bpjs policies" on public.bpjs_policies;
 create policy "hr and finance can read bpjs policies"
 on public.bpjs_policies for select
-using (public.has_business_role(business_id, array['owner', 'finance_admin', 'hr', 'system_admin']));
+using (app_private.has_business_role(business_id, array['owner', 'finance_admin', 'hr', 'system_admin']));
 
 drop policy if exists "hr can manage bpjs policies" on public.bpjs_policies;
 create policy "hr can manage bpjs policies"
 on public.bpjs_policies for all
-using (public.has_business_role(business_id, array['owner', 'hr', 'system_admin']))
-with check (public.has_business_role(business_id, array['owner', 'hr', 'system_admin']));
+using (app_private.has_business_role(business_id, array['owner', 'hr', 'system_admin']))
+with check (app_private.has_business_role(business_id, array['owner', 'hr', 'system_admin']));
 
 grant select, insert, update, delete on public.bpjs_policies to authenticated, service_role;

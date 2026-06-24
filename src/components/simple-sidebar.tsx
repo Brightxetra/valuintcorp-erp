@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/components/ui";
+import { getMostSpecificActiveHref } from "@/lib/navigation/active-link";
 
 interface NavItem {
   label: string;
@@ -106,10 +107,6 @@ function CheckCircle({ className }: { className?: string }) {
   return <span className={className}>✓</span>;
 }
 
-function isActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
 function NavSection({
   group,
   pathname,
@@ -120,7 +117,8 @@ function NavSection({
   onNavigate?: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(group.defaultOpen ?? false);
-  const hasActiveChild = group.items.some((item) => isActive(pathname, item.href));
+  const activeItemHref = getMostSpecificActiveHref(pathname, group.items.map((item) => item.href));
+  const hasActiveChild = Boolean(activeItemHref);
 
   return (
     <div className="mb-2">
@@ -145,7 +143,7 @@ function NavSection({
       {isOpen && (
         <div className="mt-1 space-y-0.5 pl-2">
           {group.items.map((item) => {
-            const active = isActive(pathname, item.href);
+            const active = item.href === activeItemHref;
             const Icon = item.icon;
 
             return (

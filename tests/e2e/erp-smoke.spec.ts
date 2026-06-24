@@ -185,6 +185,21 @@ test("failed business changes show an eight-second Goey error without an inline 
   await expect(page.getByText("Industri tidak valid.", { exact: true })).toHaveCount(1);
 });
 
+test("sidebar marks only the most specific employee page as active", async ({ page }) => {
+  await page.goto("/karyawan/gaji");
+
+  const employeeList = page.getByRole("link", { name: "Data Karyawan", exact: true });
+  const payroll = page.getByRole("link", { name: "Hitung Gaji", exact: true });
+  await expect(employeeList).not.toHaveClass(/bg-slate-900/);
+  await expect(payroll).toHaveClass(/bg-slate-900/);
+
+  await page.goto("/karyawan/bpjs");
+  const bpjs = page.getByRole("link", { name: "BPJS Kesehatan", exact: true });
+  await expect(employeeList).not.toHaveClass(/bg-slate-900/);
+  await expect(payroll).not.toHaveClass(/bg-slate-900/);
+  await expect(bpjs).toHaveClass(/bg-slate-900/);
+});
+
 test("team settings use email-driven invites without exposing Supabase auth user ids", async ({ page }) => {
   await page.goto("/settings");
   await page.getByRole("button", { name: /Team & Akses/ }).click();

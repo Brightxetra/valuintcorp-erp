@@ -38,7 +38,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 022", () => {
+  it("keeps production ERP migrations in order through 023", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -64,6 +64,7 @@ describe("Supabase migration contract", () => {
       "020_api_role_table_privileges.sql",
       "021_user_login_sessions.sql",
       "022_employee_profiles_and_bpjs_policy.sql",
+      "023_fix_post_hardening_rls_policies.sql",
     ]);
   });
 
@@ -256,7 +257,19 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("jkk_employer_rate numeric(8, 6) not null default 0.0054");
     expect(migration).toContain("alter table public.bpjs_policies enable row level security");
     expect(migration).toContain("hr can manage bpjs policies");
+    expect(migration).toContain("app_private.has_business_role");
     expect(migration).toContain("grant select, insert, update, delete on public.bpjs_policies to authenticated, service_role");
+  });
+
+  it("keeps policies added after authorization hardening on private helpers", () => {
+    const branchMigration = readFileSync(join(migrationsDir, "019_branch_pos_and_member_access.sql"), "utf8");
+    const repairMigration = readFileSync(join(migrationsDir, "023_fix_post_hardening_rls_policies.sql"), "utf8");
+
+    expect(branchMigration).toContain("app_private.is_business_member(business_id)");
+    expect(branchMigration).toContain("app_private.has_business_role(business_id");
+    expect(branchMigration).not.toContain("public.has_business_role(business_id");
+    expect(repairMigration).toContain("alter policy \"hr and finance can read bpjs policies\"");
+    expect(repairMigration).toContain("app_private.has_business_role(business_id");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {

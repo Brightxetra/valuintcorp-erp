@@ -53,7 +53,10 @@ test("every ERP menu clears the fixed mobile navigation at a short viewport", as
 
   for (const route of erpRoutes) {
     await test.step(route, async () => {
-      await page.goto(route, { waitUntil: "domcontentloaded" });
+      // Some workspaces hydrate their data immediately after the document loads.
+      // Measure only after that request settles, otherwise the page can grow after
+      // the scroll-to-bottom measurement and produce a false navigation overlap.
+      await page.goto(route, { waitUntil: "networkidle" });
       await expect(page.locator(".erp-mobile-shell")).toBeVisible();
       await expect(page.locator("nav.fixed.bottom-0")).toBeVisible();
 

@@ -34,6 +34,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
 import { notify } from "@/lib/notify";
+import { getMostSpecificActiveHref, pathMatchesHref } from "@/lib/navigation/active-link";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { posExperienceForPermissions, type Permission } from "@/lib/security/permissions";
 import { browserIdleSessionExpired, clearServerSession, touchServerSessionActivity } from "@/lib/erp/client-api";
@@ -460,7 +461,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
 // ============================================================================
 
 function isActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`);
+  return pathMatchesHref(pathname, href);
 }
 
 function NavLinks({ workspace, onNavigate }: {
@@ -470,6 +471,14 @@ function NavLinks({ workspace, onNavigate }: {
   const pathname = usePathname();
   const permissions = new Set(workspace.permissions);
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  const visibleNavigationItems = navGroups.flatMap((group) =>
+    group.items.filter((item) => permissions.has(item.permission)),
+  );
+  const activeNavigationHref = getMostSpecificActiveHref(
+    pathname,
+    visibleNavigationItems.map((item) => item.href),
+  );
+  const hasActiveFavorite = favorites.some((item) => item.href === activeNavigationHref);
 
   return (
     <nav className="space-y-6">
@@ -479,7 +488,7 @@ function NavLinks({ workspace, onNavigate }: {
           <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Favorit</p>
           <div className="space-y-1">
             {favorites.map((item) => {
-              const active = isActive(pathname, item.href);
+              const active = item.href === activeNavigationHref;
               const Icon = item.icon;
               return (
                 <Link
@@ -518,7 +527,7 @@ function NavLinks({ workspace, onNavigate }: {
           <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">{group.label}</p>
           <div className="space-y-1">
             {group.items.filter((item) => permissions.has(item.permission)).map((item) => {
-              const active = isActive(pathname, item.href);
+              const active = !hasActiveFavorite && item.href === activeNavigationHref;
               const Icon = item.icon;
               const favId = `nav-${item.href}`;
               const isFav = isFavorite(favId);

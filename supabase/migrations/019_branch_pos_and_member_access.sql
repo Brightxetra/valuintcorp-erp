@@ -68,12 +68,12 @@ alter table public.branch_expenses enable row level security;
 
 drop policy if exists "members can read branch expenses" on public.branch_expenses;
 create policy "members can read branch expenses" on public.branch_expenses for select
-using (public.is_business_member(business_id));
+using (app_private.is_business_member(business_id));
 
 drop policy if exists "owners can manage branch expenses" on public.branch_expenses;
 create policy "owners can manage branch expenses" on public.branch_expenses for all
-using (public.has_business_role(business_id, array['owner', 'finance_admin', 'system_admin']))
-with check (public.has_business_role(business_id, array['owner', 'finance_admin', 'system_admin']));
+using (app_private.has_business_role(business_id, array['owner', 'finance_admin', 'system_admin']))
+with check (app_private.has_business_role(business_id, array['owner', 'finance_admin', 'system_admin']));
 
 create or replace function app_private.member_has_permission(
   target_business_id uuid,
