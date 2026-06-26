@@ -248,18 +248,21 @@ test("financial export enforces demo roles and returns a workbook for owners", a
 
 test("branch POS exposes a daily recap and branch product picker", async ({ page }) => {
   await page.goto("/pos");
-  await expect(page.getByRole("heading", { name: "Kasir & rekap harian" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Penjualan kasir" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Cabang" })).toHaveValue("loc-kitchen");
-  await expect(page.getByText("Produk cabang")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Produk" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Order" })).toBeVisible();
   await expect(page.getByText("Stok awal")).toBeVisible();
   await expect(page.getByText("Stok akhir")).toBeVisible();
+  await expect(page.getByText("Mode kerja")).toHaveCount(0);
+  await expect(page.getByText("Payment gateway belum diaktifkan.")).toHaveCount(0);
 });
 
 test("branch POS posts a demo sale into the daily recap", async ({ page }) => {
   await page.goto("/pos");
   await expect(page.getByText("Rendang Bowl", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Tambah Rendang Bowl" }).click();
-  await page.getByRole("button", { name: "Post penjualan" }).click();
+  await page.getByRole("button", { name: "Bayar & posting" }).click();
 
   const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Penjualan POS diposting" });
   await expect(toast).toBeVisible();

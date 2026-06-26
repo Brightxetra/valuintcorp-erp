@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Banknote,
+  CalendarDays,
   ClipboardList,
   Minus,
   PackageSearch,
@@ -11,7 +12,6 @@ import {
   ReceiptText,
   RefreshCw,
   Search,
-  ShieldCheck,
   ShoppingBag,
   Store,
   Trash2,
@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useErpWorkspace } from "@/components/erp-context";
-import { cn, MetricCard, PageHeader, Panel } from "@/components/ui";
+import { cn } from "@/components/ui";
 import { money } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
@@ -60,13 +60,13 @@ const paymentOptions: Array<{
   {
     value: "cash",
     label: "Tunai",
-    helper: "Uang diterima langsung oleh kasir.",
+    helper: "Kas diterima di outlet.",
     icon: Banknote,
   },
   {
     value: "qris",
-    label: "QRIS manual",
-    helper: "Pilih setelah bukti pembayaran terlihat. Rekonsiliasi mutasi dilakukan manual.",
+    label: "QRIS",
+    helper: "Catat setelah bukti pembayaran terlihat.",
     icon: QrCode,
   },
 ];
@@ -75,40 +75,53 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function BranchModeNotice({ cashierOnly }: { cashierOnly: boolean }) {
-  return (
-    <Panel className={cashierOnly ? "border-emerald-200 bg-emerald-50" : "border-cyan-200 bg-cyan-50"}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-        <span
-          className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-xl",
-            cashierOnly ? "bg-emerald-100 text-emerald-700" : "bg-cyan-100 text-cyan-700",
-          )}
-        >
-          {cashierOnly ? <Store className="size-5" aria-hidden /> : <ShieldCheck className="size-5" aria-hidden />}
-        </span>
-        <div>
-          <p className={cn("text-sm font-semibold", cashierOnly ? "text-emerald-950" : "text-cyan-950")}>
-            {cashierOnly ? "Mode kasir cabang" : "Mode supervisor cabang"}
-          </p>
-          <p className={cn("mt-1 text-sm leading-6", cashierOnly ? "text-emerald-800" : "text-cyan-800")}>
-            {cashierOnly
-              ? "Tampilan difokuskan untuk input penjualan cepat. Rekap akuntansi dan biaya cabang tidak ditampilkan untuk role kasir."
-              : "Anda dapat input penjualan, melihat rekap harian, dan mencatat biaya cabang sesuai akses yang diberikan owner."}
-          </p>
-        </div>
-      </div>
-    </Panel>
-  );
+function productInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 }
 
-function ManualPaymentNotice() {
+function roundUp(value: number, step: number) {
+  if (value <= 0) return 0;
+  return Math.ceil(value / step) * step;
+}
+
+function quickTenderOptions(total: number) {
+  if (total <= 0) return [];
+  return Array.from(new Set([total, roundUp(total, 50_000), roundUp(total, 100_000)])).filter((value) => value > 0);
+}
+
+function PosMetric({
+  label,
+  value,
+  icon: Icon,
+  tone = "slate",
+}: {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  tone?: "emerald" | "amber" | "red" | "cyan" | "slate";
+}) {
+  const toneClass = {
+    emerald: "bg-emerald-50 text-emerald-700",
+    amber: "bg-amber-50 text-amber-800",
+    red: "bg-red-50 text-red-700",
+    cyan: "bg-cyan-50 text-cyan-700",
+    slate: "bg-slate-100 text-slate-700",
+  }[tone];
+
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-      <p className="font-semibold text-amber-950">Payment gateway belum diaktifkan.</p>
-      <p className="mt-1">
-        POS saat ini hanya mencatat Tunai dan QRIS manual. Untuk QRIS, pastikan bukti pembayaran sudah terlihat; mutasi QRIS tetap direkonsiliasi manual dari menu kas/bank.
-      </p>
+    <div className="flex items-center gap-3 rounded-xl bg-white px-3 py-3 ring-1 ring-slate-200">
+      <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", toneClass)}>
+        <Icon className="size-4" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+        <p className="mt-0.5 truncate text-base font-semibold text-slate-950">{value}</p>
+      </div>
     </div>
   );
 }
@@ -117,7 +130,6 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   const { workspace, request } = useErpWorkspace(initialWorkspace);
   const canSell = workspace.permissions.includes("pos:sell");
   const canExpense = workspace.permissions.includes("pos:expenses");
-  const cashierOnly = canSell && !canExpense;
   const showBackOfficeSections = canExpense || !canSell;
   const fullBranchAccess = workspace.user.role === "owner" || workspace.user.role === "system_admin";
   const assignedLocations = useMemo(() => new Set(workspace.assignedLocationIds ?? []), [workspace.assignedLocationIds]);
@@ -136,8 +148,10 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   const [cart, setCart] = useState<Record<string, number>>({});
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [productQuery, setProductQuery] = useState("");
+  const [receivedAmount, setReceivedAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const selectedLocationId = branches.some((branch) => branch.id === locationId) ? locationId : branches[0]?.id ?? "";
+  const selectedBranch = branches.find((branch) => branch.id === selectedLocationId);
 
   const loadSnapshot = useCallback(async () => {
     if (!selectedLocationId) return;
@@ -165,6 +179,7 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
     if (!query) return products;
     return products.filter((product) => `${product.sku} ${product.name}`.toLowerCase().includes(query));
   }, [productQuery, snapshot]);
+
   const cartItems = useMemo(
     () =>
       (snapshot?.products ?? []).flatMap((product) =>
@@ -174,21 +189,38 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   );
   const cartTotal = cartItems.reduce((total, item) => total + item.product.sellingPrice * item.quantity, 0);
   const cartQuantity = cartItems.reduce((total, item) => total + item.quantity, 0);
+  const receivedValue = Number(receivedAmount || 0);
+  const changeDue = paymentMethod === "cash" && receivedValue > cartTotal ? receivedValue - cartTotal : 0;
+  const tenderOptions = useMemo(() => quickTenderOptions(cartTotal), [cartTotal]);
 
-  const changeQuantity = (product: Product, delta: number) =>
+  const changeQuantity = (product: Product, delta: number) => {
+    const next = Math.max(0, (cart[product.id] ?? 0) + delta);
+    if (product.availableQuantity !== null && next > product.availableQuantity) {
+      notify.warning("Stok cabang tidak mencukupi", {
+        description: `${product.name}: tersedia ${product.availableQuantity} ${product.unit}.`,
+      });
+      return;
+    }
+
     setCart((current) => {
-      const next = Math.max(0, (current[product.id] ?? 0) + delta);
-      if (product.availableQuantity !== null && next > product.availableQuantity) {
-        notify.warning("Stok cabang tidak mencukupi", {
-          description: `${product.name}: tersedia ${product.availableQuantity} ${product.unit}.`,
-        });
-        return current;
-      }
       const copy = { ...current };
       if (next === 0) delete copy[product.id];
       else copy[product.id] = next;
       return copy;
     });
+  };
+
+  const removeFromCart = (productId: string) =>
+    setCart((current) => {
+      const copy = { ...current };
+      delete copy[productId];
+      return copy;
+    });
+
+  const clearCart = () => {
+    setCart({});
+    setReceivedAmount("");
+  };
 
   async function submitSale() {
     if (!selectedLocationId || cartItems.length === 0) return;
@@ -210,10 +242,10 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
       notify.success("Penjualan POS diposting", {
         description:
           paymentMethod === "qris"
-            ? `Transaksi ${result.saleId} dicatat sebagai QRIS manual. Rekonsiliasi mutasi dilakukan terpisah.`
+            ? `Transaksi ${result.saleId} dicatat sebagai QRIS manual.`
             : `Transaksi ${result.saleId} dicatat sebagai tunai.`,
       });
-      setCart({});
+      clearCart();
       await loadSnapshot();
     } catch (caught) {
       notify.error("Penjualan POS gagal", { description: caught instanceof Error ? caught.message : "Coba lagi." });
@@ -252,211 +284,282 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
 
   if (branches.length === 0) {
     return (
-      <div className="space-y-5">
-        <PageHeader
-          eyebrow="POS cabang"
-          title="Kasir & rekap cabang"
-          description="Owner perlu menyiapkan cabang aktif dengan gudang sebelum POS digunakan."
-        />
-        <Panel title="Belum ada cabang POS">
-          <p className="text-sm text-slate-600">
-            Tambahkan lokasi bertipe cabang, outlet, atau toko, lalu hubungkan ke gudang di Pengaturan.
-          </p>
-        </Panel>
-      </div>
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-start gap-4">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+            <Store className="size-6" aria-hidden />
+          </span>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-950">Cabang POS belum tersedia</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Tambahkan lokasi bertipe cabang, outlet, atau toko, lalu hubungkan ke gudang di Pengaturan.
+            </p>
+          </div>
+        </div>
+      </section>
     );
   }
 
   const recap = snapshot?.recap;
+
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="POS cabang"
-        title={cashierOnly ? "Kasir POS cabang" : "Kasir & rekap harian"}
-        description={
-          cashierOnly
-            ? "Input penjualan cabang dibuat sederhana untuk kasir: pilih produk, pilih Tunai atau QRIS manual, lalu posting."
-            : "Operasional cabang untuk penjualan kasir, rekap harian, dan biaya cabang tanpa integrasi payment gateway."
-        }
-        action={
-          <button
-            type="button"
-            onClick={() => void loadSnapshot()}
-            disabled={loading}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-60"
-          >
-            <RefreshCw className={cn("size-4", loading && "animate-spin")} aria-hidden />
-            Muat ulang
-          </button>
-        }
-      />
+    <div className="space-y-4">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">POS</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Penjualan kasir</h1>
+            <p className="mt-1 truncate text-sm text-slate-500">{selectedBranch?.name ?? "Pilih cabang"} · Tunai / QRIS manual</p>
+          </div>
 
-      <BranchModeNotice cashierOnly={cashierOnly} />
-
-      <Panel>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="text-sm font-medium text-slate-700">
-            Cabang
-            <select
-              value={selectedLocationId}
-              onChange={(event) => {
-                setLocationId(event.target.value);
-                setCart({});
-              }}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3"
+          <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_11rem_auto] lg:min-w-[620px]">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Cabang
+              <select
+                value={selectedLocationId}
+                onChange={(event) => {
+                  setLocationId(event.target.value);
+                  clearCart();
+                }}
+                className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+              >
+                <option value="">Pilih cabang</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Tanggal
+              <div className="relative mt-1">
+                <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+                />
+              </div>
+            </label>
+            <button
+              type="button"
+              onClick={() => void loadSnapshot()}
+              disabled={loading}
+              className="inline-flex min-h-11 items-center justify-center gap-2 self-end rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
-              <option value="">Pilih cabang</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium text-slate-700">
-            Tanggal rekap
-            <input
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3"
-            />
-          </label>
+              <RefreshCw className={cn("size-4", loading && "animate-spin")} aria-hidden />
+              Muat ulang
+            </button>
+          </div>
         </div>
-      </Panel>
 
-      {showBackOfficeSections ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard label="Omzet" value={money(recap?.revenue ?? 0)} meta="Penjualan POS hari ini" icon={ReceiptText} />
-          <MetricCard label="COGS" value={money(recap?.cogs ?? 0)} meta="HPP dari produk terjual" icon={ShoppingBag} tone="amber" />
-          <MetricCard label="Biaya lain" value={money(recap?.miscExpenses ?? 0)} meta="Pengeluaran cabang" icon={Wallet} tone="red" />
-          <MetricCard label="Stok awal" value={money(recap?.openingStock ?? 0)} meta="Nilai sebelum transaksi hari ini" icon={ShoppingBag} tone="cyan" />
-          <MetricCard label="Stok akhir" value={money(recap?.closingStock ?? 0)} meta="Nilai setelah transaksi hari ini" icon={ShoppingBag} tone="gray" />
-        </div>
-      ) : null}
+        {showBackOfficeSections ? (
+          <div className="grid gap-3 border-t border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-2 xl:grid-cols-5">
+            <PosMetric label="Omzet" value={money(recap?.revenue ?? 0)} icon={ReceiptText} tone="emerald" />
+            <PosMetric label="COGS" value={money(recap?.cogs ?? 0)} icon={ShoppingBag} tone="amber" />
+            <PosMetric label="Biaya lain" value={money(recap?.miscExpenses ?? 0)} icon={Wallet} tone="red" />
+            <PosMetric label="Stok awal" value={money(recap?.openingStock ?? 0)} icon={ShoppingBag} tone="cyan" />
+            <PosMetric label="Stok akhir" value={money(recap?.closingStock ?? 0)} icon={ShoppingBag} />
+          </div>
+        ) : null}
+      </section>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_26rem]">
-        <Panel
-          title="Produk cabang"
-          description="Pilih produk lalu atur kuantitas pada keranjang."
-          action={
-            <div className="relative w-full sm:w-72">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-              <input
-                value={productQuery}
-                onChange={(event) => setProductQuery(event.target.value)}
-                placeholder="Cari produk"
-                className="min-h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-slate-400"
-              />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_410px]">
+        <section className="flex min-h-[calc(100dvh-13rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-slate-950">Produk</h2>
+                <p className="text-sm text-slate-500">
+                  {filteredProducts.length} item tersedia
+                  {loading ? " · memuat..." : ""}
+                </p>
+              </div>
+              <div className="relative w-full md:max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
+                <input
+                  value={productQuery}
+                  onChange={(event) => setProductQuery(event.target.value)}
+                  placeholder="Cari nama atau SKU"
+                  aria-label="Cari produk"
+                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-slate-500"
+                />
+              </div>
             </div>
-          }
-        >
-          {filteredProducts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
-              <PackageSearch className="mx-auto mb-2 size-8 text-slate-300" aria-hidden />
-              Produk tidak ditemukan.
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {filteredProducts.length === 0 ? (
+              <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+                <div>
+                  <PackageSearch className="mx-auto mb-3 size-10 text-slate-300" aria-hidden />
+                  <p className="font-semibold text-slate-950">Produk tidak ditemukan</p>
+                  <p className="mt-1 max-w-sm text-sm leading-6 text-slate-500">
+                    Pastikan produk, harga jual, dan stok cabang sudah tersedia untuk cabang ini.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                {filteredProducts.map((product) => {
+                  const quantity = cart[product.id] ?? 0;
+                  const soldOut = product.availableQuantity !== null && product.availableQuantity <= 0;
+                  return (
+                    <article
+                      key={product.id}
+                      className={cn(
+                        "group rounded-2xl border bg-white p-3 transition hover:border-slate-300 hover:shadow-sm",
+                        quantity ? "border-slate-950 shadow-sm" : "border-slate-200",
+                      )}
+                    >
+                      <div className="flex gap-3">
+                        <div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-500">
+                          {productInitials(product.name) || "P"}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-medium text-slate-500">{product.sku}</p>
+                              <h3 className="mt-1 line-clamp-2 min-h-10 font-semibold leading-5 text-slate-950">{product.name}</h3>
+                            </div>
+                            {soldOut ? (
+                              <span className="shrink-0 rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Habis</span>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 flex items-end justify-between gap-3">
+                            <div>
+                              <p className="text-lg font-semibold tracking-tight text-slate-950">{money(product.sellingPrice)}</p>
+                              <p className="text-xs text-slate-500">
+                                {product.availableQuantity === null ? "Non-stok" : `${product.availableQuantity} ${product.unit}`}
+                              </p>
+                            </div>
+                            {quantity ? (
+                              <div className="flex items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                <button
+                                  type="button"
+                                  aria-label={`Kurangi ${product.name}`}
+                                  onClick={() => changeQuantity(product, -1)}
+                                  disabled={!canSell}
+                                  className="flex size-10 items-center justify-center text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                                >
+                                  <Minus className="size-4" aria-hidden />
+                                </button>
+                                <span className="min-w-9 text-center text-sm font-semibold text-slate-950">{quantity}</span>
+                                <button
+                                  type="button"
+                                  aria-label={`Tambah ${product.name}`}
+                                  onClick={() => changeQuantity(product, 1)}
+                                  disabled={soldOut || !canSell}
+                                  className="flex size-10 items-center justify-center bg-slate-950 text-white disabled:opacity-40"
+                                >
+                                  <Plus className="size-4" aria-hidden />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                aria-label={`Tambah ${product.name}`}
+                                onClick={() => changeQuantity(product, 1)}
+                                disabled={soldOut || !canSell}
+                                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Tambah
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="flex max-h-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)]">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-slate-950">Order</h2>
+              <p className="text-sm text-slate-500">{cartQuantity} item</p>
             </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-              {filteredProducts.map((product) => {
-                const quantity = cart[product.id] ?? 0;
-                const soldOut = product.availableQuantity !== null && product.availableQuantity <= 0;
-                return (
-                  <article
-                    key={product.id}
-                    className={cn(
-                      "rounded-2xl border bg-white p-3 transition-shadow",
-                      quantity ? "border-emerald-300 shadow-sm shadow-emerald-100" : "border-slate-200",
-                    )}
-                  >
+            {cartItems.length ? (
+              <button type="button" onClick={clearCart} className="text-sm font-semibold text-red-600 hover:text-red-700">
+                Kosongkan
+              </button>
+            ) : null}
+          </div>
+
+          <div className="min-h-48 flex-1 overflow-y-auto p-4">
+            {cartItems.length === 0 ? (
+              <div className="flex min-h-48 items-center justify-center rounded-2xl bg-slate-50 p-5 text-center">
+                <div>
+                  <ShoppingBag className="mx-auto mb-3 size-9 text-slate-300" aria-hidden />
+                  <p className="font-semibold text-slate-950">Order masih kosong</p>
+                  <p className="mt-1 text-sm text-slate-500">Pilih produk untuk mulai transaksi.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {cartItems.map(({ product, quantity }) => (
+                  <div key={product.id} className="rounded-2xl border border-slate-200 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-xs text-slate-500">{product.sku}</p>
-                        <h3 className="mt-1 line-clamp-2 font-semibold text-slate-950">{product.name}</h3>
+                        <p className="line-clamp-2 font-semibold leading-5 text-slate-950">{product.name}</p>
+                        <p className="mt-1 text-sm text-slate-500">{money(product.sellingPrice)}</p>
                       </div>
-                      {soldOut ? (
-                        <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Habis</span>
-                      ) : null}
-                    </div>
-                    <p className="mt-2 text-base font-semibold text-emerald-700">{money(product.sellingPrice)}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {product.availableQuantity === null ? "Non-stok" : `Stok ${product.availableQuantity} ${product.unit}`}
-                    </p>
-                    <div className="mt-4 flex min-h-12 items-center justify-between gap-2 rounded-xl bg-slate-50 p-1">
                       <button
                         type="button"
-                        aria-label={`Kurangi ${product.name}`}
-                        onClick={() => changeQuantity(product, -1)}
-                        disabled={!quantity || !canSell}
-                        className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-40"
+                        onClick={() => removeFromCart(product.id)}
+                        className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        aria-label={`Hapus ${product.name}`}
                       >
-                        <Minus className="size-4" aria-hidden />
-                      </button>
-                      <span className="min-w-8 text-center text-lg font-semibold">{quantity}</span>
-                      <button
-                        type="button"
-                        aria-label={`Tambah ${product.name}`}
-                        onClick={() => changeQuantity(product, 1)}
-                        disabled={soldOut || !canSell}
-                        className="rounded-lg bg-slate-900 p-2 text-white disabled:opacity-40"
-                      >
-                        <Plus className="size-4" aria-hidden />
+                        <Trash2 className="size-4" aria-hidden />
                       </button>
                     </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </Panel>
-
-        <Panel
-          title="Keranjang POS"
-          description="Pembayaran penuh dicatat manual tanpa payment gateway."
-          className="xl:sticky xl:top-24 xl:self-start"
-        >
-          <div className="space-y-3">
-            {cartItems.length === 0 ? (
-              <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Belum ada produk di keranjang.</p>
-            ) : (
-              cartItems.map(({ product, quantity }) => (
-                <div key={product.id} className="flex justify-between gap-3 rounded-xl border border-slate-100 p-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-900">{product.name}</p>
-                    <p className="text-slate-500">
-                      {quantity} x {money(product.sellingPrice)}
-                    </p>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center overflow-hidden rounded-xl border border-slate-200">
+                        <button
+                          type="button"
+                          aria-label={`Kurangi ${product.name}`}
+                          onClick={() => changeQuantity(product, -1)}
+                          className="flex size-9 items-center justify-center hover:bg-slate-50"
+                        >
+                          <Minus className="size-4" aria-hidden />
+                        </button>
+                        <span className="min-w-10 text-center text-sm font-semibold">{quantity}</span>
+                        <button
+                          type="button"
+                          aria-label={`Tambah ${product.name}`}
+                          onClick={() => changeQuantity(product, 1)}
+                          className="flex size-9 items-center justify-center bg-slate-950 text-white"
+                        >
+                          <Plus className="size-4" aria-hidden />
+                        </button>
+                      </div>
+                      <strong className="text-right text-slate-950">{money(quantity * product.sellingPrice)}</strong>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <strong>{money(quantity * product.sellingPrice)}</strong>
-                    <button
-                      type="button"
-                      onClick={() => setCart((current) => {
-                        const copy = { ...current };
-                        delete copy[product.id];
-                        return copy;
-                      })}
-                      className="ml-auto mt-2 flex text-xs font-medium text-red-600"
-                    >
-                      <Trash2 className="mr-1 size-3" aria-hidden />
-                      Hapus
-                    </button>
-                  </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
 
-          <div className="mt-5 border-t border-slate-200 pt-4">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-sm text-slate-500">{cartQuantity} item</p>
-                <p className="text-base font-semibold text-slate-950">Total</p>
+          <div className="border-t border-slate-200 bg-white p-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>Subtotal</span>
+                <span>{money(cartTotal)}</span>
               </div>
-              <span className="text-2xl font-semibold text-slate-950">{money(cartTotal)}</span>
+              <div className="flex items-end justify-between gap-4">
+                <span className="text-base font-semibold text-slate-950">Total</span>
+                <span className="text-3xl font-bold tracking-tight text-slate-950">{money(cartTotal)}</span>
+              </div>
             </div>
 
-            <div className="mt-4 grid gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-2">
               {paymentOptions.map((option) => {
                 const Icon = option.icon;
                 const selected = paymentMethod === option.value;
@@ -466,41 +569,77 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                     type="button"
                     onClick={() => setPaymentMethod(option.value)}
                     className={cn(
-                      "flex min-h-16 items-start gap-3 rounded-xl border p-3 text-left transition-colors",
-                      selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                      "min-h-16 rounded-xl border p-3 text-left transition",
+                      selected ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                     )}
                   >
-                    <Icon className="mt-0.5 size-5 shrink-0" aria-hidden />
-                    <span>
-                      <span className="block text-sm font-semibold">{option.label}</span>
-                      <span className={cn("mt-1 block text-xs leading-5", selected ? "text-white/70" : "text-slate-500")}>
-                        {option.helper}
-                      </span>
+                    <span className="flex items-center gap-2 text-sm font-semibold">
+                      <Icon className="size-4" aria-hidden />
+                      {option.label}
                     </span>
+                    <span className={cn("mt-1 block text-xs leading-4", selected ? "text-white/70" : "text-slate-500")}>{option.helper}</span>
                   </button>
                 );
               })}
             </div>
 
+            {paymentMethod === "cash" ? (
+              <div className="mt-4 rounded-2xl bg-slate-50 p-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Uang diterima
+                  <input
+                    value={receivedAmount}
+                    onChange={(event) => setReceivedAmount(event.target.value)}
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    placeholder="0"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-right text-lg font-semibold outline-none focus:border-slate-500"
+                  />
+                </label>
+                {tenderOptions.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {tenderOptions.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setReceivedAmount(String(value))}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        {money(value)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-3 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Kembalian</span>
+                  <strong className="text-slate-950">{money(changeDue)}</strong>
+                </div>
+              </div>
+            ) : null}
+
             <button
               type="button"
               disabled={!canSell || !cartItems.length || loading}
               onClick={() => void submitSale()}
-              className="mt-4 min-h-12 w-full rounded-xl bg-emerald-600 px-4 font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
+              className="mt-4 min-h-12 w-full rounded-xl bg-emerald-600 px-4 text-base font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {canSell ? "Post penjualan" : "Akses input POS tidak tersedia"}
+              {loading ? "Memproses..." : canSell ? "Bayar & posting" : "Akses input POS tidak tersedia"}
             </button>
-
-            <div className="mt-4">
-              <ManualPaymentNotice />
-            </div>
           </div>
-        </Panel>
+        </aside>
       </div>
 
       {showBackOfficeSections ? (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <Panel title="Biaya lain-lain cabang" description="Khusus supervisor cabang. Biaya dicatat sebagai beban dan mengurangi kas pusat.">
+        <div className="grid gap-4 xl:grid-cols-2">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-slate-950">Biaya cabang</h2>
+                <p className="text-sm text-slate-500">Pengeluaran operasional hari ini.</p>
+              </div>
+              <ClipboardList className="size-5 text-slate-400" aria-hidden />
+            </div>
             {canExpense ? (
               <form id="branch-expense-form" action={submitExpense} className="grid gap-3 sm:grid-cols-2">
                 <label className="text-sm font-medium text-slate-700">
@@ -508,7 +647,7 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                   <input
                     name="category"
                     required
-                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-slate-500"
                     placeholder="Transport / konsumsi"
                   />
                 </label>
@@ -519,18 +658,18 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                     required
                     min="1"
                     type="number"
-                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-slate-500"
                   />
                 </label>
                 <label className="text-sm font-medium text-slate-700 sm:col-span-2">
                   Catatan
                   <input
                     name="memo"
-                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-slate-500"
                     placeholder="Opsional"
                   />
                 </label>
-                <button disabled={loading} className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold sm:w-fit">
+                <button disabled={loading} className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-50 sm:w-fit">
                   Simpan biaya
                 </button>
               </form>
@@ -539,25 +678,33 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
             )}
             <div className="mt-5 space-y-2">
               {(recap?.expenses ?? []).map((expense) => (
-                <div key={expense.id} className="flex justify-between rounded-lg bg-slate-50 p-3 text-sm">
-                  <span>
-                    {expense.category}
-                    {expense.memo ? ` - ${expense.memo}` : ""}
+                <div key={expense.id} className="flex justify-between gap-4 rounded-xl bg-slate-50 p-3 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-medium text-slate-950">{expense.category}</span>
+                    {expense.memo ? <span className="block truncate text-slate-500">{expense.memo}</span> : null}
                   </span>
                   <strong>{money(expense.amount)}</strong>
                 </div>
               ))}
             </div>
-          </Panel>
-          <Panel title="Penjualan hari ini" description="Rekap cabang terpilih untuk monitoring supervisor.">
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-slate-950">Penjualan hari ini</h2>
+                <p className="text-sm text-slate-500">Transaksi POS cabang terpilih.</p>
+              </div>
+              <ReceiptText className="size-5 text-slate-400" aria-hidden />
+            </div>
             <div className="space-y-2">
               {(recap?.sales ?? []).length === 0 ? (
-                <p className="text-sm text-slate-500">Belum ada transaksi POS pada tanggal ini.</p>
+                <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Belum ada transaksi POS pada tanggal ini.</p>
               ) : (
                 recap?.sales.map((sale) => (
-                  <div key={sale.id} className="flex justify-between rounded-lg bg-slate-50 p-3 text-sm">
+                  <div key={sale.id} className="flex justify-between gap-4 rounded-xl bg-slate-50 p-3 text-sm">
                     <div>
-                      <p className="font-medium">{sale.invoiceNo}</p>
+                      <p className="font-medium text-slate-950">{sale.invoiceNo}</p>
                       <p className="text-slate-500">COGS {money(sale.cogs)}</p>
                     </div>
                     <strong>{money(sale.total)}</strong>
@@ -565,21 +712,9 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                 ))
               )}
             </div>
-          </Panel>
+          </section>
         </div>
-      ) : (
-        <Panel className="border-slate-200 bg-white">
-          <div className="flex items-start gap-3">
-            <ClipboardList className="mt-1 size-5 shrink-0 text-slate-400" aria-hidden />
-            <div>
-              <p className="text-sm font-semibold text-slate-950">Rekap dan biaya cabang disembunyikan untuk role kasir.</p>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Owner dapat memberikan akses Biaya cabang jika pengguna ini perlu memantau rekap dan mencatat pengeluaran operasional cabang.
-              </p>
-            </div>
-          </div>
-        </Panel>
-      )}
+      ) : null}
     </div>
   );
 }

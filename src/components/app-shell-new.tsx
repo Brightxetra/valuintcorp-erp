@@ -611,12 +611,6 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       : posExperience === "cashier"
         ? "Kasir cabang"
         : "Akses POS cabang";
-  const posRoleDescription =
-    posExperience === "supervisor"
-      ? "Input penjualan, pantau rekap, dan catat biaya cabang."
-      : posExperience === "cashier"
-        ? "Input penjualan cabang tanpa menu ERP lain."
-        : "Pantau akses POS cabang yang ditugaskan.";
   const branchSummary = useMemo(() => {
     if (workspace.locations.length === 0) return "Cabang belum ditugaskan";
     if (workspace.locations.length === 1) return workspace.locations[0]?.name ?? "1 cabang";
@@ -738,11 +732,11 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
 
   if (isPosFocusedShell) {
     return (
-      <div className="min-h-dvh bg-emerald-50/40 text-slate-950">
-        <header className="sticky top-0 z-30 border-b border-emerald-100 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 lg:px-6">
+      <div className="min-h-dvh bg-slate-100 text-slate-950">
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-3 lg:px-6">
             <Link href="/pos" className="flex min-w-0 items-center gap-3">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-950 text-white">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
                 <ShoppingBag className="size-5" aria-hidden />
               </div>
               <div className="min-w-0">
@@ -751,17 +745,19 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
               </div>
             </Link>
 
-            <div className="hidden min-w-0 flex-1 items-center justify-center gap-2 md:flex">
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800">
-                <ShoppingBag className="size-4" aria-hidden />
-                {posRoleLabel}
-              </span>
-              <span className="truncate rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600">
+            <div className="hidden min-w-0 flex-1 items-center justify-center gap-2 md:flex" aria-label="Status POS">
+              <span className="truncate rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700">
                 {branchSummary}
               </span>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800">
-                Tunai & QRIS manual
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium", period.locked ? "bg-red-50 text-red-700 ring-1 ring-red-100" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100")}>
+                <span className={cn("size-2 rounded-full", period.locked ? "bg-red-500" : "bg-emerald-500")} aria-hidden />
+                {period.label}
               </span>
+              {runtimeMode !== "production" ? (
+                <span className="rounded-full bg-cyan-50 px-3 py-1.5 text-sm font-medium text-cyan-700">
+                  {demoMode ? "Demo" : demoAccount ? "Demo Supabase" : runtimeMode}
+                </span>
+              ) : null}
             </div>
 
             <div className="relative">
@@ -801,35 +797,13 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4 lg:px-6 lg:pb-10">
-          <section className="mb-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Mode kerja</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{posRoleLabel}</p>
-              <p className="mt-1 text-sm leading-5 text-slate-600">{posRoleDescription}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cabang</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{branchSummary}</p>
-              <p className="mt-1 text-sm leading-5 text-slate-600">Data POS mengikuti cabang yang diberikan owner.</p>
-            </div>
-            <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Pembayaran</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">Tunai dan QRIS manual</p>
-              <p className="mt-1 text-sm leading-5 text-slate-600">Mutasi QRIS tetap direkonsiliasi terpisah dari kas/bank.</p>
-            </div>
-          </section>
-
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5", period.locked ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700")}>
+        <main className="mx-auto max-w-[1600px] px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4 lg:px-6 lg:pb-10">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 md:hidden">
+            <span className="rounded-full bg-white px-3 py-1.5 font-medium text-slate-700 ring-1 ring-slate-200">{branchSummary}</span>
+            <span className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 font-medium", period.locked ? "bg-red-50 text-red-700 ring-1 ring-red-100" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100")}>
               <span className={cn("size-2 rounded-full", period.locked ? "bg-red-500" : "bg-emerald-500")} aria-hidden />
-              Periode {period.label}
+              {period.label}
             </span>
-            {runtimeMode !== "production" ? (
-              <span className="rounded-full bg-cyan-50 px-3 py-1.5 text-cyan-700">
-                {demoMode ? "Mode fallback demo" : demoAccount ? "Akun demo Supabase" : runtimeMode}
-              </span>
-            ) : null}
           </div>
 
           {children}
