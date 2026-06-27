@@ -69,7 +69,8 @@ test("core ERP menu navigation stays responsive in demo fallback mode", async ({
 
   await page.getByRole("link", { name: "Menu & Resep" }).click();
   await expect(page).toHaveURL(/\/produk\/katalog$/);
-  await expect(page.getByRole("heading", { name: "Menu, bahan baku, resep, dan HPP" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Katalog Produk" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Daftar produk" })).toBeVisible();
 
   await page.getByRole("link", { name: "Bahan & Stok" }).click();
   await expect(page).toHaveURL(/\/produk\/stok$/);
