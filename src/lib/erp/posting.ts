@@ -36,7 +36,6 @@ import {
   buildPurchaseBillJournal,
   buildSalesInvoiceJournal,
   movementFromPurchaseBill,
-  movementFromSalesInvoice,
   outstandingPurchase,
   outstandingSales,
   paymentStatus,
@@ -52,6 +51,11 @@ import {
   depreciationAmountForPeriod,
   disposalGainLoss,
 } from "@/lib/erp/fixed-assets";
+import {
+  activeStructureForProduct,
+  calculateProductUnitCost,
+  explodeProductStructure,
+} from "@/lib/erp/industry-workflows";
 
 type PostingOptions = {
   actorName?: string;
@@ -163,6 +167,50 @@ function refresh(workspace: Omit<ErpWorkspace, "metrics" | "tasks">): ErpWorkspa
   return refreshErpWorkspace(workspace);
 }
 
+function movementFromWorkspaceSalesInvoice(workspace: ErpWorkspace, invoice: SalesInvoice): StockMovement[] {
+  return invoice.lines.flatMap((line) => {
+    const product = workspace.products.find((item) => item.id === line.productId);
+    const warehouseId = line.warehouseId;
+    if (!product || !warehouseId || line.quantity <= 0 || line.cogs <= 0) return [];
+
+    const structure = activeStructureForProduct(product.id, workspace.productStructures);
+    if (structure && product.fulfillmentMethod === "recipe_on_sale") {
+      return Array.from(
+        explodeProductStructure(product.id, line.quantity, workspace.products, workspace.productStructures),
+      ).flatMap(([componentId, quantity]) => {
+        const component = workspace.products.find((item) => item.id === componentId);
+        if (!component?.trackStock || quantity <= 0) return [];
+        const componentCost = calculateProductUnitCost(component, workspace.products, workspace.productStructures);
+        return [{
+          id: generatedId("sm-sale-recipe"),
+          businessId: invoice.businessId,
+          itemId: component.id,
+          warehouseId,
+          date: invoice.date,
+          type: "sale" as const,
+          quantity,
+          value: quantity * componentCost,
+          memo: invoice.invoiceNo,
+        }];
+      });
+    }
+
+    if (!product.trackStock) return [];
+
+    return [{
+      id: `sm-sale-${invoice.id}-${line.id}`,
+      businessId: invoice.businessId,
+      itemId: product.id,
+      warehouseId,
+      date: invoice.date,
+      type: "sale" as const,
+      quantity: line.quantity,
+      value: line.quantity * line.cogs,
+      memo: invoice.invoiceNo,
+    }];
+  });
+}
+
 export function postSalesInvoice(
   workspace: ErpWorkspace,
   input: CreateSalesInvoiceInput,
@@ -204,6 +252,10 @@ export function postSalesInvoice(
       }
 
       assertBusinessId(warehouse.businessId, workspace.business.id, "Gudang");
+      const hasStructure = Boolean(activeStructureForProduct(product.id, workspace.productStructures));
+      const cogs = product.trackStock || hasStructure
+        ? calculateProductUnitCost(product, workspace.products, workspace.productStructures)
+        : 0;
 
       return {
         id: generatedId("sinv-line"),
@@ -212,7 +264,7 @@ export function postSalesInvoice(
         description: product.name,
         quantity: line.quantity,
         unitPrice: line.unitPrice,
-        cogs: product.trackStock ? product.purchasePrice : 0,
+        cogs,
       };
     }),
     total: 0,
@@ -235,7 +287,7 @@ export function postSalesInvoice(
     throw new Error("Credit limit customer akan terlampaui oleh invoice ini.");
   }
 
-  const stockMovements = movementFromSalesInvoice(invoice);
+  const stockMovements = movementFromWorkspaceSalesInvoice(workspace, invoice);
   assertStockWillNotGoNegative(workspace, stockMovements);
 
   const journal = buildSalesInvoiceJournal(invoice);

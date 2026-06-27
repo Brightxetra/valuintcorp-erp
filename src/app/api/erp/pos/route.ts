@@ -20,6 +20,29 @@ function canAccessLocation(context: ApiContext, locationId: string) {
 function stockQuantity(movements: Row[], productId: string) {
   return movements.filter((movement) => String(movement.item_id ?? movement.itemId) === productId).reduce((total, movement) => total + (["purchase", "transfer_in", "adjustment_in"].includes(String(movement.type)) ? numberValue(movement.quantity) : -numberValue(movement.quantity)), 0);
 }
+function recipeAvailability(product: Row, products: Row[], structures: Row[], movements: Row[]) {
+  if (String(product.fulfillment_method ?? product.fulfillmentMethod) !== "recipe_on_sale") {
+    return Boolean(product.track_stock ?? product.trackStock) ? stockQuantity(movements, String(product.id)) : null;
+  }
+
+  const structure = structures.find((item) => String(item.parent_product_id ?? item.parentProductId) === String(product.id) && Boolean(item.is_active ?? item.isActive ?? true));
+  const lines = rowArray(structure?.product_structure_lines ?? structure?.lines);
+  if (!structure || lines.length === 0) return Boolean(product.track_stock ?? product.trackStock) ? stockQuantity(movements, String(product.id)) : null;
+
+  const outputQuantity = Math.max(numberValue(structure.output_quantity ?? structure.outputQuantity), 1);
+  const yieldFactor = Math.max(numberValue(structure.yield_percent ?? structure.yieldPercent), 1) / 100;
+  const availability = lines
+    .map((line) => {
+      const componentId = String(line.component_product_id ?? line.componentProductId);
+      const component = products.find((item) => String(item.id) === componentId);
+      if (component && !(component.track_stock ?? component.trackStock)) return Number.POSITIVE_INFINITY;
+      const requiredPerUnit = numberValue(line.quantity) * (1 + numberValue(line.waste_percent ?? line.wastePercent) / 100) / outputQuantity / yieldFactor;
+      return requiredPerUnit > 0 ? stockQuantity(movements, componentId) / requiredPerUnit : Number.POSITIVE_INFINITY;
+    });
+
+  const maxFromIngredients = Math.floor(Math.min(...availability));
+  return Number.isFinite(maxFromIngredients) ? Math.max(maxFromIngredients, 0) : null;
+}
 
 export async function GET(request: Request) {
   const context = await requireApiPermission(request, "pos:read");
@@ -39,7 +62,7 @@ export async function GET(request: Request) {
     const movements = workspace.stockMovements.filter((movement) => movement.warehouseId === location.warehouseId && movement.date <= date);
     const products = workspace.products.filter((product) => product.isActive !== false && product.isSellable).map((product) => ({
       id: product.id, sku: product.sku, name: product.name, unit: product.unit, sellingPrice: product.sellingPrice,
-      availableQuantity: product.trackStock ? stockQuantity(movements as unknown as Row[], product.id) : null, trackStock: product.trackStock,
+      availableQuantity: recipeAvailability(product as unknown as Row, workspace.products as unknown as Row[], workspace.productStructures as unknown as Row[], movements as unknown as Row[]), trackStock: product.trackStock,
     }));
     const sales = workspace.salesInvoices.filter((invoice) => invoice.source === "pos" && invoice.locationId === locationId && invoice.date === date && invoice.status !== "void").map((invoice) => ({ id: invoice.id, invoiceNo: invoice.invoiceNo, date: invoice.date, total: invoice.total, cogs: invoice.lines.reduce((total, line) => total + line.quantity * line.cogs, 0) }));
     const stockValueAt = (beforeDate: boolean) => movements
@@ -56,8 +79,10 @@ export async function GET(request: Request) {
   if (locationError) return withDemoHeader(json({ error: locationError.message }, 422), context);
   if (!location?.warehouse_id || !posLocationTypes.has(String(location.type))) return withDemoHeader(json({ error: "Cabang aktif dengan gudang diperlukan untuk POS." }, 422), context);
 
-  const [productsResult, movementsResult, salesResult, expensesResult] = await Promise.all([
-    service.from("products").select("id, sku, name, unit, selling_price, track_stock").eq("business_id", context.businessId).eq("is_active", true).eq("is_sellable", true).order("name"),
+  const [productsResult, allProductsResult, structuresResult, movementsResult, salesResult, expensesResult] = await Promise.all([
+    service.from("products").select("*").eq("business_id", context.businessId).eq("is_active", true).eq("is_sellable", true).order("name"),
+    service.from("products").select("*").eq("business_id", context.businessId).eq("is_active", true),
+    service.from("product_structures").select("id, parent_product_id, output_quantity, yield_percent, is_active, product_structure_lines(component_product_id, quantity, waste_percent)").eq("business_id", context.businessId).eq("is_active", true),
     service.from("stock_movements").select("item_id, type, quantity, value, date").eq("business_id", context.businessId).eq("warehouse_id", location.warehouse_id).lte("date", date),
     service.from("sales_invoices").select("id, invoice_no, date, total, sales_invoice_lines(quantity, cogs)").eq("business_id", context.businessId).eq("location_id", locationId).eq("source", "pos").eq("date", date).neq("status", "void").order("created_at", { ascending: false }),
     service.from("branch_expenses").select("id, date, amount, category, memo").eq("business_id", context.businessId).eq("location_id", locationId).eq("date", date).order("created_at", { ascending: false }),
@@ -66,9 +91,11 @@ export async function GET(request: Request) {
   if (queryError) return withDemoHeader(json({ error: queryError.message }, 422), context);
 
   const movements = rowArray(movementsResult.data);
+  const allProducts = rowArray(allProductsResult.data).length ? rowArray(allProductsResult.data) : rowArray(productsResult.data);
+  const structures = structuresResult.error ? [] : rowArray(structuresResult.data);
   const products = rowArray(productsResult.data).map((product) => ({
     id: String(product.id), sku: String(product.sku), name: String(product.name), unit: String(product.unit), sellingPrice: numberValue(product.selling_price), trackStock: Boolean(product.track_stock),
-    availableQuantity: product.track_stock ? stockQuantity(movements, String(product.id)) : null,
+    availableQuantity: recipeAvailability(product, allProducts, structures, movements),
   }));
   const sales = rowArray(salesResult.data).map((sale) => ({
     id: String(sale.id), invoiceNo: String(sale.invoice_no), date: String(sale.date), total: numberValue(sale.total),

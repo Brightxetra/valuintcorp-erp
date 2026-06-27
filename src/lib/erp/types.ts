@@ -20,6 +20,22 @@ export type PaymentDirection = "inbound" | "outbound";
 export type PaymentMethod = "cash" | "bank_transfer" | "qris" | "marketplace" | "other";
 export type TaskSeverity = "info" | "warning" | "critical";
 export type ProductType = "stock_item" | "non_stock_item" | "service" | "bundle";
+export type IndustryItemType =
+  | "raw_material"
+  | "semi_finished"
+  | "finished_good"
+  | "menu_item"
+  | "retail_sku"
+  | "service_item"
+  | "package"
+  | "other";
+export type FulfillmentMethod = "buy_stock" | "make_to_stock" | "make_to_order" | "recipe_on_sale" | "non_stock";
+export type MakeOrBuy = "buy" | "make" | "both";
+export type ProductStructureType = "recipe" | "bom" | "bundle";
+export type MrpRunStatus = "draft" | "planned" | "released";
+export type MrpRecommendationType = "purchase" | "production";
+export type MrpRecommendationStatus = "planned" | "released" | "dismissed";
+export type ProductionOrderStatus = "draft" | "released" | "completed" | "cancelled";
 export type ErpModule =
   | "dashboard"
   | "sales"
@@ -81,13 +97,106 @@ export interface Supplier {
 
 export interface Product extends InventoryItem {
   productType: ProductType;
+  industryItemType: IndustryItemType;
+  fulfillmentMethod: FulfillmentMethod;
   category: string;
   sellingPrice: Money;
   purchasePrice: Money;
   reorderPoint: number;
+  safetyStock: number;
+  minimumOrderQty: number;
+  leadTimeDays: number;
+  productionLeadTimeDays: number;
+  makeOrBuy: MakeOrBuy;
   isSellable: boolean;
   isPurchasable: boolean;
   isActive?: boolean;
+}
+
+export interface ProductStructureLine {
+  id: string;
+  businessId: string;
+  structureId: string;
+  componentProductId: string;
+  quantity: number;
+  wastePercent: number;
+  unitCostSnapshot: Money;
+  notes?: string;
+}
+
+export interface ProductStructure {
+  id: string;
+  businessId: string;
+  parentProductId: string;
+  type: ProductStructureType;
+  outputQuantity: number;
+  yieldPercent: number;
+  isActive: boolean;
+  notes?: string;
+  lines: ProductStructureLine[];
+  updatedAt?: string;
+}
+
+export interface DemandForecast {
+  id: string;
+  businessId: string;
+  productId: string;
+  locationId?: string;
+  periodStart: string;
+  periodEnd: string;
+  quantity: number;
+  source: "manual" | "sales_history" | "import";
+  notes?: string;
+  createdAt: string;
+}
+
+export interface MrpRun {
+  id: string;
+  businessId: string;
+  name: string;
+  periodStart: string;
+  periodEnd: string;
+  status: MrpRunStatus;
+  createdAt: string;
+}
+
+export interface MrpRecommendation {
+  id: string;
+  businessId: string;
+  mrpRunId?: string;
+  productId: string;
+  type: MrpRecommendationType;
+  quantity: number;
+  dueDate: string;
+  sourceDemand?: string;
+  status: MrpRecommendationStatus;
+  createdAt: string;
+}
+
+export interface ProductionOrderLine {
+  id: string;
+  businessId: string;
+  productionOrderId: string;
+  componentProductId: string;
+  warehouseId?: string;
+  plannedQuantity: number;
+  consumedQuantity: number;
+  unitCostSnapshot: Money;
+}
+
+export interface ProductionOrder {
+  id: string;
+  businessId: string;
+  orderNo: string;
+  productId: string;
+  warehouseId?: string;
+  quantity: number;
+  status: ProductionOrderStatus;
+  plannedDate: string;
+  completedDate?: string;
+  notes?: string;
+  lines: ProductionOrderLine[];
+  createdAt: string;
 }
 
 export interface Location {
@@ -511,6 +620,11 @@ export interface ErpWorkspace {
   customers: Customer[];
   suppliers: Supplier[];
   products: Product[];
+  productStructures: ProductStructure[];
+  demandForecasts: DemandForecast[];
+  mrpRuns: MrpRun[];
+  mrpRecommendations: MrpRecommendation[];
+  productionOrders: ProductionOrder[];
   warehouses: Warehouse[];
   salesInvoices: SalesInvoice[];
   purchaseBills: PurchaseBill[];

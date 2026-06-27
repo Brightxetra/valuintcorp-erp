@@ -15,6 +15,8 @@ import type {
   CreateStockAdjustmentInput,
   CreateStockReceiptInput,
   CreateStockTransferInput,
+  MrpRunInput,
+  ProductStructureInput,
   LockPeriodInput,
   SummaryActionInput,
   UpdateFixedAssetInput,
@@ -59,6 +61,7 @@ import {
   validateRawTransactions,
 } from "@/lib/erp/horizontal";
 import { valueInventory } from "@/lib/inventory/valuation";
+import { buildMrpRecommendations, calculateProductUnitCost } from "@/lib/erp/industry-workflows";
 type DemoBranchExpense = {
   id: string;
   locationId: string;
@@ -238,6 +241,95 @@ export function createDemoStockReceipt(input: CreateStockReceiptInput): ErpWorks
   });
 }
 
+export function saveDemoProductStructure(input: ProductStructureInput): ErpWorkspace {
+  workspace = currentWorkspace();
+  const parent = workspace.products.find((item) => item.id === input.parentProductId && item.businessId === workspace.business.id);
+  if (!parent) throw new Error("Produk utama resep/BOM tidak ditemukan.");
+
+  const structureId = input.id ?? generatedId("structure");
+  const lineProducts = new Map(workspace.products.map((product) => [product.id, product]));
+  const lines = input.lines.map((line) => {
+    const component = lineProducts.get(line.componentProductId);
+    if (!component) throw new Error("Komponen resep/BOM tidak ditemukan.");
+    return {
+      id: generatedId("structure-line"),
+      businessId: workspace.business.id,
+      structureId,
+      componentProductId: component.id,
+      quantity: line.quantity,
+      wastePercent: line.wastePercent,
+      unitCostSnapshot: line.unitCostSnapshot || calculateProductUnitCost(component, workspace.products, workspace.productStructures),
+      notes: line.notes,
+    };
+  });
+
+  const structure = {
+    id: structureId,
+    businessId: workspace.business.id,
+    parentProductId: parent.id,
+    type: input.type,
+    outputQuantity: input.outputQuantity,
+    yieldPercent: input.yieldPercent,
+    isActive: input.isActive,
+    notes: input.notes,
+    lines,
+    updatedAt: nowIso(),
+  };
+
+  return refresh({
+    ...workspace,
+    productStructures: upsertById(workspace.productStructures, input.id, structure, structure),
+    activities: [activity("inventory", input.id ? "structure updated" : "structure created", `${parent.sku} resep/BOM disimpan.`), ...workspace.activities],
+  });
+}
+
+export function runDemoMrp(input: MrpRunInput): ErpWorkspace {
+  workspace = currentWorkspace();
+  const now = nowIso();
+  const run = {
+    id: generatedId("mrp"),
+    businessId: workspace.business.id,
+    name: input.name,
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
+    status: "planned" as const,
+    createdAt: now,
+  };
+  const createdForecasts = input.forecasts.map((forecast) => ({
+    id: generatedId("forecast"),
+    businessId: workspace.business.id,
+    productId: forecast.productId,
+    locationId: forecast.locationId,
+    periodStart: forecast.periodStart,
+    periodEnd: forecast.periodEnd,
+    quantity: forecast.quantity,
+    source: forecast.source,
+    notes: forecast.notes,
+    createdAt: now,
+  }));
+  const activeForecasts = [...workspace.demandForecasts, ...createdForecasts].filter(
+    (forecast) => forecast.periodStart <= input.periodEnd && forecast.periodEnd >= input.periodStart,
+  );
+  const recommendations = buildMrpRecommendations({
+    businessId: workspace.business.id,
+    periodEnd: input.periodEnd,
+    products: workspace.products,
+    structures: workspace.productStructures,
+    stockMovements: workspace.stockMovements,
+    forecasts: activeForecasts,
+    mrpRunId: run.id,
+    nowIso: now,
+  }).map((recommendation) => ({ ...recommendation, id: generatedId("mrp-rec") }));
+
+  return refresh({
+    ...workspace,
+    demandForecasts: [...createdForecasts, ...workspace.demandForecasts],
+    mrpRuns: [run, ...workspace.mrpRuns],
+    mrpRecommendations: [...recommendations, ...workspace.mrpRecommendations],
+    activities: [activity("inventory", "mrp run", `${run.name} menghasilkan ${recommendations.length} rekomendasi.`), ...workspace.activities],
+  });
+}
+
 export function createDemoPayrollRun(input: CreatePayrollRunInput): ErpWorkspace {
   workspace = currentWorkspace();
   workspace = runPayroll(workspace, input);
@@ -350,6 +442,8 @@ export function saveDemoMasterData(
       name: String(values.name),
       variant: typeof values.variant === "string" ? values.variant : undefined,
       productType: String(values.productType ?? (Boolean(values.trackStock ?? true) ? "stock_item" : "service")) as Product["productType"],
+      industryItemType: String(values.industryItemType ?? "retail_sku") as Product["industryItemType"],
+      fulfillmentMethod: String(values.fulfillmentMethod ?? (Boolean(values.trackStock ?? true) ? "buy_stock" : "non_stock")) as Product["fulfillmentMethod"],
       category: String(values.category ?? "Umum"),
       unit: String(values.unit ?? "unit"),
       trackStock: Boolean(values.trackStock ?? values.productType === "stock_item"),
@@ -357,6 +451,11 @@ export function saveDemoMasterData(
       sellingPrice: Number(values.sellingPrice ?? 0),
       purchasePrice: Number(values.purchasePrice ?? 0),
       reorderPoint: Number(values.reorderPoint ?? 0),
+      safetyStock: Number(values.safetyStock ?? 0),
+      minimumOrderQty: Number(values.minimumOrderQty ?? 0),
+      leadTimeDays: Number(values.leadTimeDays ?? 0),
+      productionLeadTimeDays: Number(values.productionLeadTimeDays ?? 0),
+      makeOrBuy: String(values.makeOrBuy ?? "buy") as Product["makeOrBuy"],
       isSellable: Boolean(values.isSellable ?? true),
       isPurchasable: Boolean(values.isPurchasable ?? true),
       isActive: Boolean(values.isActive ?? true),

@@ -46,8 +46,8 @@ export const industryTemplates: IndustryTemplate[] = [
   {
     id: "food_beverage",
     industry: "food_beverage",
-    name: "F&B Ringan",
-    description: "F&B multi-outlet ringan dengan daily sales, stok sederhana, payroll, dan pajak.",
+    name: "F&B resep dan HPP",
+    description: "F&B multi-outlet dengan menu, bahan baku, resep, HPP otomatis, POS, stok, payroll, dan pajak.",
     enabledModules: [
       "dashboard",
       "sales",
@@ -61,6 +61,14 @@ export const industryTemplates: IndustryTemplate[] = [
       "locations",
       "tax",
     ],
+    defaultProductType: "stock_item",
+  },
+  {
+    id: "manufacturing",
+    industry: "manufacturing",
+    name: "Manufaktur",
+    description: "Manufaktur UMKM dengan BOM, kebutuhan material, order produksi, pembelian, stok, dan laporan.",
+    enabledModules: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "imports", "locations", "tax"],
     defaultProductType: "stock_item",
   },
   {

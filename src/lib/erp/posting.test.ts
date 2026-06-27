@@ -164,7 +164,9 @@ describe("erp posting engine", () => {
 
     expect(invoice).toMatchObject({ locationId: "loc-kitchen", source: "pos", status: "posted" });
     expect(paidWorkspace.salesInvoices.find((item) => item.id === invoice.id)).toMatchObject({ status: "paid", paidAmount: 45_000 });
-    expect(paidWorkspace.stockMovements).toHaveLength(workspace.stockMovements.length + 1);
+    expect(paidWorkspace.stockMovements).toHaveLength(workspace.stockMovements.length + 2);
+    expect(paidWorkspace.stockMovements.some((movement) => movement.memo === invoice.invoiceNo && movement.itemId === "item-beef")).toBe(true);
+    expect(paidWorkspace.stockMovements.some((movement) => movement.memo === invoice.invoiceNo && movement.itemId === "item-rice")).toBe(true);
     expect(paidWorkspace.journals).toHaveLength(workspace.journals.length + 2);
   });
 });

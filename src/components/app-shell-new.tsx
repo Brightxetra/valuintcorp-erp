@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Factory,
   FileBarChart,
   FileText,
   Home,
@@ -71,6 +72,7 @@ const navGroups = [
   {
     label: "📦 Produk",
     items: [
+      { href: "/produk/katalog", label: "Katalog Produk", icon: PackagePlus, permission: "inventory:manage" as Permission },
       { href: "/produk/stok", label: "Stok & Persediaan", icon: Boxes, permission: "inventory:manage" as Permission },
       { href: "/produk/harga", label: "Daftar Harga", icon: FileText, permission: "inventory:manage" as Permission },
     ],
@@ -103,11 +105,73 @@ const navGroups = [
 const mobileNav = [
   { href: "/dashboard", label: "Beranda", icon: Home, permission: "business:read" as Permission },
   { href: "/pos", label: "POS", icon: ShoppingBag, permission: "pos:read" as Permission },
+  { href: "/produk/katalog", label: "Produk", icon: PackagePlus, permission: "inventory:manage" as Permission },
   { href: "/transaksi/invoice", label: "Invoice", icon: ReceiptText, permission: "accounting:write" as Permission },
   { href: "/karyawan", label: "Karyawan", icon: UsersRound, permission: "hr:manage" as Permission },
   { href: "/keuangan/aset", label: "Aset", icon: Building2, permission: "accounting:read" as Permission },
   { href: "/settings", label: "Lainnya", icon: Menu, permission: "business:read" as Permission },
 ];
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  permission: Permission;
+};
+
+type NavGroup = {
+  label: string;
+  items: NavItem[];
+  defaultOpen?: boolean;
+};
+
+function industryLabel(item: NavItem, industry: string): NavItem {
+  if (item.href === "/produk/katalog") {
+    if (industry === "food_beverage") return { ...item, label: "Menu & Resep", icon: PackagePlus };
+    if (industry === "manufacturing") return { ...item, label: "BOM & MRP", icon: Factory };
+    if (industry === "service") return { ...item, label: "Katalog Jasa", icon: FileText };
+  }
+
+  if (item.href === "/produk/stok" && industry === "food_beverage") {
+    return { ...item, label: "Bahan & Stok" };
+  }
+
+  return item;
+}
+
+function isPrimaryForIndustry(href: string, industry: string) {
+  if (industry === "manufacturing") return href !== "/pos";
+  if (industry === "service") return !["/pos", "/produk/stok", "/produk/harga"].includes(href);
+  return true;
+}
+
+function navigationForWorkspace(workspace: ErpWorkspace): NavGroup[] {
+  const canSeeAllModules = workspace.user.role === "owner" || workspace.user.role === "system_admin";
+  const hasPermission = (item: NavItem) => workspace.permissions.includes(item.permission);
+  const primaryGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items
+        .filter((item) => hasPermission(item) && isPrimaryForIndustry(item.href, workspace.business.industry))
+        .map((item) => industryLabel(item, workspace.business.industry)),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  if (!canSeeAllModules) return primaryGroups;
+
+  const secondaryItems = navGroups
+    .flatMap((group) => group.items)
+    .filter((item) => hasPermission(item) && !isPrimaryForIndustry(item.href, workspace.business.industry))
+    .map((item) => industryLabel(item, workspace.business.industry));
+
+  return secondaryItems.length > 0 ? [...primaryGroups, { label: "Semua Modul", items: secondaryItems }] : primaryGroups;
+}
+
+function mobileNavigationForWorkspace(workspace: ErpWorkspace): NavItem[] {
+  return mobileNav
+    .filter((item) => workspace.permissions.includes(item.permission) && isPrimaryForIndustry(item.href, workspace.business.industry))
+    .map((item) => industryLabel(item, workspace.business.industry));
+}
 
 // ============================================================================
 // FAVORITES SYSTEM
@@ -191,9 +255,10 @@ function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClo
       { id: "nav-tax", label: "Pajak", icon: Landmark, href: "/tax", category: "Navigasi" },
       { id: "nav-settings", label: "Pengaturan", icon: Settings, href: "/settings", category: "Navigasi" },
       { id: "nav-pos", label: "POS Cabang", icon: ShoppingBag, href: "/pos", category: "Navigasi" },
+      { id: "nav-catalog", label: industryLabel({ href: "/produk/katalog", label: "Katalog Produk", icon: PackagePlus, permission: "inventory:manage" }, workspace.business.industry).label, icon: PackagePlus, href: "/produk/katalog", category: "Navigasi" },
       { id: "action-new-invoice", label: "Buat Invoice Baru", icon: PackagePlus, href: "/sales?action=new", category: "Aksi Cepat", shortcut: "N I" },
       { id: "action-new-bill", label: "Buat Purchase Bill", icon: ShoppingCart, href: "/purchases?action=new", category: "Aksi Cepat", shortcut: "N B" },
-      { id: "action-new-product", label: "Tambah Produk", icon: Boxes, href: "/settings?tab=products&action=new", category: "Aksi Cepat" },
+      { id: "action-new-product", label: "Tambah Produk", icon: Boxes, href: "/produk/katalog", category: "Aksi Cepat" },
     ];
 
     workspace.salesInvoices.slice(-5).forEach((inv) => {
@@ -210,7 +275,7 @@ function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClo
 
     const permissionForItem = (item: CommandItem): Permission => {
       if (item.id.includes("pos")) return "pos:read";
-      if (item.id.includes("inventory") || item.id.includes("product")) return "inventory:manage";
+      if (item.id.includes("inventory") || item.id.includes("product") || item.id.includes("catalog")) return "inventory:manage";
       if (item.id.includes("reports")) return "reports:export";
       if (item.id.includes("hr")) return "hr:manage";
       if (item.id.includes("tax")) return "tax:prepare";
@@ -469,11 +534,9 @@ function NavLinks({ workspace, onNavigate }: {
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const permissions = new Set(workspace.permissions);
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
-  const visibleNavigationItems = navGroups.flatMap((group) =>
-    group.items.filter((item) => permissions.has(item.permission)),
-  );
+  const navigationGroups = navigationForWorkspace(workspace);
+  const visibleNavigationItems = navigationGroups.flatMap((group) => group.items);
   const activeNavigationHref = getMostSpecificActiveHref(
     pathname,
     visibleNavigationItems.map((item) => item.href),
@@ -522,11 +585,11 @@ function NavLinks({ workspace, onNavigate }: {
       )}
 
       {/* Navigation Groups */}
-      {navGroups.map((group) => (
+      {navigationGroups.map((group) => (
         <div key={group.label}>
           <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">{group.label}</p>
           <div className="space-y-1">
-            {group.items.filter((item) => permissions.has(item.permission)).map((item) => {
+            {group.items.map((item) => {
               const active = !hasActiveFavorite && item.href === activeNavigationHref;
               const Icon = item.icon;
               const favId = `nav-${item.href}`;
@@ -616,6 +679,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
     if (workspace.locations.length === 1) return workspace.locations[0]?.name ?? "1 cabang";
     return `${workspace.locations.length} cabang ditugaskan`;
   }, [workspace.locations]);
+  const mobileItems = useMemo(() => mobileNavigationForWorkspace(workspace).slice(0, 5), [workspace]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -1113,7 +1177,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
           ============================================================================ */}
       <nav className="erp-mobile-nav fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
         <div className="grid grid-cols-5">
-          {mobileNav.filter((item) => workspace.permissions.includes(item.permission)).slice(0, 5).map((item) => {
+          {mobileItems.map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
 

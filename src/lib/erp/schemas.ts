@@ -182,6 +182,10 @@ export const productSchema = z.object({
   name: z.string().min(2),
   variant: optionalText,
   productType: z.enum(["stock_item", "non_stock_item", "service", "bundle"]).default("stock_item"),
+  industryItemType: z
+    .enum(["raw_material", "semi_finished", "finished_good", "menu_item", "retail_sku", "service_item", "package", "other"])
+    .default("retail_sku"),
+  fulfillmentMethod: z.enum(["buy_stock", "make_to_stock", "make_to_order", "recipe_on_sale", "non_stock"]).default("buy_stock"),
   category: z.string().min(1).default("Umum"),
   unit: z.string().min(1).default("unit"),
   trackStock: booleanFlag.default(true),
@@ -189,9 +193,56 @@ export const productSchema = z.object({
   sellingPrice: nonNegativeMoney.default(0),
   purchasePrice: nonNegativeMoney.default(0),
   reorderPoint: z.coerce.number().nonnegative().default(0),
+  safetyStock: z.coerce.number().nonnegative().default(0),
+  minimumOrderQty: z.coerce.number().nonnegative().default(0),
+  leadTimeDays: z.coerce.number().int().nonnegative().default(0),
+  productionLeadTimeDays: z.coerce.number().int().nonnegative().default(0),
+  makeOrBuy: z.enum(["buy", "make", "both"]).default("buy"),
   isSellable: booleanFlag.default(true),
   isPurchasable: booleanFlag.default(true),
   isActive: booleanFlag.default(true),
+});
+
+export const productStructureLineSchema = z.object({
+  componentProductId: z.string().min(1),
+  quantity: positiveQuantity,
+  wastePercent: z.coerce.number().min(0).max(100).default(0),
+  unitCostSnapshot: nonNegativeMoney.default(0),
+  notes: optionalText,
+});
+
+export const productStructureSchema = z.object({
+  id: optionalText,
+  parentProductId: z.string().min(1),
+  type: z.enum(["recipe", "bom", "bundle"]).default("recipe"),
+  outputQuantity: positiveQuantity.default(1),
+  yieldPercent: z.coerce.number().positive().max(100).default(100),
+  isActive: booleanFlag.default(true),
+  notes: optionalText,
+  lines: z.array(productStructureLineSchema).min(1, "Minimal satu bahan/komponen wajib diisi."),
+});
+
+export const demandForecastSchema = z.object({
+  productId: z.string().min(1),
+  locationId: optionalText,
+  periodStart: isoDate,
+  periodEnd: isoDate,
+  quantity: positiveQuantity,
+  source: z.enum(["manual", "sales_history", "import"]).default("manual"),
+  notes: optionalText,
+}).refine((value) => value.periodStart <= value.periodEnd, {
+  message: "Tanggal akhir forecast harus setelah tanggal awal.",
+  path: ["periodEnd"],
+});
+
+export const mrpRunSchema = z.object({
+  name: z.string().min(2).default("MRP"),
+  periodStart: isoDate,
+  periodEnd: isoDate,
+  forecasts: z.array(demandForecastSchema).default([]),
+}).refine((value) => value.periodStart <= value.periodEnd, {
+  message: "Tanggal akhir MRP harus setelah tanggal awal.",
+  path: ["periodEnd"],
 });
 
 export const warehouseSchema = z.object({
@@ -435,6 +486,9 @@ export type CreateStockAdjustmentInput = z.infer<typeof createStockAdjustmentSch
 export type CreateStockReceiptInput = z.infer<typeof createStockReceiptSchema>;
 export type CreatePayrollRunInput = z.infer<typeof createPayrollRunSchema>;
 export type CreateStockTransferInput = z.infer<typeof createStockTransferSchema>;
+export type ProductStructureInput = z.infer<typeof productStructureSchema>;
+export type DemandForecastInput = z.infer<typeof demandForecastSchema>;
+export type MrpRunInput = z.infer<typeof mrpRunSchema>;
 export type VoidDocumentInput = z.infer<typeof voidDocumentSchema>;
 export type LockPeriodInput = z.infer<typeof lockPeriodSchema>;
 export type LocationInput = z.infer<typeof locationSchema>;

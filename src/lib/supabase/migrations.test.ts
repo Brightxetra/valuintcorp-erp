@@ -38,7 +38,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 024", () => {
+  it("keeps production ERP migrations in order through 025", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -66,6 +66,7 @@ describe("Supabase migration contract", () => {
       "022_employee_profiles_and_bpjs_policy.sql",
       "023_fix_post_hardening_rls_policies.sql",
       "024_supabase_advisor_rls_and_pos_trigger_hardening.sql",
+      "025_industry_catalog_recipes_mrp.sql",
     ]);
   });
 
@@ -288,6 +289,23 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain('on public.branch_expenses for delete');
     expect(migration).toContain("alter function public.ensure_pos_walk_in_customer() set schema app_private");
     expect(migration).toContain("revoke all on function app_private.ensure_pos_walk_in_customer() from public");
+  });
+
+  it("adds industry catalog, recipes, BOM, MRP, and recipe-aware POS costing", () => {
+    const migration = readFileSync(join(migrationsDir, "025_industry_catalog_recipes_mrp.sql"), "utf8");
+
+    expect(migration).toContain("add column if not exists industry_item_type");
+    expect(migration).toContain("add column if not exists fulfillment_method");
+    expect(migration).toContain("create table if not exists public.product_structures");
+    expect(migration).toContain("create table if not exists public.product_structure_lines");
+    expect(migration).toContain("create table if not exists public.demand_forecasts");
+    expect(migration).toContain("create table if not exists public.mrp_runs");
+    expect(migration).toContain("create table if not exists public.mrp_recommendations");
+    expect(migration).toContain("create table if not exists public.production_orders");
+    expect(migration).toContain("app_private.has_business_role");
+    expect(migration).toContain("create or replace function public.product_unit_cost");
+    expect(migration).toContain("product_record.fulfillment_method = 'recipe_on_sale'");
+    expect(migration).toContain("Insufficient ingredient stock at this branch.");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {

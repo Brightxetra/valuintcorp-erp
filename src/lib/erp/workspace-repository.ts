@@ -17,9 +17,16 @@ import type {
   IndustryTemplate,
   Location,
   MemberInvite,
+  DemandForecast,
+  MrpRecommendation,
+  MrpRun,
   PaymentAllocation,
   Payment,
   Product,
+  ProductionOrder,
+  ProductionOrderLine,
+  ProductStructure,
+  ProductStructureLine,
   PurchaseBill,
   PurchaseBillLine,
   RawImportBatch,
@@ -236,6 +243,8 @@ function mapProducts(rows: Row[]): Product[] {
     name: text(row, "name"),
     variant: optionalText(row, "variant"),
     productType: text(row, "product_type", booleanValue(row, "track_stock", true) ? "stock_item" : "service") as Product["productType"],
+    industryItemType: text(row, "industry_item_type", "retail_sku") as Product["industryItemType"],
+    fulfillmentMethod: text(row, "fulfillment_method", booleanValue(row, "track_stock", true) ? "buy_stock" : "non_stock") as Product["fulfillmentMethod"],
     unit: text(row, "unit", "unit"),
     trackStock: booleanValue(row, "track_stock", true),
     defaultWarehouseId: text(row, "default_warehouse_id"),
@@ -243,9 +252,114 @@ function mapProducts(rows: Row[]): Product[] {
     sellingPrice: numberValue(row, "selling_price"),
     purchasePrice: numberValue(row, "purchase_price"),
     reorderPoint: numberValue(row, "reorder_point"),
+    safetyStock: numberValue(row, "safety_stock"),
+    minimumOrderQty: numberValue(row, "minimum_order_qty"),
+    leadTimeDays: numberValue(row, "lead_time_days"),
+    productionLeadTimeDays: numberValue(row, "production_lead_time_days"),
+    makeOrBuy: text(row, "make_or_buy", "buy") as Product["makeOrBuy"],
     isSellable: booleanValue(row, "is_sellable", true),
     isPurchasable: booleanValue(row, "is_purchasable", true),
     isActive: booleanValue(row, "is_active", true),
+  }));
+}
+
+function mapProductStructureLine(row: Row): ProductStructureLine {
+  return {
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    structureId: text(row, "structure_id"),
+    componentProductId: text(row, "component_product_id"),
+    quantity: numberValue(row, "quantity"),
+    wastePercent: numberValue(row, "waste_percent"),
+    unitCostSnapshot: numberValue(row, "unit_cost_snapshot"),
+    notes: optionalText(row, "notes"),
+  };
+}
+
+function mapProductStructures(rows: Row[]): ProductStructure[] {
+  return rows.map((row) => ({
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    parentProductId: text(row, "parent_product_id"),
+    type: text(row, "type", "recipe") as ProductStructure["type"],
+    outputQuantity: numberValue(row, "output_quantity", 1),
+    yieldPercent: numberValue(row, "yield_percent", 100),
+    isActive: booleanValue(row, "is_active", true),
+    notes: optionalText(row, "notes"),
+    lines: asRows(row.product_structure_lines).map(mapProductStructureLine),
+    updatedAt: optionalText(row, "updated_at"),
+  }));
+}
+
+function mapDemandForecasts(rows: Row[]): DemandForecast[] {
+  return rows.map((row) => ({
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    productId: text(row, "product_id"),
+    locationId: optionalText(row, "location_id"),
+    periodStart: text(row, "period_start"),
+    periodEnd: text(row, "period_end"),
+    quantity: numberValue(row, "quantity"),
+    source: text(row, "source", "manual") as DemandForecast["source"],
+    notes: optionalText(row, "notes"),
+    createdAt: text(row, "created_at"),
+  }));
+}
+
+function mapMrpRuns(rows: Row[]): MrpRun[] {
+  return rows.map((row) => ({
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    name: text(row, "name"),
+    periodStart: text(row, "period_start"),
+    periodEnd: text(row, "period_end"),
+    status: text(row, "status", "planned") as MrpRun["status"],
+    createdAt: text(row, "created_at"),
+  }));
+}
+
+function mapMrpRecommendations(rows: Row[]): MrpRecommendation[] {
+  return rows.map((row) => ({
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    mrpRunId: optionalText(row, "mrp_run_id"),
+    productId: text(row, "product_id"),
+    type: text(row, "type", "purchase") as MrpRecommendation["type"],
+    quantity: numberValue(row, "quantity"),
+    dueDate: text(row, "due_date"),
+    sourceDemand: optionalText(row, "source_demand"),
+    status: text(row, "status", "planned") as MrpRecommendation["status"],
+    createdAt: text(row, "created_at"),
+  }));
+}
+
+function mapProductionOrderLine(row: Row): ProductionOrderLine {
+  return {
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    productionOrderId: text(row, "production_order_id"),
+    componentProductId: text(row, "component_product_id"),
+    warehouseId: optionalText(row, "warehouse_id"),
+    plannedQuantity: numberValue(row, "planned_quantity"),
+    consumedQuantity: numberValue(row, "consumed_quantity"),
+    unitCostSnapshot: numberValue(row, "unit_cost_snapshot"),
+  };
+}
+
+function mapProductionOrders(rows: Row[]): ProductionOrder[] {
+  return rows.map((row) => ({
+    id: text(row, "id"),
+    businessId: text(row, "business_id"),
+    orderNo: text(row, "order_no"),
+    productId: text(row, "product_id"),
+    warehouseId: optionalText(row, "warehouse_id"),
+    quantity: numberValue(row, "quantity"),
+    status: text(row, "status", "draft") as ProductionOrder["status"],
+    plannedDate: text(row, "planned_date"),
+    completedDate: optionalText(row, "completed_date"),
+    notes: optionalText(row, "notes"),
+    lines: asRows(row.production_order_lines).map(mapProductionOrderLine),
+    createdAt: text(row, "created_at"),
   }));
 }
 
@@ -938,6 +1052,11 @@ export async function loadSupabaseWorkspace(
     customers,
     suppliers,
     products,
+    productStructures,
+    demandForecasts,
+    mrpRuns,
+    mrpRecommendations,
+    productionOrders,
     warehouses,
     salesInvoices,
     purchaseBills,
@@ -1013,6 +1132,45 @@ export async function loadSupabaseWorkspace(
       ? (masterLimit
           ? supabase.from("products").select("*").eq("business_id", context.businessId).order("sku").limit(masterLimit)
           : supabase.from("products").select("*").eq("business_id", context.businessId).order("sku"))
+      : skipRows(),
+    needs(profile, "dashboard", "sales", "inventory", "pricing", "settings", "reports")
+      ? supabase
+          .from("product_structures")
+          .select("*, product_structure_lines(*)")
+          .eq("business_id", context.businessId)
+          .order("updated_at", { ascending: false })
+      : skipRows(),
+    needs(profile, "inventory", "settings", "reports")
+      ? supabase
+          .from("demand_forecasts")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("period_start", { ascending: false })
+          .limit(operationalLimit ?? 500)
+      : skipRows(),
+    needs(profile, "inventory", "settings", "reports")
+      ? supabase
+          .from("mrp_runs")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("created_at", { ascending: false })
+          .limit(operationalLimit ?? 100)
+      : skipRows(),
+    needs(profile, "inventory", "settings", "reports")
+      ? supabase
+          .from("mrp_recommendations")
+          .select("*")
+          .eq("business_id", context.businessId)
+          .order("created_at", { ascending: false })
+          .limit(operationalLimit ?? 500)
+      : skipRows(),
+    needs(profile, "inventory", "settings", "reports")
+      ? supabase
+          .from("production_orders")
+          .select("*, production_order_lines(*)")
+          .eq("business_id", context.businessId)
+          .order("planned_date", { ascending: false })
+          .limit(operationalLimit ?? 500)
       : skipRows(),
     needs(profile, "sales", "purchases", "inventory", "settings", "document-detail")
       ? (masterLimit
@@ -1281,6 +1439,11 @@ export async function loadSupabaseWorkspace(
       fixedAssetDepreciationRuns,
       fixedAssetDepreciationLines,
       fixedAssetDisposals,
+      productStructures,
+      demandForecasts,
+      mrpRuns,
+      mrpRecommendations,
+      productionOrders,
       demoSandbox,
     ],
   );
@@ -1319,6 +1482,11 @@ export async function loadSupabaseWorkspace(
     customers: mapCustomers(asRows(customers.data)),
     suppliers: mapSuppliers(asRows(suppliers.data)),
     products: mapProducts(asRows(products.data)),
+    productStructures: mapProductStructures(asRows(productStructures.data)),
+    demandForecasts: mapDemandForecasts(asRows(demandForecasts.data)),
+    mrpRuns: mapMrpRuns(asRows(mrpRuns.data)),
+    mrpRecommendations: mapMrpRecommendations(asRows(mrpRecommendations.data)),
+    productionOrders: mapProductionOrders(asRows(productionOrders.data)),
     warehouses: mapWarehouses(asRows(warehouses.data)),
     salesInvoices: mapSalesInvoices(asRows(salesInvoices.data)),
     purchaseBills: mapPurchaseBills(asRows(purchaseBills.data)),
