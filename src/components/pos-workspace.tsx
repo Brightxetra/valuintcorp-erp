@@ -121,7 +121,6 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   const [receivedAmount, setReceivedAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const selectedLocationId = branches.some((branch) => branch.id === locationId) ? locationId : branches[0]?.id ?? "";
-  const selectedBranch = branches.find((branch) => branch.id === selectedLocationId);
 
   useEffect(() => {
     function setPreferredLocation(nextId: string | null | undefined) {
@@ -302,23 +301,15 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
 
   return (
     <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">POS</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Penjualan kasir</h1>
-            <p className="mt-1 truncate text-sm text-slate-500">{selectedBranch?.name ?? "Pilih cabang"} - Tunai / QRIS manual</p>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <span className="inline-flex min-h-11 items-center rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
-              {date}
-            </span>
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold tracking-tight text-slate-950">Penjualan kasir</h1>
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => void loadSnapshot()}
               disabled={loading}
-              className="inline-flex min-h-11 items-center justify-center gap-2 self-end rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               <RefreshCw className={cn("size-4", loading && "animate-spin")} aria-hidden />
               Muat ulang
@@ -450,8 +441,8 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
           </div>
         </section>
 
-        <aside className="flex max-h-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)]">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+        <aside className="flex max-h-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:sticky xl:top-[5.25rem] xl:max-h-[calc(100dvh-5.75rem)]">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
             <div>
               <h2 className="text-lg font-semibold tracking-tight text-slate-950">Order</h2>
               <p className="text-sm text-slate-500">{cartQuantity} item</p>
@@ -463,11 +454,11 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
             ) : null}
           </div>
 
-          <div className="min-h-48 flex-1 overflow-y-auto p-4">
+          <div className="min-h-24 flex-1 overflow-y-auto p-4">
             {cartItems.length === 0 ? (
-              <div className="flex min-h-48 items-center justify-center rounded-2xl bg-slate-50 p-5 text-center">
+              <div className="flex min-h-32 items-center justify-center rounded-2xl bg-slate-50 p-4 text-center">
                 <div>
-                  <ShoppingBag className="mx-auto mb-3 size-9 text-slate-300" aria-hidden />
+                  <ShoppingBag className="mx-auto mb-2 size-8 text-slate-300" aria-hidden />
                   <p className="font-semibold text-slate-950">Order masih kosong</p>
                   <p className="mt-1 text-sm text-slate-500">Pilih produk untuk mulai transaksi.</p>
                 </div>
@@ -530,7 +521,7 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {paymentOptions.map((option) => {
                 const Icon = option.icon;
                 const selected = paymentMethod === option.value;
@@ -540,7 +531,7 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                     type="button"
                     onClick={() => setPaymentMethod(option.value)}
                     className={cn(
-                      "min-h-16 rounded-xl border p-3 text-left transition",
+                      "min-h-14 rounded-xl border p-3 text-left transition",
                       selected ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                     )}
                   >
@@ -548,14 +539,14 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                       <Icon className="size-4" aria-hidden />
                       {option.label}
                     </span>
-                    <span className={cn("mt-1 block text-xs leading-4", selected ? "text-white/70" : "text-slate-500")}>{option.helper}</span>
+                    <span className={cn("mt-0.5 block text-xs leading-4", selected ? "text-white/70" : "text-slate-500")}>{option.helper}</span>
                   </button>
                 );
               })}
             </div>
 
             {paymentMethod === "cash" ? (
-              <div className="mt-4 rounded-2xl bg-slate-50 p-3">
+              <div className="mt-3 rounded-2xl bg-slate-50 p-3">
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Uang diterima
                   <input
