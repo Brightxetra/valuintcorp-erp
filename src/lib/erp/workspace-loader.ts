@@ -5,7 +5,7 @@ import { createDemoErpWorkspace } from "@/lib/erp/demo-workspace";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
 import { refreshErpWorkspace } from "@/lib/erp/operations";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import { permissionsForRole, type Permission } from "@/lib/security/permissions";
+import { isPosOnlyPermissionSet, permissionsForRole, type Permission } from "@/lib/security/permissions";
 import { loadSupabaseWorkspace, type WorkspaceLoadOptions } from "@/lib/erp/workspace-repository";
 
 
@@ -93,6 +93,10 @@ export async function getInitialErpWorkspace(
     const requiredPermission = requiredPermissionForProfile(options.profile);
     const permissions = context.permissions ?? permissionsForRole(context.role);
     if (requiredPermission && !permissions.includes(requiredPermission)) {
+      if (isPosOnlyPermissionSet(permissions)) {
+        redirect("/pos");
+      }
+
       redirect("/access-denied");
     }
     try {

@@ -18,6 +18,22 @@ describe("login routing", () => {
     expect(destinationAfterLogin("/onboarding?step=business", true)).toBe("/dashboard");
   });
 
+  it("uses the authenticated default path when next path is missing or unsafe", () => {
+    expect(destinationAfterLogin(null, true, "/pos")).toBe("/pos");
+    expect(destinationAfterLogin("https://example.com", true, "/pos")).toBe("/pos");
+    expect(destinationAfterLogin("/login?next=/dashboard", true, "/pos")).toBe("/pos");
+    expect(destinationAfterLogin("/onboarding", true, "/pos")).toBe("/pos");
+  });
+
+  it("keeps safe child destinations under the authenticated default path", () => {
+    expect(destinationAfterLogin("/pos/laporan", true, "/pos")).toBe("/pos/laporan");
+  });
+
+  it("does not send POS-only users to ERP routes from stale next paths", () => {
+    expect(destinationAfterLogin("/dashboard", true, "/pos")).toBe("/pos");
+    expect(destinationAfterLogin("/access-denied", true, "/pos")).toBe("/pos");
+  });
+
   it("sends users without a business to onboarding", () => {
     expect(destinationAfterLogin("/dashboard", false)).toBe("/onboarding");
   });

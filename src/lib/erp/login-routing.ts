@@ -1,22 +1,40 @@
 const fallbackAuthenticatedPath = "/dashboard";
 const onboardingPath = "/onboarding";
 
-export function sanitizeLoginNextPath(nextPath: string | null | undefined) {
-  if (!nextPath) return fallbackAuthenticatedPath;
-  if (!nextPath.startsWith("/") || nextPath.startsWith("//")) return fallbackAuthenticatedPath;
+function isSamePathOrChild(path: string, parentPath: string) {
+  return path === parentPath || path.startsWith(`${parentPath}?`) || path.startsWith(`${parentPath}/`);
+}
+
+export function sanitizeLoginNextPath(
+  nextPath: string | null | undefined,
+  fallbackPath = fallbackAuthenticatedPath,
+) {
+  if (!nextPath) return fallbackPath;
+  if (!nextPath.startsWith("/") || nextPath.startsWith("//")) return fallbackPath;
   if (nextPath === "/login" || nextPath.startsWith("/login?") || nextPath.startsWith("/login/")) {
-    return fallbackAuthenticatedPath;
+    return fallbackPath;
   }
 
   return nextPath;
 }
 
-export function destinationAfterLogin(nextPath: string | null | undefined, hasBusiness: boolean) {
+export function destinationAfterLogin(
+  nextPath: string | null | undefined,
+  hasBusiness: boolean,
+  defaultAuthenticatedPath = fallbackAuthenticatedPath,
+) {
   if (!hasBusiness) return onboardingPath;
 
-  const safeNextPath = sanitizeLoginNextPath(nextPath);
+  const fallbackPath = sanitizeLoginNextPath(defaultAuthenticatedPath);
+  const safeNextPath = sanitizeLoginNextPath(nextPath, fallbackPath);
 
-  return safeNextPath === onboardingPath || safeNextPath.startsWith(`${onboardingPath}?`)
-    ? fallbackAuthenticatedPath
-    : safeNextPath;
+  if (safeNextPath === onboardingPath || safeNextPath.startsWith(`${onboardingPath}?`)) {
+    return fallbackPath;
+  }
+
+  if (fallbackPath !== fallbackAuthenticatedPath && !isSamePathOrChild(safeNextPath, fallbackPath)) {
+    return fallbackPath;
+  }
+
+  return safeNextPath;
 }

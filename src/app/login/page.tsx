@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { LoginWorkspace } from "@/components/erp-workspaces";
 import { getServerAccessToken, getServerAuthenticatedUser, getServerWorkspaceContext } from "@/lib/auth/server-session";
 import { destinationAfterLogin } from "@/lib/erp/login-routing";
+import { isPosOnlyPermissionSet, permissionsForRole } from "@/lib/security/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     const nextPath = firstSearchParam(next);
 
     if (context) {
-      redirect(destinationAfterLogin(nextPath, true));
+      const permissions = context.permissions ?? permissionsForRole(context.role);
+      const defaultPath = isPosOnlyPermissionSet(permissions) ? "/pos" : undefined;
+      redirect(destinationAfterLogin(nextPath, true, defaultPath));
     }
 
     const user = await getServerAuthenticatedUser();

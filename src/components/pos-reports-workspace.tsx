@@ -193,8 +193,8 @@ export function PosReportsWorkspace({ initialWorkspace }: { initialWorkspace: Er
           </Link>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_180px_auto] md:items-end">
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_160px_180px_auto] md:items-end">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Cabang
             <select
               value={locationId}
@@ -202,7 +202,7 @@ export function PosReportsWorkspace({ initialWorkspace }: { initialWorkspace: Er
                 setLocationId(event.target.value);
                 writeStoredPosLocationId(event.target.value);
               }}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+              className="mt-1 min-h-11 min-w-0 w-full max-w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
             >
               {branches.map((branch) => (
                 <option key={branch.id} value={branch.id}>
@@ -211,27 +211,27 @@ export function PosReportsWorkspace({ initialWorkspace }: { initialWorkspace: Er
               ))}
             </select>
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Periode
             <select
               value={periodMode}
               onChange={(event) => setPeriodMode(event.target.value as PosPeriodMode)}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+              className="mt-1 min-h-11 min-w-0 w-full max-w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
             >
               {periodOptions.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </label>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <label className="min-w-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Tanggal acuan
-            <div className="relative mt-1">
+            <div className="relative mt-1 min-w-0 max-w-full">
               <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
               <input
                 type="date"
                 value={anchorDate}
                 onChange={(event) => setAnchorDate(event.target.value)}
-                className="min-h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+                className="min-h-11 min-w-0 w-full max-w-full appearance-none rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
               />
             </div>
           </label>
@@ -239,7 +239,7 @@ export function PosReportsWorkspace({ initialWorkspace }: { initialWorkspace: Er
             type="button"
             onClick={() => void loadReport()}
             disabled={loading}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            className="inline-flex min-h-11 min-w-0 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 md:w-auto"
           >
             <RefreshCw className={cn("size-4", loading && "animate-spin")} aria-hidden />
             Muat laporan

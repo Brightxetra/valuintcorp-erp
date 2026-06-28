@@ -32,6 +32,7 @@ export interface SessionSyncResult {
   ok: boolean;
   defaultBusinessId: string | null;
   hasBusiness: boolean;
+  defaultPath?: string | null;
 }
 
 export interface SessionSyncTokens {

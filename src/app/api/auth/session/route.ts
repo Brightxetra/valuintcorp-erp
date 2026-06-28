@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { BusinessRole } from "@/lib/domain/types";
 import {
   serverAccessTokenCookie,
   serverBusinessCookie,
@@ -25,6 +26,7 @@ import {
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 import { acceptPendingMemberInvitesForUser } from "@/lib/auth/member-invites";
+import { isPosOnlyPermissionSet, permissionsForMember, type Permission } from "@/lib/security/permissions";
 
 const optionalSessionTokenSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
@@ -77,6 +79,20 @@ function createTokenSupabaseClient(accessToken: string) {
   });
 }
 
+function permissionsForSessionMembership(membership: {
+  role?: string | null;
+  access_scope?: string | null;
+  access_permissions?: unknown;
+}) {
+  return permissionsForMember(
+    (membership.role ?? "staff") as BusinessRole,
+    membership.access_scope === "custom" ? "custom" : "role",
+    Array.isArray(membership.access_permissions)
+      ? membership.access_permissions.filter((permission): permission is Permission => typeof permission === "string")
+      : [],
+  );
+}
+
 export async function POST(request: Request) {
   if (shouldUseDemoFallback()) {
     return NextResponse.json({ demoMode: true }, { headers: { "cache-control": "no-store" } });
@@ -103,11 +119,12 @@ export async function POST(request: Request) {
 
   const membershipSupabase = serviceSupabase ?? supabase;
   let defaultBusinessId = parsed.data.businessId ?? null;
+  let defaultPath: string | null = null;
 
   if (parsed.data.businessId) {
     const { data: membership, error: membershipError } = await membershipSupabase
       .from("business_members")
-      .select("business_id")
+      .select("business_id, role, access_scope, access_permissions")
       .eq("business_id", parsed.data.businessId)
       .eq("auth_user_id", userData.user.id)
       .maybeSingle();
@@ -119,10 +136,13 @@ export async function POST(request: Request) {
     if (!membership?.business_id) {
       return NextResponse.json({ error: "User is not a member of this business." }, { status: 403, headers: { "cache-control": "no-store" } });
     }
+
+    const permissions = permissionsForSessionMembership(membership);
+    defaultPath = isPosOnlyPermissionSet(permissions) ? "/pos" : null;
   } else {
     const { data: membership, error: membershipError } = await membershipSupabase
       .from("business_members")
-      .select("business_id")
+      .select("business_id, role, access_scope, access_permissions")
       .eq("auth_user_id", userData.user.id)
       .order("created_at", { ascending: true })
       .limit(1)
@@ -133,10 +153,15 @@ export async function POST(request: Request) {
     }
 
     defaultBusinessId = membership?.business_id ?? null;
+
+    if (membership?.business_id) {
+      const permissions = permissionsForSessionMembership(membership);
+      defaultPath = isPosOnlyPermissionSet(permissions) ? "/pos" : null;
+    }
   }
 
   const response = NextResponse.json(
-    { ok: true, defaultBusinessId, hasBusiness: Boolean(defaultBusinessId) },
+    { ok: true, defaultBusinessId, hasBusiness: Boolean(defaultBusinessId), defaultPath },
     { headers: { "cache-control": "no-store" } },
   );
   const cookies = parseCookieHeader(request.headers.get("cookie"));

@@ -85,6 +85,31 @@ test("non-shell pages stay within a normal mobile viewport", async ({ page }) =>
   }
 });
 
+test("POS report filters stay inside the mobile card", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/pos/laporan", { waitUntil: "networkidle" });
+
+  const dateInput = page.getByLabel("Tanggal acuan");
+  await expect(dateInput).toBeVisible();
+
+  const layout = await dateInput.evaluate((input) => {
+    const inputRect = input.getBoundingClientRect();
+    const sectionRect = input.closest("section")?.getBoundingClientRect();
+
+    return {
+      pageOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      inputLeft: inputRect.left,
+      inputRight: inputRect.right,
+      sectionLeft: sectionRect?.left ?? 0,
+      sectionRight: sectionRect?.right ?? window.innerWidth,
+    };
+  });
+
+  expect(layout.pageOverflow, "POS laporan creates horizontal page overflow").toBe(false);
+  expect(layout.inputLeft).toBeGreaterThanOrEqual(layout.sectionLeft - 1);
+  expect(layout.inputRight).toBeLessThanOrEqual(layout.sectionRight + 1);
+});
+
 test("operation dialogs remain scrollable and dismissible at a short mobile viewport", async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 400, height: 545 });

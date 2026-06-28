@@ -2000,7 +2000,7 @@ export function LoginWorkspace() {
           if (!cancelled) {
             if (synced) {
               setSuccess("Invite berhasil diterima.");
-              router.replace(destinationAfterLogin(currentLoginNextPath(), synced.hasBusiness));
+              router.replace(destinationAfterLogin(currentLoginNextPath(), synced.hasBusiness, synced.defaultPath ?? undefined));
             } else {
               setError("Invite berhasil dibuka, tetapi sesi server belum tersimpan. Coba login manual sekali.");
               setCheckingSession(false);
@@ -2129,13 +2129,19 @@ export function LoginWorkspace() {
       if (bootstrap?.demoAccount && bootstrap.businessId) {
         const syncedDemoSession = await syncServerSession(bootstrap.businessId, signedInTokens, { rememberMe });
         setSuccess("Login demo berhasil. Sandbox demo siap dipakai.");
-        router.replace(destinationAfterLogin(requestedNext, Boolean(syncedDemoSession?.hasBusiness ?? true)));
+        router.replace(
+          destinationAfterLogin(
+            requestedNext,
+            Boolean(syncedDemoSession?.hasBusiness ?? true),
+            syncedDemoSession?.defaultPath ?? session.defaultPath ?? undefined,
+          ),
+        );
         return;
       }
 
       if (session.hasBusiness) {
         setSuccess(mode === "login" ? "Login berhasil." : "Registrasi berhasil.");
-        router.replace(destinationAfterLogin(requestedNext, true));
+        router.replace(destinationAfterLogin(requestedNext, true, session.defaultPath ?? undefined));
         return;
       }
 
