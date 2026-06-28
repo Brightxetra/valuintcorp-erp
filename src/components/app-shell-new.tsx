@@ -24,6 +24,7 @@ import {
   ReceiptText,
   Search,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Star,
   ShoppingBag,
@@ -40,6 +41,8 @@ import type { ErpWorkspace } from "@/lib/erp/types";
 import { posExperienceForPermissions, type Permission } from "@/lib/security/permissions";
 import { browserIdleSessionExpired, clearServerSession, touchServerSessionActivity } from "@/lib/erp/client-api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { getAccessiblePosBranches } from "@/lib/pos/branches";
+import { posLocationStorageKey, readStoredPosLocationId } from "@/lib/pos/preferences";
 
 // ============================================================================
 // NAVIGATION CONFIGURATION
@@ -668,18 +671,49 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   const taskCount = workspace.tasks.length;
   const posExperience = posExperienceForPermissions(workspace.permissions);
   const isPosFocusedShell = posExperience !== "erp";
+  const posBranches = useMemo(() => getAccessiblePosBranches(workspace), [workspace]);
+  const [posLocationId, setPosLocationId] = useState("");
   const posRoleLabel =
     posExperience === "supervisor"
       ? "Supervisor cabang"
       : posExperience === "cashier"
         ? "Kasir cabang"
         : "Akses POS cabang";
+  const selectedPosBranch = posBranches.find((branch) => branch.id === posLocationId) ?? posBranches[0];
   const branchSummary = useMemo(() => {
-    if (workspace.locations.length === 0) return "Cabang belum ditugaskan";
-    if (workspace.locations.length === 1) return workspace.locations[0]?.name ?? "1 cabang";
-    return `${workspace.locations.length} cabang ditugaskan`;
-  }, [workspace.locations]);
+    if (selectedPosBranch) return selectedPosBranch.name;
+    if (posBranches.length === 0) return "Cabang belum ditugaskan";
+    if (posBranches.length === 1) return posBranches[0]?.name ?? "1 cabang";
+    return `${posBranches.length} cabang ditugaskan`;
+  }, [posBranches, selectedPosBranch]);
   const mobileItems = useMemo(() => mobileNavigationForWorkspace(workspace).slice(0, 5), [workspace]);
+
+  useEffect(() => {
+    if (!isPosFocusedShell) return undefined;
+
+    function syncLocation(nextId: string | null | undefined) {
+      setPosLocationId(posBranches.some((branch) => branch.id === nextId) ? nextId ?? "" : "");
+    }
+
+    syncLocation(readStoredPosLocationId());
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key === posLocationStorageKey) syncLocation(event.newValue);
+    }
+
+    function handleCustomChange(event: Event) {
+      const detail = (event as CustomEvent<{ locationId?: string }>).detail;
+      syncLocation(detail?.locationId);
+    }
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("valuintcorp:pos-location-change", handleCustomChange);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("valuintcorp:pos-location-change", handleCustomChange);
+    };
+  }, [isPosFocusedShell, posBranches]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -777,12 +811,6 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
     };
   }, [demoMode, router]);
 
-  useEffect(() => {
-    if (isPosFocusedShell && !isActive(pathname, "/pos")) {
-      router.replace("/pos");
-    }
-  }, [isPosFocusedShell, pathname, router]);
-
   async function signOut() {
     setAccountMenuOpen(false);
 
@@ -845,16 +873,43 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                     <p className="mt-1 text-xs text-slate-500">{posRoleLabel} - {business.displayName}</p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void signOut();
-                    }}
-                    className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"
-                  >
-                    <LogOut className="size-4" aria-hidden />
-                    Keluar
-                  </button>
+                  <div className="mt-2 space-y-1">
+                    <Link
+                      href="/pos/pengaturan"
+                      onClick={() => setAccountMenuOpen(false)}
+                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <Settings className="size-4" aria-hidden />
+                      Pengaturan
+                    </Link>
+                    <Link
+                      href="/pos/security"
+                      onClick={() => setAccountMenuOpen(false)}
+                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <ShieldCheck className="size-4" aria-hidden />
+                      Security
+                    </Link>
+                    <Link
+                      href="/pos/laporan"
+                      onClick={() => setAccountMenuOpen(false)}
+                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <FileBarChart className="size-4" aria-hidden />
+                      Laporan
+                    </Link>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void signOut();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"
+                    >
+                      <LogOut className="size-4" aria-hidden />
+                      Keluar
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1088,6 +1143,35 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                   </div>
 
                   <div className="mt-2 space-y-1">
+                    {pathname.startsWith("/pos") && workspace.permissions.includes("pos:read") ? (
+                      <>
+                        <Link
+                          href="/pos/pengaturan"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <Settings className="size-4" aria-hidden />
+                          Pengaturan
+                        </Link>
+                        <Link
+                          href="/pos/security"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <ShieldCheck className="size-4" aria-hidden />
+                          Security
+                        </Link>
+                        <Link
+                          href="/pos/laporan"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <FileBarChart className="size-4" aria-hidden />
+                          Laporan
+                        </Link>
+                      </>
+                    ) : null}
+
                     <Link
                       href="/settings"
                       onClick={() => setAccountMenuOpen(false)}

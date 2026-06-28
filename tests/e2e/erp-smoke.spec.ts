@@ -254,13 +254,51 @@ test("financial export enforces demo roles and returns a workbook for owners", a
 test("branch POS exposes a daily recap and branch product picker", async ({ page }) => {
   await page.goto("/pos");
   await expect(page.getByRole("heading", { name: "Penjualan kasir" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Cabang" })).toHaveValue("loc-kitchen");
+  await expect(page.getByRole("combobox", { name: "Cabang" })).toHaveCount(0);
+  await expect(page.getByText("Tanggal", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Muat ulang" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Produk" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Order" })).toBeVisible();
   await expect(page.getByText("Stok awal")).toBeVisible();
   await expect(page.getByText("Stok akhir")).toBeVisible();
   await expect(page.getByText("Mode kerja")).toHaveCount(0);
   await expect(page.getByText("Payment gateway belum diaktifkan.")).toHaveCount(0);
+});
+
+test("branch POS account menu links to settings security and reports", async ({ page }) => {
+  await page.goto("/pos");
+  const posAccountMenu = page.getByRole("button", { name: "Menu akun POS" });
+  if (await posAccountMenu.count()) {
+    await posAccountMenu.click();
+  } else {
+    await page.getByRole("button", { name: "Menu akun" }).click();
+  }
+  const header = page.getByRole("banner");
+  await expect(header.getByRole("link", { name: "Pengaturan", exact: true })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Security", exact: true })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Laporan", exact: true })).toBeVisible();
+  await expect(header.getByRole("button", { name: "Keluar" })).toBeVisible();
+
+  await header.getByRole("link", { name: "Pengaturan", exact: true }).click();
+  await expect(page).toHaveURL(/\/pos\/pengaturan$/);
+  await expect(page.getByRole("heading", { name: "Pilih cabang kerja" })).toBeVisible();
+  await page.getByRole("button", { name: "Gunakan cabang ini" }).first().click();
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Cabang POS dipilih" })).toBeVisible();
+
+  await page.goto("/pos/security");
+  await expect(page.getByRole("heading", { name: "Perangkat aktif" })).toBeVisible();
+  await expect(page.getByText("Demo browser")).toBeVisible();
+
+  await page.goto("/pos/laporan");
+  await expect(page.getByRole("heading", { name: "Laporan cabang" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Periode" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Penjualan POS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pergerakan stok" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Biaya cabang" })).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Periode" }).selectOption("weekly");
+  await page.getByRole("button", { name: "Muat laporan" }).click();
+  await expect(page.getByText(/transaksi/).first()).toBeVisible();
 });
 
 test("branch POS posts a demo sale into the daily recap", async ({ page }) => {

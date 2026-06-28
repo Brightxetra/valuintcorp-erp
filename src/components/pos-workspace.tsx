@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Banknote,
-  CalendarDays,
   ClipboardList,
   Minus,
   PackageSearch,
@@ -23,32 +22,10 @@ import { cn } from "@/components/ui";
 import { money } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
+import { getAccessiblePosBranches } from "@/lib/pos/branches";
+import { posLocationStorageKey, readStoredPosLocationId } from "@/lib/pos/preferences";
+import type { PosProduct as Product, PosSnapshot as Snapshot } from "@/lib/pos/types";
 
-type Product = {
-  id: string;
-  sku: string;
-  name: string;
-  unit: string;
-  sellingPrice: number;
-  trackStock: boolean;
-  availableQuantity: number | null;
-};
-type Sale = { id: string; invoiceNo: string; date: string; total: number; cogs: number };
-type Expense = { id: string; date: string; amount: number; category: string; memo?: string };
-type Snapshot = {
-  location: { id: string; code: string; name: string; warehouseId?: string };
-  date: string;
-  products: Product[];
-  recap: {
-    revenue: number;
-    cogs: number;
-    miscExpenses: number;
-    openingStock: number;
-    closingStock: number;
-    sales: Sale[];
-    expenses: Expense[];
-  };
-};
 type PaymentMethod = "cash" | "qris";
 
 const paymentOptions: Array<{
@@ -131,19 +108,12 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   const canSell = workspace.permissions.includes("pos:sell");
   const canExpense = workspace.permissions.includes("pos:expenses");
   const showBackOfficeSections = canExpense || !canSell;
-  const fullBranchAccess = workspace.user.role === "owner" || workspace.user.role === "system_admin";
-  const assignedLocations = useMemo(() => new Set(workspace.assignedLocationIds ?? []), [workspace.assignedLocationIds]);
-  const branches = useMemo(
-    () =>
-      workspace.locations.filter((location) => {
-        const isPosLocation = ["branch", "outlet", "store"].includes(location.type) && location.warehouseId;
-        if (!isPosLocation) return false;
-        return fullBranchAccess || assignedLocations.size === 0 || assignedLocations.has(location.id);
-      }),
-    [assignedLocations, fullBranchAccess, workspace.locations],
-  );
-  const [locationId, setLocationId] = useState(() => branches[0]?.id ?? "");
-  const [date, setDate] = useState(today);
+  const branches = useMemo(() => getAccessiblePosBranches(workspace), [workspace]);
+  const [locationId, setLocationId] = useState(() => {
+    const storedId = readStoredPosLocationId();
+    return branches.some((branch) => branch.id === storedId) ? storedId : branches[0]?.id ?? "";
+  });
+  const date = today();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -152,6 +122,32 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   const [loading, setLoading] = useState(false);
   const selectedLocationId = branches.some((branch) => branch.id === locationId) ? locationId : branches[0]?.id ?? "";
   const selectedBranch = branches.find((branch) => branch.id === selectedLocationId);
+
+  useEffect(() => {
+    function setPreferredLocation(nextId: string | null | undefined) {
+      const resolvedId = branches.some((branch) => branch.id === nextId) ? nextId ?? "" : branches[0]?.id ?? "";
+      setLocationId(resolvedId);
+      setCart({});
+      setReceivedAmount("");
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key === posLocationStorageKey) setPreferredLocation(event.newValue);
+    }
+
+    function handleCustomChange(event: Event) {
+      const detail = (event as CustomEvent<{ locationId?: string }>).detail;
+      setPreferredLocation(detail?.locationId);
+    }
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("valuintcorp:pos-location-change", handleCustomChange);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("valuintcorp:pos-location-change", handleCustomChange);
+    };
+  }, [branches]);
 
   const loadSnapshot = useCallback(async () => {
     if (!selectedLocationId) return;
@@ -224,13 +220,14 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
 
   async function submitSale() {
     if (!selectedLocationId || cartItems.length === 0) return;
+    const saleDate = today();
     setLoading(true);
     try {
       const result = await request<{ saleId: string }>("/api/erp/pos", {
         method: "POST",
         body: JSON.stringify({
           locationId: selectedLocationId,
-          date,
+          date: saleDate,
           paymentMethod,
           items: cartItems.map(({ product, quantity }) => ({
             productId: product.id,
@@ -259,13 +256,14 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
     const category = String(formData.get("category") ?? "");
     const amount = Number(formData.get("amount") ?? 0);
     if (!category || amount <= 0) return;
+    const expenseDate = today();
     setLoading(true);
     try {
       await request("/api/erp/branch-expenses", {
         method: "POST",
         body: JSON.stringify({
           locationId: selectedLocationId,
-          date,
+          date: expenseDate,
           category,
           amount,
           memo: String(formData.get("memo") ?? ""),
@@ -309,40 +307,13 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">POS</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Penjualan kasir</h1>
-            <p className="mt-1 truncate text-sm text-slate-500">{selectedBranch?.name ?? "Pilih cabang"} · Tunai / QRIS manual</p>
+            <p className="mt-1 truncate text-sm text-slate-500">{selectedBranch?.name ?? "Pilih cabang"} - Tunai / QRIS manual</p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_11rem_auto] lg:min-w-[620px]">
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Cabang
-              <select
-                value={selectedLocationId}
-                onChange={(event) => {
-                  setLocationId(event.target.value);
-                  clearCart();
-                }}
-                className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
-              >
-                <option value="">Pilih cabang</option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Tanggal
-              <div className="relative mt-1">
-                <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(event) => setDate(event.target.value)}
-                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
-                />
-              </div>
-            </label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <span className="inline-flex min-h-11 items-center rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
+              {date}
+            </span>
             <button
               type="button"
               onClick={() => void loadSnapshot()}
@@ -374,7 +345,7 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                 <h2 className="text-lg font-semibold tracking-tight text-slate-950">Produk</h2>
                 <p className="text-sm text-slate-500">
                   {filteredProducts.length} item tersedia
-                  {loading ? " · memuat..." : ""}
+                  {loading ? " - memuat..." : ""}
                 </p>
               </div>
               <div className="relative w-full md:max-w-sm">
