@@ -24,6 +24,11 @@ const sensitiveJsonbRpcs = [
   "validate_raw_import_batch",
   "void_document",
 ];
+const actorServiceRpcs = [
+  ...sensitiveJsonbRpcs,
+  "post_pos_sale",
+  "post_branch_expense",
+];
 
 function readFilesRecursive(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -38,7 +43,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 025", () => {
+  it("keeps production ERP migrations in order through 026", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -67,6 +72,7 @@ describe("Supabase migration contract", () => {
       "023_fix_post_hardening_rls_policies.sql",
       "024_supabase_advisor_rls_and_pos_trigger_hardening.sql",
       "025_industry_catalog_recipes_mrp.sql",
+      "026_fix_document_sequence_key_ambiguity.sql",
     ]);
   });
 
@@ -308,6 +314,19 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("Insufficient ingredient stock at this branch.");
   });
 
+  it("fixes document sequence generation without reopening public execution", () => {
+    const migration = readFileSync(join(migrationsDir, "026_fix_document_sequence_key_ambiguity.sql"), "utf8");
+
+    expect(migration).toContain("create or replace function public.next_document_no");
+    expect(migration).toContain("target_sequence_key text");
+    expect(migration).not.toMatch(/\n\s+sequence_key\s+text;/);
+    expect(migration).toContain("values (target_business_id, target_sequence_key, 2)");
+    expect(migration).toContain("on conflict (business_id, sequence_key)");
+    expect(migration).toContain("return target_sequence_key || '-' || lpad(current_value::text, 4, '0')");
+    expect(migration).toContain("revoke execute on function public.next_document_no(uuid, text) from public, anon, authenticated");
+    expect(migration).toContain("grant execute on function public.next_document_no(uuid, text) to service_role");
+  });
+
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {
     const apiDir = join(process.cwd(), "src", "app", "api", "erp");
     const apiContents = readFilesRecursive(apiDir)
@@ -315,7 +334,7 @@ describe("Supabase migration contract", () => {
       .join("\n");
     const helper = readFileSync(join(process.cwd(), "src", "lib", "supabase", "service-rpc.ts"), "utf8");
 
-    for (const rpc of sensitiveJsonbRpcs) {
+    for (const rpc of actorServiceRpcs) {
       expect(apiContents).not.toContain(`.rpc("${rpc}"`);
     }
 

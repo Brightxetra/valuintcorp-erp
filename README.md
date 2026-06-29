@@ -66,6 +66,15 @@ supabase/migrations/014_private_authz_helpers.sql
 supabase/migrations/015_add_foreign_key_performance_indexes.sql
 supabase/migrations/016_reconciliation_rollup_rpc.sql
 supabase/migrations/017_workspace_route_performance.sql
+supabase/migrations/018_lockdown_security_definer_rpcs.sql
+supabase/migrations/019_branch_pos_and_member_access.sql
+supabase/migrations/020_api_role_table_privileges.sql
+supabase/migrations/021_user_login_sessions.sql
+supabase/migrations/022_employee_profiles_and_bpjs_policy.sql
+supabase/migrations/023_fix_post_hardening_rls_policies.sql
+supabase/migrations/024_supabase_advisor_rls_and_pos_trigger_hardening.sql
+supabase/migrations/025_industry_catalog_recipes_mrp.sql
+supabase/migrations/026_fix_document_sequence_key_ambiguity.sql
 ```
 
 Required env vars for Supabase-backed API authorization:

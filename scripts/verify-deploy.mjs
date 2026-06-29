@@ -66,6 +66,11 @@ const requiredMigrations = [
   "supabase/migrations/019_branch_pos_and_member_access.sql",
   "supabase/migrations/020_api_role_table_privileges.sql",
   "supabase/migrations/021_user_login_sessions.sql",
+  "supabase/migrations/022_employee_profiles_and_bpjs_policy.sql",
+  "supabase/migrations/023_fix_post_hardening_rls_policies.sql",
+  "supabase/migrations/024_supabase_advisor_rls_and_pos_trigger_hardening.sql",
+  "supabase/migrations/025_industry_catalog_recipes_mrp.sql",
+  "supabase/migrations/026_fix_document_sequence_key_ambiguity.sql",
 ];
 
 const requiredFiles = [
@@ -107,6 +112,13 @@ requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "gra
 requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "alter default privileges in schema public");
 requireFileSnippet("supabase/migrations/021_user_login_sessions.sql", "create table if not exists public.user_login_sessions");
 requireFileSnippet("supabase/migrations/021_user_login_sessions.sql", "session_token_hash text not null unique");
+requireFileSnippet("supabase/migrations/022_employee_profiles_and_bpjs_policy.sql", "create table if not exists public.bpjs_policies");
+requireFileSnippet("supabase/migrations/023_fix_post_hardening_rls_policies.sql", "alter policy \"hr and finance can read bpjs policies\"");
+requireFileSnippet("supabase/migrations/024_supabase_advisor_rls_and_pos_trigger_hardening.sql", "alter function public.ensure_pos_walk_in_customer() set schema app_private");
+requireFileSnippet("supabase/migrations/025_industry_catalog_recipes_mrp.sql", "create table if not exists public.product_structures");
+requireFileSnippet("supabase/migrations/025_industry_catalog_recipes_mrp.sql", "create or replace function public.product_unit_cost");
+requireFileSnippet("supabase/migrations/026_fix_document_sequence_key_ambiguity.sql", "target_sequence_key text");
+requireFileSnippet("supabase/migrations/026_fix_document_sequence_key_ambiguity.sql", "grant execute on function public.next_document_no(uuid, text) to service_role");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");
