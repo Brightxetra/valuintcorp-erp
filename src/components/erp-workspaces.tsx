@@ -16,6 +16,7 @@ import {
   Download,
   FileSpreadsheet,
   Landmark,
+  Loader2,
   PackagePlus,
   ReceiptText,
   ShoppingCart,
@@ -56,6 +57,15 @@ const MARKETING_SITE_URL =
 function currentLoginNextPath() {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get("next");
+}
+
+function waitForNextPaint() {
+  if (typeof window === "undefined") return Promise.resolve();
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function waitForMinimumLoadingFeedback() {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, 350));
 }
 
 async function tryBootstrapDemoAccount() {
@@ -2052,23 +2062,30 @@ export function LoginWorkspace() {
   }, [router, supabaseEnabled]);
 
   function switchAuthMode(nextMode: "login" | "register") {
+    if (pending) return;
     setMode(nextMode);
     setCaptchaToken(null);
     captchaRef.current?.resetCaptcha();
   }
 
   async function submitAuth(formData: FormData) {
+    if (pending) return;
+
     setPending(true);
     setError(null);
     setSuccess(null);
+    let redirecting = false;
 
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
     const rememberMe = formData.get("rememberMe") === "on";
 
+    await waitForNextPaint();
+
     if (demoFallback) {
       setSuccess("Demo mode aktif. Supabase env belum dikonfigurasi.");
-      setPending(false);
+      redirecting = true;
+      await waitForMinimumLoadingFeedback();
       router.replace(sanitizeLoginNextPath(currentLoginNextPath()));
       return;
     }
@@ -2129,6 +2146,7 @@ export function LoginWorkspace() {
       if (bootstrap?.demoAccount && bootstrap.businessId) {
         const syncedDemoSession = await syncServerSession(bootstrap.businessId, signedInTokens, { rememberMe });
         setSuccess("Login demo berhasil. Sandbox demo siap dipakai.");
+        redirecting = true;
         router.replace(
           destinationAfterLogin(
             requestedNext,
@@ -2141,11 +2159,13 @@ export function LoginWorkspace() {
 
       if (session.hasBusiness) {
         setSuccess(mode === "login" ? "Login berhasil." : "Registrasi berhasil.");
+        redirecting = true;
         router.replace(destinationAfterLogin(requestedNext, true, session.defaultPath ?? undefined));
         return;
       }
 
       setSuccess("Login berhasil. Lanjutkan setup bisnis pertama.");
+      redirecting = true;
       router.replace(destinationAfterLogin(requestedNext, false));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Auth gagal diproses.");
@@ -2154,7 +2174,9 @@ export function LoginWorkspace() {
         setCaptchaToken(null);
         captchaRef.current?.resetCaptcha();
       }
-      setPending(false);
+      if (!redirecting) {
+        setPending(false);
+      }
     }
   }
 
@@ -2185,6 +2207,7 @@ export function LoginWorkspace() {
             <button
               type="button"
               onClick={() => switchAuthMode("login")}
+              disabled={pending}
               className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
             >
               Login
@@ -2192,12 +2215,19 @@ export function LoginWorkspace() {
             <button
               type="button"
               onClick={() => switchAuthMode("register")}
+              disabled={pending}
               className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
             >
               Register
             </button>
           </div>
-          <form action={submitAuth} className="space-y-3">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitAuth(new FormData(event.currentTarget));
+            }}
+            className="space-y-3"
+          >
             <TextField name="email" label="Email" type="email" autoComplete="email" required />
             <TextField name="password" label="Password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
             <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
@@ -2233,8 +2263,17 @@ export function LoginWorkspace() {
               </div>
             ) : null}
             <WorkspaceFeedback error={error} success={success} />
-            <ActionButton className="w-full" disabled={pending}>
-              {supabaseEnabled ? (mode === "login" ? "Masuk" : "Daftar") : "Masuk demo fallback"}
+            <ActionButton className="w-full" disabled={pending} aria-busy={pending}>
+              {pending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  {supabaseEnabled ? (mode === "login" ? "Memproses login..." : "Memproses daftar...") : "Menyiapkan demo..."}
+                </>
+              ) : supabaseEnabled ? (
+                mode === "login" ? "Masuk" : "Daftar"
+              ) : (
+                "Masuk demo fallback"
+              )}
             </ActionButton>
           </form>
         </Panel>

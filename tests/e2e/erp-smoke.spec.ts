@@ -27,6 +27,23 @@ test("login form is visible before authentication work completes", async ({ page
   await expect(page.getByLabel("Password")).toBeVisible();
 });
 
+test("login submit button shows loading and prevents repeat clicks", async ({ page }) => {
+  await page.goto("/login?next=/dashboard");
+  await page.getByLabel("Email").fill("demo.owner@valuintcorp.test");
+  await page.getByLabel("Password").fill("password-demo");
+
+  const submitButton = page.getByRole("button", { name: "Masuk demo fallback" });
+  await submitButton.click();
+
+  const loadingButton = page.getByRole("button", { name: "Menyiapkan demo..." });
+  await expect(loadingButton).toBeDisabled();
+  await expect(loadingButton).toHaveAttribute("aria-busy", "true");
+  await expect(page.getByRole("button", { name: "Login" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Register" })).toBeDisabled();
+
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
 test("invite verification uses a dedicated password setup page", async ({ page }) => {
   await page.goto("/auth/invite");
 
