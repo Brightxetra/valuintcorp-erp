@@ -843,7 +843,7 @@ export function createDemoStockTransfer(input: CreateStockTransferInput): ErpWor
     },
   ];
 
-  valueInventory([...workspace.stockMovements, ...movements]);
+  valueInventory([...workspace.stockMovements, ...movements], { validateStockValue: true });
 
   return refresh({
     ...workspace,

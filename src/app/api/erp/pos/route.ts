@@ -14,6 +14,7 @@ function json(body: unknown, status = 200) { return Response.json(body, { status
 
 function numberValue(value: unknown) { return typeof value === "number" ? value : Number(value ?? 0); }
 function rowArray(value: unknown): Row[] { return Array.isArray(value) ? value.filter((item): item is Row => Boolean(item) && typeof item === "object") : []; }
+function nonNegativeMoney(value: number) { return Math.max(0, Math.round(value)); }
 function canAccessLocation(context: ApiContext, locationId: string) {
   return context.role === "owner" || context.role === "system_admin" || context.accessScope !== "custom" || context.assignedLocationIds.includes(locationId);
 }
@@ -65,11 +66,11 @@ export async function GET(request: Request) {
       availableQuantity: recipeAvailability(product as unknown as Row, workspace.products as unknown as Row[], workspace.productStructures as unknown as Row[], movements as unknown as Row[]), trackStock: product.trackStock,
     }));
     const sales = workspace.salesInvoices.filter((invoice) => invoice.source === "pos" && invoice.locationId === locationId && invoice.date === date && invoice.status !== "void").map((invoice) => ({ id: invoice.id, invoiceNo: invoice.invoiceNo, date: invoice.date, total: invoice.total, cogs: invoice.lines.reduce((total, line) => total + line.quantity * line.cogs, 0) }));
-    const stockValueAt = (beforeDate: boolean) => movements
+    const stockValueAt = (beforeDate: boolean) => nonNegativeMoney(movements
       .filter((movement) => !beforeDate || movement.date < date)
       .reduce((total, movement) => total + movement.value * (
         ["purchase", "transfer_in", "adjustment_in"].includes(movement.type) ? 1 : -1
-      ), 0);
+      ), 0));
     const expenses = getDemoBranchExpenses(locationId, date);
     return withDemoHeader(json({ location, date, products, recap: { revenue: sales.reduce((total, sale) => total + sale.total, 0), cogs: sales.reduce((total, sale) => total + sale.cogs, 0), miscExpenses: expenses.reduce((total, expense) => total + expense.amount, 0), openingStock: stockValueAt(true), closingStock: stockValueAt(false), sales, expenses } }), context);
   }
@@ -102,7 +103,7 @@ export async function GET(request: Request) {
     cogs: rowArray(sale.sales_invoice_lines).reduce((total, line) => total + numberValue(line.quantity) * numberValue(line.cogs), 0),
   }));
   const expenses = rowArray(expensesResult.data).map((expense) => ({ id: String(expense.id), date: String(expense.date), amount: numberValue(expense.amount), category: String(expense.category), memo: typeof expense.memo === "string" ? expense.memo : undefined }));
-  const stockValueAt = (beforeDate: boolean) => movements.filter((movement) => !beforeDate || String(movement.date) < date).reduce((total, movement) => total + numberValue(movement.value) * (["purchase", "transfer_in", "adjustment_in"].includes(String(movement.type)) ? 1 : -1), 0);
+  const stockValueAt = (beforeDate: boolean) => nonNegativeMoney(movements.filter((movement) => !beforeDate || String(movement.date) < date).reduce((total, movement) => total + numberValue(movement.value) * (["purchase", "transfer_in", "adjustment_in"].includes(String(movement.type)) ? 1 : -1), 0));
 
   return withDemoHeader(json({
     location: { id: location.id, code: location.code, name: location.name, warehouseId: location.warehouse_id }, date, products,

@@ -71,6 +71,7 @@ const requiredMigrations = [
   "supabase/migrations/024_supabase_advisor_rls_and_pos_trigger_hardening.sql",
   "supabase/migrations/025_industry_catalog_recipes_mrp.sql",
   "supabase/migrations/026_fix_document_sequence_key_ambiguity.sql",
+  "supabase/migrations/027_prevent_negative_inventory_stock.sql",
 ];
 
 const requiredFiles = [
@@ -119,6 +120,10 @@ requireFileSnippet("supabase/migrations/025_industry_catalog_recipes_mrp.sql", "
 requireFileSnippet("supabase/migrations/025_industry_catalog_recipes_mrp.sql", "create or replace function public.product_unit_cost");
 requireFileSnippet("supabase/migrations/026_fix_document_sequence_key_ambiguity.sql", "target_sequence_key text");
 requireFileSnippet("supabase/migrations/026_fix_document_sequence_key_ambiguity.sql", "grant execute on function public.next_document_no(uuid, text) to service_role");
+requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql", "create or replace function public.current_stock_value");
+requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql", "new.type in ('sale', 'transfer_out', 'adjustment_out')");
+requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql", "Nilai stok tidak cukup");
+requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql", "for each row execute function public.ensure_stock_movement_consistency()");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");

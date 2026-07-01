@@ -50,4 +50,32 @@ describe("inventory valuation", () => {
       ]),
     ).toThrow("Negative stock");
   });
+
+  it("can reject stock movements that would create negative stock value", () => {
+    const movements: StockMovement[] = [
+      {
+        id: "m1",
+        businessId: "b1",
+        itemId: "i1",
+        warehouseId: "w1",
+        date: "2026-06-01",
+        type: "purchase",
+        quantity: 5,
+        value: 25000,
+      },
+      {
+        id: "m2",
+        businessId: "b1",
+        itemId: "i1",
+        warehouseId: "w1",
+        date: "2026-06-02",
+        type: "sale",
+        quantity: 1,
+        value: 45000,
+      },
+    ];
+
+    expect(() => valueInventory(movements, { validateStockValue: true })).toThrow("Negative stock value");
+    expect(valueInventory(movements)[0]).toMatchObject({ quantity: 4, value: 0 });
+  });
 });

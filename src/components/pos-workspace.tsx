@@ -190,6 +190,13 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
 
   const changeQuantity = (product: Product, delta: number) => {
     const next = Math.max(0, (cart[product.id] ?? 0) + delta);
+    if (delta > 0 && product.availableQuantity !== null && product.availableQuantity <= 0) {
+      notify.warning("Stok habis", {
+        description: `${product.name} tidak bisa dijual sampai stok diisi ulang.`,
+      });
+      return;
+    }
+
     if (product.availableQuantity !== null && next > product.availableQuantity) {
       notify.warning("Stok cabang tidak mencukupi", {
         description: `${product.name}: tersedia ${product.availableQuantity} ${product.unit}.`,
@@ -496,7 +503,8 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                           type="button"
                           aria-label={`Tambah ${product.name}`}
                           onClick={() => changeQuantity(product, 1)}
-                          className="flex size-9 items-center justify-center bg-slate-950 text-white"
+                          disabled={product.availableQuantity !== null && quantity >= product.availableQuantity}
+                          className="flex size-9 items-center justify-center bg-slate-950 text-white disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Plus className="size-4" aria-hidden />
                         </button>

@@ -43,7 +43,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 026", () => {
+  it("keeps production ERP migrations in order through 027", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -73,6 +73,7 @@ describe("Supabase migration contract", () => {
       "024_supabase_advisor_rls_and_pos_trigger_hardening.sql",
       "025_industry_catalog_recipes_mrp.sql",
       "026_fix_document_sequence_key_ambiguity.sql",
+      "027_prevent_negative_inventory_stock.sql",
     ]);
   });
 
@@ -325,6 +326,23 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("return target_sequence_key || '-' || lpad(current_value::text, 4, '0')");
     expect(migration).toContain("revoke execute on function public.next_document_no(uuid, text) from public, anon, authenticated");
     expect(migration).toContain("grant execute on function public.next_document_no(uuid, text) to service_role");
+  });
+
+  it("prevents new stock movements from creating negative quantity or value", () => {
+    const migration = readFileSync(join(migrationsDir, "027_prevent_negative_inventory_stock.sql"), "utf8");
+
+    expect(migration).toContain("create or replace function public.current_stock_value");
+    expect(migration).toContain("create or replace function public.ensure_stock_movement_consistency");
+    expect(migration).toContain("new.type in ('sale', 'transfer_out', 'adjustment_out')");
+    expect(migration).toContain("public.current_stock_quantity(new.business_id, new.item_id, new.warehouse_id)");
+    expect(migration).toContain("public.current_stock_value(new.business_id, new.item_id, new.warehouse_id)");
+    expect(migration).toContain("Stock tidak cukup");
+    expect(migration).toContain("Nilai stok tidak cukup");
+    expect(migration).toContain("pg_advisory_xact_lock");
+    expect(migration).toContain("drop trigger if exists prevent_locked_stock_movements on public.stock_movements");
+    expect(migration).toContain("for each row execute function public.ensure_stock_movement_consistency()");
+    expect(migration).toContain("revoke execute on function public.current_stock_value(uuid, uuid, uuid) from public, anon, authenticated");
+    expect(migration).toContain("grant execute on function public.current_stock_value(uuid, uuid, uuid) to service_role");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {

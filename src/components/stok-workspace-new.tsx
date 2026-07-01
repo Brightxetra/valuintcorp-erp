@@ -148,6 +148,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
     quantity: 1,
     date: new Date().toISOString().split("T")[0],
   });
+  const adjustmentTotalValue = Math.abs(newAdjustment.quantity) * newAdjustment.value;
 
   function handleReceiptChange(field: string, value: string | number) {
     setStockReceipt((prev) => ({ ...prev, [field]: value }));
@@ -167,7 +168,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
     try {
       const data = await request<{ workspace: ErpWorkspace }>("/api/erp/stock-adjustments", {
         method: "POST",
-        body: JSON.stringify(newAdjustment),
+        body: JSON.stringify({ ...newAdjustment, value: adjustmentTotalValue }),
       });
 
       setWorkspace(data.workspace);
@@ -565,7 +566,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
               <input
                 type="number"
                 value={newAdjustment.quantity}
-                onChange={(e) => handleAdjustmentChange("quantity", parseInt(e.target.value) || 0)}
+                onChange={(e) => handleAdjustmentChange("quantity", Number(e.target.value) || 0)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 placeholder="Contoh: -5 untuk kurang 5"
               />
@@ -573,11 +574,16 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             <FormField label="Nilai per Unit">
               <input
                 type="number"
+                min="0"
                 value={newAdjustment.value}
-                onChange={(e) => handleAdjustmentChange("value", parseInt(e.target.value) || 0)}
+                onChange={(e) => handleAdjustmentChange("value", Number(e.target.value) || 0)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               />
             </FormField>
+          </div>
+
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            Total nilai stok yang dicatat: <span className="font-semibold">{formatCurrency(adjustmentTotalValue)}</span>
           </div>
 
           <FormField label="Alasan">
@@ -604,7 +610,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             </button>
             <button
               onClick={handleCreateAdjustment}
-              disabled={loading || !newAdjustment.itemId}
+              disabled={loading || !newAdjustment.itemId || newAdjustment.quantity === 0 || newAdjustment.value <= 0 || !newAdjustment.reason}
               className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               {loading ? "Memproses..." : "Simpan Penyesuaian"}

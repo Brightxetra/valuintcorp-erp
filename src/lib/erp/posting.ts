@@ -160,7 +160,7 @@ function purchaseInputLines(input: CreatePurchaseBillInput) {
 }
 
 function assertStockWillNotGoNegative(workspace: ErpWorkspace, movements: StockMovement[]) {
-  valueInventory([...workspace.stockMovements, ...movements]);
+  valueInventory([...workspace.stockMovements, ...movements], { validateStockValue: true });
 }
 
 function refresh(workspace: Omit<ErpWorkspace, "metrics" | "tasks">): ErpWorkspace {

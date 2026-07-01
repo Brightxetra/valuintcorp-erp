@@ -98,6 +98,46 @@ describe("erp posting engine", () => {
     ).toThrow(/negative stock|stok/i);
   });
 
+  it("rejects stock postings that would create negative inventory value", () => {
+    const workspace = createDemoErpWorkspace();
+    const workspaceWithLowStockValue = {
+      ...workspace,
+      customers: workspace.customers.map((customer) =>
+        customer.id === "cust-001" ? { ...customer, creditLimit: 10_000_000_000 } : customer,
+      ),
+      products: workspace.products.map((product) =>
+        product.id === "item-rendang"
+          ? { ...product, fulfillmentMethod: "buy_stock" as const, purchasePrice: 45_000 }
+          : product,
+      ),
+      productStructures: workspace.productStructures.filter((structure) => structure.parentProductId !== "item-rendang"),
+      stockMovements: [
+        {
+          id: "low-value-stock",
+          businessId: workspace.business.id,
+          itemId: "item-rendang",
+          warehouseId: "wh-kitchen",
+          date: "2026-06-01",
+          type: "purchase" as const,
+          quantity: 5,
+          value: 25_000,
+        },
+      ],
+    };
+
+    expect(() =>
+      postSalesInvoice(workspaceWithLowStockValue, {
+        customerId: "cust-001",
+        productId: "item-rendang",
+        warehouseId: "wh-kitchen",
+        quantity: 1,
+        unitPrice: 75_000,
+        date: "2026-06-28",
+        dueDate: "2026-07-05",
+      }),
+    ).toThrow(/negative stock value/i);
+  });
+
   it("posts stock adjustment with journal and movement", () => {
     const workspace = createDemoErpWorkspace();
     const result = postStockAdjustment(workspace, {
