@@ -232,6 +232,16 @@ test("team settings use email-driven invites without exposing Supabase auth user
   await expect(page.getByText("Auth User ID")).toHaveCount(0);
 });
 
+test("settings security exposes password change controls", async ({ page }) => {
+  await page.goto("/settings");
+  await page.locator("button").filter({ hasText: "Password, perangkat login" }).click();
+
+  await expect(page.getByRole("heading", { name: "Ubah password" })).toBeVisible();
+  await expect(page.getByLabel("Password lama")).toBeVisible();
+  await expect(page.getByLabel("Password baru", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Konfirmasi password baru")).toBeVisible();
+});
+
 test("dashboard quick actions open existing create forms", async ({ page }) => {
   await page.goto("/dashboard");
 
@@ -304,6 +314,7 @@ test("branch POS account menu links to settings security and reports", async ({ 
 
   await page.goto("/pos/security");
   await expect(page.getByRole("heading", { name: "Perangkat aktif" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ubah password" })).toBeVisible();
   await expect(page.getByText("Demo browser")).toBeVisible();
 
   await page.goto("/pos/laporan");

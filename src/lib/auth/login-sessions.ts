@@ -216,3 +216,30 @@ export async function revokeLoginSessionForUser(sessionId: string, userId: strin
 
   return !error && Boolean(data);
 }
+
+export async function revokeOtherLoginSessionsForUser(userId: string, currentSessionToken: string | null) {
+  const service = serviceOrNull();
+  if (!service) return 0;
+
+  const currentHash = currentSessionToken ? await hashSessionToken(currentSessionToken) : null;
+  let query = service
+    .from("user_login_sessions")
+    .update({
+      status: "revoked",
+      revoked_at: new Date().toISOString(),
+      revoked_by: userId,
+      revoked_reason: "password_changed",
+    })
+    .eq("auth_user_id", userId)
+    .eq("status", "active");
+
+  if (currentHash) {
+    query = query.neq("session_token_hash", currentHash);
+  }
+
+  const { data, error } = await query.select("id");
+
+  if (error || !Array.isArray(data)) return 0;
+
+  return data.length;
+}

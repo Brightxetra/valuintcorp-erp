@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
+import { ChangePasswordCard } from "@/components/change-password-card";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { permissionCatalog } from "@/lib/security/permissions";
@@ -857,6 +858,8 @@ function SecurityPanel() {
         </div>
       ) : null}
 
+      <ChangePasswordCard />
+
       {loading ? (
         <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Memuat perangkat login...</div>
       ) : (
@@ -1025,7 +1028,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     { id: "warehouses", tab: "data", title: "Warehouses", description: "Gudang dan lokasi stok", icon: Warehouse, count: workspace.warehouses.length },
     { id: "locations", tab: "data", title: "Lokasi/Cabang", description: "Branch, outlet, store", icon: MapPin, count: workspace.locations.length },
     { id: "onboarding", tab: "business", title: "Setup & Onboarding", description: "Apply template atau buat bisnis baru", icon: Settings },
-    { id: "security", tab: "security", title: "Security", description: "Perangkat login dan force logout", icon: Shield },
+    { id: "security", tab: "security", title: "Security", description: "Password, perangkat login, dan force logout", icon: Shield },
     { id: "integrations", tab: "integrations", title: "Integrasi", description: "Supabase dan modul aktif", icon: Globe },
   ], [workspace]);
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Laptop, Power, RefreshCw, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ChangePasswordCard } from "@/components/change-password-card";
 import { useErpWorkspace } from "@/components/erp-context";
 import { cn } from "@/components/ui";
 import type { ErpWorkspace } from "@/lib/erp/types";
@@ -131,6 +132,8 @@ export function PosSecurityWorkspace({ initialWorkspace }: { initialWorkspace: E
           Mode demo memakai perangkat simulasi. Data perangkat asli tersedia saat production aktif.
         </div>
       ) : null}
+
+      <ChangePasswordCard />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex items-center gap-3">
