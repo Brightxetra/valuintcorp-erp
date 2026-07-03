@@ -55,6 +55,17 @@ test("invite verification uses a dedicated password setup page", async ({ page }
   await expect(page.getByRole("heading", { name: "Link invite tidak valid" })).toBeVisible();
 });
 
+test("password recovery uses a dedicated reset page", async ({ page }) => {
+  await page.goto("/auth/reset-password");
+
+  await expect(page.getByRole("heading", { name: "Link reset password tidak valid" })).toBeVisible();
+  await expect(page.getByText("Link reset password tidak ditemukan")).toBeVisible();
+
+  await page.goto("/login#access_token=invalid&refresh_token=invalid&type=recovery");
+  await expect(page).toHaveURL(/\/auth\/reset-password/);
+  await expect(page.getByRole("heading", { name: "Link reset password tidak valid" })).toBeVisible();
+});
+
 test("demo fallback login reaches the dashboard workspace", async ({ page }) => {
   await page.goto("/login?next=/dashboard");
   await page.getByLabel("Email").fill("demo.owner@valuintcorp.test");
@@ -234,12 +245,18 @@ test("team settings use email-driven invites without exposing Supabase auth user
 
 test("settings security exposes password change controls", async ({ page }) => {
   await page.goto("/settings");
-  await page.locator("button").filter({ hasText: "Password, perangkat login" }).click();
+  await page.locator("button").filter({ hasText: "Device login, password" }).click();
 
+  await expect(page.getByRole("button", { name: /Device login/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Password/ })).toBeVisible();
+  await expect(page.getByText("Demo browser")).toBeVisible();
+
+  await page.getByRole("button", { name: /Password Ubah atau reset password/ }).click();
   await expect(page.getByRole("heading", { name: "Ubah password" })).toBeVisible();
   await expect(page.getByLabel("Password lama")).toBeVisible();
   await expect(page.getByLabel("Password baru", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Konfirmasi password baru")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Kirim link reset password" })).toBeVisible();
 });
 
 test("dashboard quick actions open existing create forms", async ({ page }) => {
@@ -313,9 +330,13 @@ test("branch POS account menu links to settings security and reports", async ({ 
   await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Cabang POS dipilih" })).toBeVisible();
 
   await page.goto("/pos/security");
-  await expect(page.getByRole("heading", { name: "Perangkat aktif" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Ubah password" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Security akun" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Device login/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Password/ })).toBeVisible();
   await expect(page.getByText("Demo browser")).toBeVisible();
+  await page.getByRole("button", { name: /Password Ubah atau reset password/ }).click();
+  await expect(page.getByRole("heading", { name: "Ubah password" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Kirim link reset password" })).toBeVisible();
 
   await page.goto("/pos/laporan");
   await expect(page.getByRole("heading", { name: "Laporan cabang" })).toBeVisible();

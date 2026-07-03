@@ -1965,16 +1965,13 @@ export function LoginWorkspace() {
       Boolean(currentUrl?.hash.includes("refresh_token=")) ||
       currentUrl?.searchParams.has("code") === true;
 
-    if (hasSupabaseCallback && callbackType === "invite" && currentUrl) {
-      const inviteUrl = new URL("/auth/invite", window.location.origin);
-      const nextParam = currentUrl.searchParams.get("next");
-
-      if (nextParam) {
-        inviteUrl.searchParams.set("next", nextParam);
-      }
-
-      inviteUrl.hash = currentUrl.hash;
-      window.location.replace(inviteUrl.toString());
+    if (hasSupabaseCallback && (callbackType === "invite" || callbackType === "recovery") && currentUrl) {
+      const callbackUrl = new URL(callbackType === "recovery" ? "/auth/reset-password" : "/auth/invite", window.location.origin);
+      currentUrl.searchParams.forEach((value, key) => {
+        callbackUrl.searchParams.set(key, value);
+      });
+      callbackUrl.hash = currentUrl.hash;
+      window.location.replace(callbackUrl.toString());
       return () => {
         cancelled = true;
       };

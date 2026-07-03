@@ -27,6 +27,7 @@ import {
 import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import { ChangePasswordCard } from "@/components/change-password-card";
+import { SecuritySubmenuTabs, type SecuritySubmenu } from "@/components/security-submenu-tabs";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { permissionCatalog } from "@/lib/security/permissions";
@@ -765,6 +766,7 @@ function formatSessionDate(value: string | null) {
 
 function SecurityPanel() {
   const { request, demoMode } = useErpWorkspace();
+  const [activeMenu, setActiveMenu] = useState<SecuritySubmenu>("devices");
   const [sessions, setSessions] = useState<LoginSessionDevice[]>([]);
   const [loading, setLoading] = useState(true);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -831,97 +833,105 @@ function SecurityPanel() {
         <div>
           <h2 className="text-xl font-semibold text-slate-950">Security</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Kelola perangkat yang sedang dipakai dan sesi aktif lain. Riwayat login yang sudah keluar atau kedaluwarsa tidak ditampilkan.
+            Pilih Device login untuk mengelola sesi aktif, atau Password untuk ubah dan reset password akun.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadSessions()}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <RefreshCw className="size-4" aria-hidden />
-          Refresh
-        </button>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-semibold text-slate-950">Timeout sesi</p>
-        <p className="mt-1 text-sm text-slate-600">
-          Jika opsi <span className="font-medium">Tetap login</span> tidak dicentang saat login, sesi akan berakhir otomatis setelah tidak aktif.
-          Daftar di bawah hanya menampilkan perangkat dengan sesi yang masih aktif.
-        </p>
-      </div>
+      <SecuritySubmenuTabs value={activeMenu} onChange={setActiveMenu} />
 
-      {demoMode ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-          Mode demo fallback memakai perangkat simulasi. Data perangkat asli tersedia saat Supabase production aktif.
-        </div>
-      ) : null}
+      {activeMenu === "password" ? <ChangePasswordCard /> : null}
 
-      <ChangePasswordCard />
+      {activeMenu === "devices" ? (
+        <>
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Timeout sesi</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Jika opsi <span className="font-medium">Tetap login</span> tidak dicentang saat login, sesi akan berakhir otomatis setelah tidak aktif.
+                Daftar di bawah hanya menampilkan perangkat dengan sesi yang masih aktif.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadSessions()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <RefreshCw className={cn("size-4", loading && "animate-spin")} aria-hidden />
+              Refresh
+            </button>
+          </div>
 
-      {loading ? (
-        <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Memuat perangkat login...</div>
-      ) : (
-        <div className="space-y-3">
-          {sessions.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Belum ada sesi aktif yang tercatat.</div>
+          {demoMode ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+              Mode demo fallback memakai perangkat simulasi. Data perangkat asli tersedia saat Supabase production aktif.
+            </div>
           ) : null}
-          {sessions.map((session) => {
-            const active = session.status === "active";
 
-            return (
-              <div key={session.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex min-w-0 gap-3">
-                    <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                      <Laptop className="size-5" aria-hidden />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-slate-950">{session.deviceLabel}</p>
-                        {session.current ? <StatusPill tone="emerald">Perangkat ini</StatusPill> : null}
-                        <StatusPill tone="emerald">Aktif</StatusPill>
-                        {session.rememberMe ? <StatusPill tone="cyan">Tetap login</StatusPill> : <StatusPill tone="amber">Idle timeout</StatusPill>}
+          {loading ? (
+            <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Memuat perangkat login...</div>
+          ) : (
+            <div className="space-y-3">
+              {sessions.length === 0 ? (
+                <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Belum ada sesi aktif yang tercatat.</div>
+              ) : null}
+              {sessions.map((session) => {
+                const active = session.status === "active";
+
+                return (
+                  <div key={session.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex min-w-0 gap-3">
+                        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                          <Laptop className="size-5" aria-hidden />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-950">{session.deviceLabel}</p>
+                            {session.current ? <StatusPill tone="emerald">Perangkat ini</StatusPill> : null}
+                            <StatusPill tone="emerald">Aktif</StatusPill>
+                            {session.rememberMe ? <StatusPill tone="cyan">Tetap login</StatusPill> : <StatusPill tone="amber">Idle timeout</StatusPill>}
+                          </div>
+                          <dl className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">IP</dt>
+                              <dd>{session.ipAddress ?? "Tidak tersedia"}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Lokasi</dt>
+                              <dd>{session.location ?? "Tidak tersedia"}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Terakhir aktif</dt>
+                              <dd>{formatSessionDate(session.lastSeenAt)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Kadaluarsa</dt>
+                              <dd>{session.rememberMe ? "Persistent" : formatSessionDate(session.expiresAt)}</dd>
+                            </div>
+                          </dl>
+                          {session.userAgent ? (
+                            <p className="mt-3 break-words rounded-lg bg-slate-50 p-2 text-xs text-slate-500">{session.userAgent}</p>
+                          ) : null}
+                        </div>
                       </div>
-                      <dl className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">IP</dt>
-                          <dd>{session.ipAddress ?? "Tidak tersedia"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Lokasi</dt>
-                          <dd>{session.location ?? "Tidak tersedia"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Terakhir aktif</dt>
-                          <dd>{formatSessionDate(session.lastSeenAt)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Kadaluarsa</dt>
-                          <dd>{session.rememberMe ? "Persistent" : formatSessionDate(session.expiresAt)}</dd>
-                        </div>
-                      </dl>
-                      {session.userAgent ? (
-                        <p className="mt-3 break-words rounded-lg bg-slate-50 p-2 text-xs text-slate-500">{session.userAgent}</p>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void revokeSession(session)}
+                        disabled={!active || revokingId === session.id}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Power className="size-4" aria-hidden />
+                        {session.current ? "Logout perangkat ini" : "Force logout"}
+                      </button>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void revokeSession(session)}
-                    disabled={!active || revokingId === session.id}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Power className="size-4" aria-hidden />
-                    {session.current ? "Logout perangkat ini" : "Force logout"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -1028,7 +1038,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     { id: "warehouses", tab: "data", title: "Warehouses", description: "Gudang dan lokasi stok", icon: Warehouse, count: workspace.warehouses.length },
     { id: "locations", tab: "data", title: "Lokasi/Cabang", description: "Branch, outlet, store", icon: MapPin, count: workspace.locations.length },
     { id: "onboarding", tab: "business", title: "Setup & Onboarding", description: "Apply template atau buat bisnis baru", icon: Settings },
-    { id: "security", tab: "security", title: "Security", description: "Password, perangkat login, dan force logout", icon: Shield },
+    { id: "security", tab: "security", title: "Security", description: "Device login, password, dan force logout", icon: Shield },
     { id: "integrations", tab: "integrations", title: "Integrasi", description: "Supabase dan modul aktif", icon: Globe },
   ], [workspace]);
 

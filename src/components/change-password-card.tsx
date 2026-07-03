@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { KeyRound, Save, ShieldCheck } from "lucide-react";
+import { KeyRound, Mail, Save, ShieldCheck } from "lucide-react";
 import { ActionButton, TextField, cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -23,6 +23,7 @@ export function ChangePasswordCard({ className }: { className?: string }) {
   const { request, demoMode } = useErpWorkspace();
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, setPending] = useState(false);
+  const [resetPending, setResetPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function adoptFreshSession(session: NonNullable<ChangePasswordResponse["session"]>) {
@@ -108,6 +109,34 @@ export function ChangePasswordCard({ className }: { className?: string }) {
     }
   }
 
+  async function requestPasswordReset() {
+    setError(null);
+
+    if (demoMode) {
+      setError("Mode demo fallback tidak bisa mengirim email reset password.");
+      return;
+    }
+
+    setResetPending(true);
+
+    try {
+      const body = await request<{ ok: boolean; email?: string }>("/api/auth/password/reset-request", {
+        method: "POST",
+        businessId: null,
+      });
+
+      notify.success("Link reset password dikirim", {
+        description: body.email ? `Cek inbox ${body.email}.` : "Cek inbox email akun ini.",
+      });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Coba lagi.";
+      setError(message);
+      notify.error("Link reset password gagal dikirim", { description: message });
+    } finally {
+      setResetPending(false);
+    }
+  }
+
   return (
     <section className={cn("rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5", className)}>
       <div className="mb-4 flex items-start gap-3">
@@ -171,6 +200,27 @@ export function ChangePasswordCard({ className }: { className?: string }) {
           </ActionButton>
         </div>
       </form>
+
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">Lupa password lama?</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Minta link reset password ke email akun ini, lalu buat password baru dari link tersebut.
+            </p>
+          </div>
+          <ActionButton
+            type="button"
+            variant="secondary"
+            onClick={() => void requestPasswordReset()}
+            disabled={resetPending || demoMode}
+            className="shrink-0"
+          >
+            <Mail className="size-4" aria-hidden />
+            {resetPending ? "Mengirim..." : "Kirim link reset password"}
+          </ActionButton>
+        </div>
+      </div>
     </section>
   );
 }
