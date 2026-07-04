@@ -29,6 +29,22 @@ body {
   box-sizing: border-box;
 }
 
+@keyframes directory-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.directory-reveal {
+  animation: directory-reveal 180ms ease-out;
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;

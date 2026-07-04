@@ -1944,16 +1944,19 @@ export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: 
 export function LoginWorkspace() {
   const router = useRouter();
   const captchaRef = useRef<HCaptchaInstance | null>(null);
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [authFailureCount, setAuthFailureCount] = useState(0);
   const demoFallback = shouldUseDemoFallbackBrowser();
   const supabaseEnabled = !demoFallback;
   const [checkingSession, setCheckingSession] = useState(supabaseEnabled);
   const hcaptchaSiteKey = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY;
-  const captchaEnabled = supabaseEnabled && Boolean(hcaptchaSiteKey);
+  const captchaConfigured = supabaseEnabled && Boolean(hcaptchaSiteKey);
+  const captchaVisible = captchaConfigured && (captchaRequired || authFailureCount >= 2);
 
   useEffect(() => {
     let cancelled = false;
@@ -2058,9 +2061,11 @@ export function LoginWorkspace() {
     };
   }, [router, supabaseEnabled]);
 
-  function switchAuthMode(nextMode: "login" | "register") {
+  function switchAuthMode(nextMode: "login" | "register" | "forgot") {
     if (pending) return;
     setMode(nextMode);
+    setError(null);
+    setSuccess(null);
     setCaptchaToken(null);
     captchaRef.current?.resetCaptcha();
   }
@@ -2088,7 +2093,7 @@ export function LoginWorkspace() {
     }
 
     try {
-      if (captchaEnabled && !captchaToken) {
+      if (captchaVisible && !captchaToken) {
         setError("Selesaikan verifikasi hCaptcha terlebih dahulu.");
         setPending(false);
         return;
@@ -2138,6 +2143,9 @@ export function LoginWorkspace() {
         throw new Error("Login berhasil, tapi sesi server belum tersimpan. Coba klik Masuk sekali lagi.");
       }
 
+      setAuthFailureCount(0);
+      setCaptchaRequired(false);
+
       const bootstrap = await tryBootstrapDemoAccount();
 
       if (bootstrap?.demoAccount && bootstrap.businessId) {
@@ -2165,15 +2173,74 @@ export function LoginWorkspace() {
       redirecting = true;
       router.replace(destinationAfterLogin(requestedNext, false));
     } catch (caught) {
+      setAuthFailureCount((current) => {
+        const next = current + 1;
+        if (next >= 2) setCaptchaRequired(true);
+        return next;
+      });
       setError(caught instanceof Error ? caught.message : "Auth gagal diproses.");
     } finally {
-      if (captchaEnabled) {
+      if (captchaVisible) {
         setCaptchaToken(null);
         captchaRef.current?.resetCaptcha();
       }
       if (!redirecting) {
         setPending(false);
       }
+    }
+  }
+
+  async function submitForgotPassword(formData: FormData) {
+    if (pending) return;
+
+    const email = String(formData.get("email") || "").trim();
+
+    setPending(true);
+    setError(null);
+    setSuccess(null);
+
+    if (!email.includes("@")) {
+      setError("Masukkan email yang valid.");
+      setPending(false);
+      return;
+    }
+
+    if (captchaVisible && !captchaToken) {
+      setError("Selesaikan verifikasi hCaptcha terlebih dahulu.");
+      setPending(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/auth/password/forgot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email,
+          ...(captchaToken ? { captchaToken } : {}),
+        }),
+      });
+      const body = await response.json().catch(() => ({} as Record<string, unknown>));
+
+      if (body.captchaRequired) {
+        setCaptchaRequired(true);
+      }
+
+      setSuccess(
+        typeof body.message === "string"
+          ? body.message
+          : "Jika email terdaftar, instruksi reset akan dikirim.",
+      );
+
+      if (body.captchaRequired && !captchaToken) {
+        setError("Verifikasi tambahan diperlukan sebelum request berikutnya diproses.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Request reset password gagal diproses.");
+    } finally {
+      setCaptchaToken(null);
+      captchaRef.current?.resetCaptcha();
+      setPending(false);
     }
   }
 
@@ -2218,61 +2285,125 @@ export function LoginWorkspace() {
               Register
             </button>
           </div>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitAuth(new FormData(event.currentTarget));
-            }}
-            className="space-y-3"
-          >
-            <TextField name="email" label="Email" type="email" autoComplete="email" required />
-            <TextField name="password" label="Password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
-            <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                name="rememberMe"
-                className="mt-0.5 size-4 rounded border-slate-300"
-                aria-label="Tetap login di perangkat ini"
-              />
-              <span>
-                <span className="block font-medium text-slate-800">Tetap login di perangkat ini</span>
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  Jika tidak dicentang, sesi otomatis berakhir setelah tidak aktif.
-                </span>
-              </span>
-            </label>
-            {captchaEnabled ? (
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
-                <HCaptcha
-                  ref={captchaRef}
-                  sitekey={hcaptchaSiteKey!}
-                  onVerify={(token) => {
-                    setCaptchaToken(token);
-                    setError(null);
-                  }}
-                  onExpire={() => setCaptchaToken(null)}
-                  onChalExpired={() => setCaptchaToken(null)}
-                  onError={() => {
-                    setCaptchaToken(null);
-                    setError("Verifikasi hCaptcha gagal. Coba ulangi.");
-                  }}
-                />
+          {mode === "forgot" ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitForgotPassword(new FormData(event.currentTarget));
+              }}
+              className="space-y-3"
+            >
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-600">
+                Masukkan email akun. Jika email terdaftar, instruksi reset akan dikirim.
               </div>
-            ) : null}
-            <WorkspaceFeedback error={error} success={success} />
-            <ActionButton className="w-full" disabled={pending} aria-busy={pending}>
-              {pending ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                  {supabaseEnabled ? (mode === "login" ? "Memproses login..." : "Memproses daftar...") : "Menyiapkan demo..."}
-                </>
-              ) : supabaseEnabled ? (
-                mode === "login" ? "Masuk" : "Daftar"
-              ) : (
-                "Masuk demo fallback"
-              )}
-            </ActionButton>
-          </form>
+              <TextField name="email" label="Email" type="email" autoComplete="email" required />
+              {captchaVisible ? (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                  <HCaptcha
+                    ref={captchaRef}
+                    sitekey={hcaptchaSiteKey!}
+                    onVerify={(token) => {
+                      setCaptchaToken(token);
+                      setError(null);
+                    }}
+                    onExpire={() => setCaptchaToken(null)}
+                    onChalExpired={() => setCaptchaToken(null)}
+                    onError={() => {
+                      setCaptchaToken(null);
+                      setError("Verifikasi hCaptcha gagal. Coba ulangi.");
+                    }}
+                  />
+                </div>
+              ) : null}
+              <WorkspaceFeedback error={error} success={success} />
+              <ActionButton className="w-full" disabled={pending} aria-busy={pending}>
+                {pending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                    Mengirim instruksi...
+                  </>
+                ) : (
+                  "Kirim instruksi reset"
+                )}
+              </ActionButton>
+              <button
+                type="button"
+                onClick={() => switchAuthMode("login")}
+                disabled={pending}
+                className="w-full rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50"
+              >
+                Kembali ke login
+              </button>
+            </form>
+          ) : (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitAuth(new FormData(event.currentTarget));
+              }}
+              className="space-y-3"
+            >
+              <TextField name="email" label="Email" type="email" autoComplete="email" required />
+              <TextField name="password" label="Password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
+              <div className="flex flex-col gap-2">
+                <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    name="rememberMe"
+                    className="mt-0.5 size-4 rounded border-slate-300"
+                    aria-label="Tetap login di perangkat ini"
+                  />
+                  <span>
+                    <span className="block font-medium text-slate-800">Tetap login di perangkat ini</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      Jika tidak dicentang, sesi otomatis berakhir setelah tidak aktif.
+                    </span>
+                  </span>
+                </label>
+                {mode === "login" ? (
+                  <button
+                    type="button"
+                    onClick={() => switchAuthMode("forgot")}
+                    disabled={pending}
+                    className="self-end rounded-lg px-2 py-1 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                  >
+                    Lupa password?
+                  </button>
+                ) : null}
+              </div>
+              {captchaVisible ? (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                  <HCaptcha
+                    ref={captchaRef}
+                    sitekey={hcaptchaSiteKey!}
+                    onVerify={(token) => {
+                      setCaptchaToken(token);
+                      setError(null);
+                    }}
+                    onExpire={() => setCaptchaToken(null)}
+                    onChalExpired={() => setCaptchaToken(null)}
+                    onError={() => {
+                      setCaptchaToken(null);
+                      setError("Verifikasi hCaptcha gagal. Coba ulangi.");
+                    }}
+                  />
+                </div>
+              ) : null}
+              <WorkspaceFeedback error={error} success={success} />
+              <ActionButton className="w-full" disabled={pending} aria-busy={pending}>
+                {pending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                    {supabaseEnabled ? (mode === "login" ? "Memproses login..." : "Memproses daftar...") : "Menyiapkan demo..."}
+                  </>
+                ) : supabaseEnabled ? (
+                  mode === "login" ? "Masuk" : "Daftar"
+                ) : (
+                  "Masuk demo fallback"
+                )}
+              </ActionButton>
+            </form>
+          )}
         </Panel>
       </div>
     </div>

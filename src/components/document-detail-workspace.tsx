@@ -203,38 +203,37 @@ export function DocumentDetailWorkspace({
 
       <FeedbackToast error={error} success={message} />
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatTile label="Status" value={statusLabel(document.status)} />
-        <StatTile label="Total" value={money(document.total)} />
-        <StatTile label="Terbayar" value={money(document.paidAmount)} />
-        <StatTile label="Sisa" value={money(outstanding)} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile label="Status" value={statusLabel(document.status)} helper={docNo} />
+        <StatTile label="Total" value={money(document.total)} helper={`${lineRows.length} item`} />
+        <StatTile label="Terbayar" value={money(document.paidAmount)} helper={`${payments.length} pembayaran`} />
+        <StatTile label="Sisa" value={money(outstanding)} helper={formatDate(document.dueDate)} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <Panel title="Item Dokumen" description="Detail produk/jasa yang menjadi dasar posting dokumen.">
-          <p className="mb-2 text-xs text-slate-500 sm:hidden">Geser tabel untuk melihat seluruh kolom item.</p>
-          <div className="overflow-x-auto" role="region" aria-label="Item dokumen" tabIndex={0}>
-            <table className="w-full min-w-[640px] text-sm">
+          <div className="overflow-hidden" role="region" aria-label="Item dokumen" tabIndex={0}>
+            <table className="mobile-card-table w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="py-3">Item</th>
-                  <th className="py-3">Gudang</th>
-                  <th className="py-3 text-right">Qty</th>
-                  <th className="py-3 text-right">Harga</th>
-                  <th className="py-3 text-right">Total</th>
+                  <th className="px-3 py-3">Item</th>
+                  <th className="px-3 py-3">Gudang</th>
+                  <th className="px-3 py-3 text-right">Qty</th>
+                  <th className="px-3 py-3 text-right">Harga</th>
+                  <th className="px-3 py-3 text-right">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {lineRows.map((line) => (
-                  <tr key={line.id}>
-                    <td className="py-3">
+                  <tr key={line.id} className="hover:bg-slate-50">
+                    <td data-mobile-label="Item" className="px-3 py-3 text-left">
                       <p className="font-medium text-slate-950">{line.productName}</p>
                       <p className="text-xs text-slate-500">{line.sku}</p>
                     </td>
-                    <td className="py-3 text-slate-600">{line.warehouseName}</td>
-                    <td className="py-3 text-right text-slate-600">{line.quantity}</td>
-                    <td className="py-3 text-right text-slate-600">{money(line.unitAmount)}</td>
-                    <td className="py-3 text-right font-semibold text-slate-950">{money(line.total)}</td>
+                    <td data-mobile-label="Gudang" className="px-3 py-3 text-slate-600">{line.warehouseName}</td>
+                    <td data-mobile-label="Qty" className="px-3 py-3 text-right text-slate-600">{line.quantity}</td>
+                    <td data-mobile-label="Harga" className="px-3 py-3 text-right text-slate-600">{money(line.unitAmount)}</td>
+                    <td data-mobile-label="Total" className="px-3 py-3 text-right font-semibold text-slate-950">{money(line.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -244,19 +243,27 @@ export function DocumentDetailWorkspace({
 
         <Panel title="Ringkasan Dokumen">
           <div className="space-y-3 text-sm">
-            <div className="flex justify-between">
+            <div className="flex items-start justify-between gap-3">
               <span className="text-slate-500">Nomor</span>
-              <span className="font-medium text-slate-950">{docNo}</span>
+              <span className="text-right font-medium text-slate-950">{docNo}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex items-start justify-between gap-3">
               <span className="text-slate-500">{documentType === "sales_invoice" ? "Customer" : "Supplier"}</span>
-              <span className="font-medium text-slate-950">{counterparty?.name ?? "-"}</span>
+              <span className="text-right font-medium text-slate-950">{counterparty?.name ?? "-"}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-500">Tanggal</span>
+              <span className="text-right font-medium text-slate-950">{formatDate(document.date)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-500">Jatuh tempo</span>
+              <span className="text-right font-medium text-slate-950">{formatDate(document.dueDate)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-3">
               <span className="text-slate-500">Status</span>
               <StatusPill tone={statusTone(document.status)}>{statusLabel(document.status)}</StatusPill>
             </div>
-            <div className="flex justify-between">
+            <div className="flex items-start justify-between gap-3">
               <span className="text-slate-500">Journal ID</span>
               <span className="max-w-44 truncate font-mono text-xs text-slate-700">{document.journalEntryId ?? "-"}</span>
             </div>
@@ -271,12 +278,12 @@ export function DocumentDetailWorkspace({
           ) : (
             <div className="space-y-3">
               {payments.map((payment) => (
-                <div key={payment.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm">
+                <div key={payment.id} className="flex flex-col gap-2 rounded-lg bg-slate-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="font-medium text-slate-950">{payment.reference}</p>
                     <p className="text-slate-500">{formatDate(payment.date)} - {payment.method}</p>
                   </div>
-                  <p className="font-semibold text-slate-950">{money(payment.amount)}</p>
+                  <p className="font-semibold text-slate-950 sm:text-right">{money(payment.amount)}</p>
                 </div>
               ))}
             </div>
@@ -293,9 +300,9 @@ export function DocumentDetailWorkspace({
                 <p className="mb-2 text-sm font-medium text-slate-950">{journal.description}</p>
                 <div className="space-y-2">
                   {journal.lines.map((line) => (
-                    <div key={line.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-2 text-xs">
-                      <span>{line.accountCode} - {line.accountName}</span>
-                      <span>{line.debit > 0 ? `Dr ${money(line.debit)}` : `Cr ${money(line.credit)}`}</span>
+                    <div key={line.id} className="flex flex-col gap-1 rounded-lg bg-slate-50 p-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+                      <span className="min-w-0 truncate">{line.accountCode} - {line.accountName}</span>
+                      <span className="font-medium text-slate-700">{line.debit > 0 ? `Dr ${money(line.debit)}` : `Cr ${money(line.credit)}`}</span>
                     </div>
                   ))}
                 </div>
@@ -309,9 +316,9 @@ export function DocumentDetailWorkspace({
                 <p className="text-sm text-slate-500">Belum ada lampiran.</p>
               ) : (
                 attachments.map((attachment) => (
-                  <div key={attachment.id} className="flex items-center gap-2 rounded-lg bg-slate-50 p-2 text-sm">
+                  <div key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-lg bg-slate-50 p-2 text-sm">
                     <FileText className="size-4 text-slate-500" />
-                    <span>{attachment.fileName}</span>
+                    <span className="min-w-0 truncate">{attachment.fileName}</span>
                   </div>
                 ))
               )}

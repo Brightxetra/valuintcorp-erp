@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2,
+  CheckCircle2,
   ChevronRight,
   CreditCard,
   Database,
+  Eye,
   FileText,
   Globe,
   ImageIcon,
@@ -14,7 +16,9 @@ import {
   MapPin,
   Package,
   Power,
+  Plus,
   RefreshCw,
+  Search,
   Settings,
   Shield,
   ShoppingBag,
@@ -27,6 +31,7 @@ import {
 import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import { ChangePasswordCard } from "@/components/change-password-card";
+import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { SecuritySubmenuTabs, type SecuritySubmenu } from "@/components/security-submenu-tabs";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -64,6 +69,7 @@ const resourceLabels: Record<string, string> = {
   supplier: "Supplier",
   product: "Produk",
   warehouse: "Gudang",
+  location: "Lokasi",
 };
 
 function resourceLabel(resource: string) {
@@ -93,6 +99,7 @@ interface SettingsPanelProps {
   saveWarehouse: (formData: FormData) => void;
   saveMaster: (resource: string, values: Record<string, unknown>, id?: string) => Promise<void>;
   archiveMaster: (resource: string, id: string) => Promise<void>;
+  updateMasterStatus: (resource: string, ids: string[], isActive: boolean) => Promise<void>;
   applyTemplate: (formData: FormData) => void;
   createBusinessFromSettings: (formData: FormData) => void;
   uploadBusinessLogo: (file: File) => Promise<void>;
@@ -442,44 +449,532 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
   );
 }
 
-function CustomerSupplierForm({
-  type,
+type DirectoryType = "customers" | "suppliers" | "warehouses" | "locations";
+
+interface DirectoryRow {
+  id: string;
+  code: string;
+  name: string;
+  primaryMeta: string;
+  secondaryMeta: string;
+  active: boolean;
+  searchText: string;
+  details: Array<[string, string]>;
+}
+
+interface StatusConfirmation {
+  ids: string[];
+  isActive: boolean;
+  label: string;
+}
+
+const locationTypeLabels: Record<string, string> = {
+  branch: "Branch",
+  outlet: "Outlet",
+  store: "Store",
+  warehouse: "Warehouse",
+  workshop: "Workshop",
+  office: "Office",
+};
+
+function directoryCode(type: DirectoryType) {
+  const prefix = {
+    customers: "CUST",
+    suppliers: "SUP",
+    warehouses: "WH",
+    locations: "LOC",
+  }[type];
+
+  return `${prefix}-${Date.now().toString().slice(-4)}`;
+}
+
+function compactText(...values: Array<string | number | null | undefined>) {
+  return values
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" · ") || "-";
+}
+
+function MasterDirectoryPanel({
+  workspace,
   pending,
   saveMaster,
-}: {
-  type: "customer" | "supplier";
-  pending: boolean;
-  saveMaster: SettingsPanelProps["saveMaster"];
+  updateMasterStatus,
+  type,
+}: Pick<SettingsPanelProps, "workspace" | "pending" | "saveMaster" | "updateMasterStatus"> & {
+  type: DirectoryType;
 }) {
-  const label = type === "customer" ? "Customer" : "Supplier";
-  const prefix = type === "customer" ? "CUST" : "SUP";
-  const [defaultCode] = useState(() => `${prefix}-${Date.now().toString().slice(-4)}`);
+  const [showForm, setShowForm] = useState(false);
+  const [defaultCode, setDefaultCode] = useState(() => directoryCode(type));
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [detailRow, setDetailRow] = useState<DirectoryRow | null>(null);
+  const [confirmation, setConfirmation] = useState<StatusConfirmation | null>(null);
+  const pageSize = 8;
+
+  const config = {
+    customers: {
+      title: "Customer",
+      pluralTitle: "Data Customer",
+      icon: Users,
+      resource: "customer",
+      addLabel: "Tambah customer baru",
+      columns: ["Kode", "Nama", "NPWP", "Kontak"],
+      rows: workspace.customers.map((item): DirectoryRow => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        primaryMeta: item.taxId || "-",
+        secondaryMeta: compactText(item.phone, item.email),
+        active: item.isActive,
+        searchText: compactText(item.code, item.name, item.taxId, item.phone, item.email, item.address).toLowerCase(),
+        details: [
+          ["Kode", item.code],
+          ["Nama", item.name],
+          ["NPWP", item.taxId || "-"],
+          ["Telepon", item.phone || "-"],
+          ["Email", item.email || "-"],
+          ["Alamat", item.address || "-"],
+          ["Credit limit", `Rp ${Number(item.creditLimit || 0).toLocaleString("id-ID")}`],
+        ],
+      })),
+    },
+    suppliers: {
+      title: "Supplier",
+      pluralTitle: "Data Supplier",
+      icon: Truck,
+      resource: "supplier",
+      addLabel: "Tambah supplier baru",
+      columns: ["Kode", "Nama", "NPWP", "Kontak"],
+      rows: workspace.suppliers.map((item): DirectoryRow => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        primaryMeta: item.taxId || "-",
+        secondaryMeta: compactText(item.phone, item.email),
+        active: item.isActive,
+        searchText: compactText(item.code, item.name, item.taxId, item.phone, item.email, item.address).toLowerCase(),
+        details: [
+          ["Kode", item.code],
+          ["Nama", item.name],
+          ["NPWP", item.taxId || "-"],
+          ["Telepon", item.phone || "-"],
+          ["Email", item.email || "-"],
+          ["Alamat", item.address || "-"],
+        ],
+      })),
+    },
+    warehouses: {
+      title: "Warehouse",
+      pluralTitle: "Data Warehouse",
+      icon: Warehouse,
+      resource: "warehouse",
+      addLabel: "Tambah warehouse baru",
+      columns: ["Kode", "Nama", "Lokasi", "Keterangan"],
+      rows: workspace.warehouses.map((item): DirectoryRow => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        primaryMeta: item.location || "-",
+        secondaryMeta: "Gudang operasional",
+        active: item.isActive,
+        searchText: compactText(item.code, item.name, item.location).toLowerCase(),
+        details: [
+          ["Kode", item.code],
+          ["Nama", item.name],
+          ["Lokasi", item.location || "-"],
+        ],
+      })),
+    },
+    locations: {
+      title: "Lokasi & Cabang",
+      pluralTitle: "Lokasi & Cabang",
+      icon: MapPin,
+      resource: "location",
+      addLabel: "Tambah lokasi baru",
+      columns: ["Kode", "Nama", "Tipe", "Gudang terkait"],
+      rows: workspace.locations.map((item): DirectoryRow => {
+        const warehouse = workspace.warehouses.find((warehouseItem) => warehouseItem.id === item.warehouseId);
+        const typeLabel = locationTypeLabels[item.type] ?? item.type;
+
+        return {
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          primaryMeta: typeLabel,
+          secondaryMeta: warehouse?.name || "-",
+          active: item.isActive,
+          searchText: compactText(item.code, item.name, typeLabel, warehouse?.name).toLowerCase(),
+          details: [
+            ["Kode", item.code],
+            ["Nama", item.name],
+            ["Tipe", typeLabel],
+            ["Gudang terkait", warehouse?.name || "-"],
+          ],
+        };
+      }),
+    },
+  }[type];
+  const Icon = config.icon;
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = config.rows.filter((row) => {
+    const matchesQuery = !normalizedQuery || row.searchText.includes(normalizedQuery);
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" && row.active) ||
+      (statusFilter === "inactive" && !row.active);
+
+    return matchesQuery && matchesStatus;
+  });
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const selectedRows = config.rows.filter((row) => selectedIds.has(row.id));
+  const pageIds = pageRows.map((row) => row.id);
+  const pageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const activeSelectedIds = selectedRows.filter((row) => row.active).map((row) => row.id);
+  const inactiveSelectedIds = selectedRows.filter((row) => !row.active).map((row) => row.id);
+  const activeFilteredIds = filteredRows.filter((row) => row.active).map((row) => row.id);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePageSelection() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (pageSelected) {
+        pageIds.forEach((id) => next.delete(id));
+      } else {
+        pageIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  async function createEntry(formData: FormData) {
+    const baseValues = {
+      code: String(formData.get("code")),
+      name: String(formData.get("name")),
+      isActive: true,
+    };
+    const values =
+      type === "customers"
+        ? {
+            ...baseValues,
+            taxId: String(formData.get("taxId")),
+            phone: String(formData.get("phone")),
+            email: String(formData.get("email")),
+            address: String(formData.get("address")),
+            creditLimit: Number(formData.get("creditLimit")),
+          }
+        : type === "suppliers"
+          ? {
+              ...baseValues,
+              taxId: String(formData.get("taxId")),
+              phone: String(formData.get("phone")),
+              email: String(formData.get("email")),
+              address: String(formData.get("address")),
+            }
+          : type === "warehouses"
+            ? {
+                ...baseValues,
+                location: String(formData.get("location")),
+              }
+            : {
+                ...baseValues,
+                type: String(formData.get("type")),
+                warehouseId: String(formData.get("warehouseId")),
+              };
+
+    await saveMaster(config.resource, values);
+    setDefaultCode(directoryCode(type));
+    setShowForm(false);
+  }
+
+  async function confirmStatusChange() {
+    if (!confirmation) return;
+    await updateMasterStatus(config.resource, confirmation.ids, confirmation.isActive);
+    setSelectedIds(new Set());
+    setConfirmation(null);
+  }
 
   return (
-    <form
-      action={(formData) =>
-        void saveMaster(type, {
-          code: String(formData.get("code")),
-          name: String(formData.get("name")),
-          phone: String(formData.get("phone")),
-          email: String(formData.get("email")),
-          address: String(formData.get("address")),
-          creditLimit: type === "customer" ? Number(formData.get("creditLimit")) : 0,
-          isActive: true,
-        })
-      }
-      className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3"
-    >
-      <TextField name="code" label={`Kode ${label}`} defaultValue={defaultCode} required />
-      <TextField name="name" label={`Nama ${label}`} placeholder={`Nama ${label.toLowerCase()}`} required />
-      <TextField name="phone" label="Telepon" />
-      <TextField name="email" label="Email" type="email" />
-      <TextField name="address" label="Alamat" />
-      {type === "customer" ? <TextField name="creditLimit" label="Credit limit" type="number" defaultValue={0} /> : null}
-      <div className="flex items-end">
-        <ActionButton disabled={pending}>Simpan {label}</ActionButton>
+    <section className="space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-slate-100 p-3">
+            <Icon className="size-6 text-slate-600" aria-hidden />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">{config.pluralTitle}</h2>
+            <p className="mt-0.5 text-sm text-slate-500">{config.rows.length} data, {config.rows.filter((row) => row.active).length} aktif.</p>
+          </div>
+        </div>
+        <ActionButton type="button" onClick={() => setShowForm((current) => !current)} disabled={pending}>
+          <Plus className="size-4" aria-hidden />
+          {config.addLabel}
+        </ActionButton>
       </div>
-    </form>
+
+      {showForm ? (
+        <div className="directory-reveal">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createEntry(new FormData(event.currentTarget));
+            }}
+            className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            <TextField name="code" label={`Kode ${config.title}`} defaultValue={defaultCode} required />
+            <TextField name="name" label={`Nama ${config.title}`} required />
+            {type === "customers" || type === "suppliers" ? (
+              <>
+                <TextField name="taxId" label="NPWP" />
+                <TextField name="phone" label="Telepon" />
+                <TextField name="email" label="Email" type="email" />
+                <TextField name="address" label="Alamat" />
+                {type === "customers" ? <TextField name="creditLimit" label="Credit limit" type="number" defaultValue={0} /> : null}
+              </>
+            ) : null}
+            {type === "warehouses" ? <TextField name="location" label="Lokasi" placeholder="Alamat/lokasi gudang" /> : null}
+            {type === "locations" ? (
+              <>
+                <SelectField name="type" label="Tipe">
+                  <option value="branch">Branch</option>
+                  <option value="outlet">Outlet</option>
+                  <option value="store">Store</option>
+                  <option value="warehouse">Warehouse</option>
+                  <option value="workshop">Workshop</option>
+                  <option value="office">Office</option>
+                </SelectField>
+                <SelectField name="warehouseId" label="Gudang terkait">
+                  <option value="">Tanpa gudang</option>
+                  {workspace.warehouses.map((warehouse) => (
+                    <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                  ))}
+                </SelectField>
+              </>
+            ) : null}
+            <div className="flex items-end gap-2">
+              <ActionButton disabled={pending}>Simpan</ActionButton>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Batal
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={`Cari ${config.title.toLowerCase()}...`}
+            className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+          >
+            <option value="all">Semua status</option>
+            <option value="active">Aktif</option>
+            <option value="inactive">Nonaktif</option>
+          </select>
+          {activeSelectedIds.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setConfirmation({ ids: activeSelectedIds, isActive: false, label: `${activeSelectedIds.length} data terpilih` })}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+            >
+              <XCircle className="size-4" aria-hidden />
+              Nonaktifkan
+            </button>
+          ) : null}
+          {inactiveSelectedIds.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setConfirmation({ ids: inactiveSelectedIds, isActive: true, label: `${inactiveSelectedIds.length} data terpilih` })}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+            >
+              <CheckCircle2 className="size-4" aria-hidden />
+              Aktifkan
+            </button>
+          ) : null}
+          {activeFilteredIds.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setConfirmation({ ids: activeFilteredIds, isActive: false, label: "semua hasil filter aktif" })}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Nonaktifkan semua hasil filter
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <table className="mobile-card-table w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="w-12 px-4 py-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={pageSelected}
+                  onChange={togglePageSelection}
+                  aria-label="Pilih semua data di halaman ini"
+                  className="size-4 rounded border-slate-300"
+                />
+              </th>
+              {config.columns.map((column) => (
+                <th key={column} className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{column}</th>
+              ))}
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Aksi</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {pageRows.map((row) => (
+              <tr key={row.id} className="hover:bg-slate-50">
+                <td data-mobile-label="" className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => toggleSelected(row.id)}
+                    aria-label={`Pilih ${row.name}`}
+                    className="size-4 rounded border-slate-300"
+                  />
+                </td>
+                <td data-mobile-label={config.columns[0]} className="px-4 py-3 font-mono text-xs font-semibold text-slate-900">{row.code}</td>
+                <td data-mobile-label={config.columns[1]} className="px-4 py-3">
+                  <p className="font-medium text-slate-950">{row.name}</p>
+                  <p className="text-xs text-slate-500">{row.secondaryMeta}</p>
+                </td>
+                <td data-mobile-label={config.columns[2]} className="px-4 py-3 text-slate-600">{row.primaryMeta}</td>
+                <td data-mobile-label={config.columns[3]} className="px-4 py-3 text-slate-600">{row.secondaryMeta}</td>
+                <td data-mobile-label="Status" className="px-4 py-3">
+                  <StatusPill tone={row.active ? "emerald" : "gray"}>{row.active ? "Aktif" : "Nonaktif"}</StatusPill>
+                </td>
+                <td data-mobile-label="Aksi" className="px-4 py-3">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDetailRow(row)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <Eye className="size-3.5" aria-hidden />
+                      Detail
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmation({ ids: [row.id], isActive: !row.active, label: row.name })}
+                      disabled={pending}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium disabled:opacity-50",
+                        row.active
+                          ? "border border-red-200 text-red-700 hover:bg-red-50"
+                          : "border border-emerald-200 text-emerald-700 hover:bg-emerald-50",
+                      )}
+                    >
+                      {row.active ? <XCircle className="size-3.5" aria-hidden /> : <RefreshCw className="size-3.5" aria-hidden />}
+                      {row.active ? "Nonaktifkan" : "Aktifkan"}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {pageRows.length === 0 ? <div className="py-12 text-center text-sm text-slate-500">Tidak ada data sesuai filter.</div> : null}
+      </div>
+
+      <div className="flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <p>{filteredRows.length} hasil · halaman {currentPage} dari {pageCount}</p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={currentPage <= 1}
+            className="rounded-lg border border-slate-200 px-3 py-2 font-medium text-slate-700 disabled:opacity-40"
+          >
+            Sebelumnya
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+            disabled={currentPage >= pageCount}
+            className="rounded-lg border border-slate-200 px-3 py-2 font-medium text-slate-700 disabled:opacity-40"
+          >
+            Berikutnya
+          </button>
+        </div>
+      </div>
+
+      <Modal isOpen={Boolean(detailRow)} onClose={() => setDetailRow(null)} title={`Detail ${config.title}`} maxWidth="max-w-xl">
+        {detailRow ? (
+          <div className="space-y-3">
+            {detailRow.details.map(([label, value]) => (
+              <div key={label} className="flex items-start justify-between gap-4 rounded-lg bg-slate-50 p-3 text-sm">
+                <span className="text-slate-500">{label}</span>
+                <span className="max-w-[65%] text-right font-medium text-slate-950">{value}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm">
+              <span className="text-slate-500">Status</span>
+              <StatusPill tone={detailRow.active ? "emerald" : "gray"}>{detailRow.active ? "Aktif" : "Nonaktif"}</StatusPill>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(confirmation)}
+        onClose={() => setConfirmation(null)}
+        title={confirmation?.isActive ? "Aktifkan kembali data?" : "Nonaktifkan data?"}
+        maxWidth="max-w-md"
+      >
+        {confirmation ? (
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-slate-600">
+              Anda akan {confirmation.isActive ? "mengaktifkan kembali" : "menonaktifkan"} {confirmation.label}. Data historis tetap aman karena aksi ini tidak menghapus permanen.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setConfirmation(null)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <ActionButton
+                type="button"
+                variant={confirmation.isActive ? "primary" : "danger"}
+                onClick={() => void confirmStatusChange()}
+                disabled={pending}
+              >
+                {confirmation.isActive ? "Aktifkan kembali" : "Nonaktifkan"}
+              </ActionButton>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </section>
   );
 }
 
@@ -533,54 +1028,29 @@ function ProductForm({ workspace, pending, saveMaster }: Pick<SettingsPanelProps
   );
 }
 
-function WarehouseForm({ pending, saveWarehouse }: Pick<SettingsPanelProps, "pending" | "saveWarehouse">) {
-  const [defaultCode] = useState(() => `WH-${Date.now().toString().slice(-4)}`);
-
-  return (
-    <form action={saveWarehouse} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
-      <TextField name="code" label="Kode gudang" defaultValue={defaultCode} required />
-      <TextField name="name" label="Nama gudang" placeholder="Gudang utama" required />
-      <TextField name="location" label="Lokasi" placeholder="Alamat/lokasi" />
-      <div className="flex items-end">
-        <ActionButton disabled={pending}>Simpan gudang</ActionButton>
-      </div>
-    </form>
-  );
-}
-
 function MasterDataPanel({
   workspace,
   pending,
   saveMaster,
-  saveWarehouse,
   archiveMaster,
+  updateMasterStatus,
   type,
-}: Pick<SettingsPanelProps, "workspace" | "pending" | "saveMaster" | "saveWarehouse" | "archiveMaster"> & {
+}: Pick<SettingsPanelProps, "workspace" | "pending" | "saveMaster" | "archiveMaster" | "updateMasterStatus"> & {
   type: "customers" | "suppliers" | "products" | "warehouses";
 }) {
+  if (type !== "products") {
+    return (
+      <MasterDirectoryPanel
+        workspace={workspace}
+        pending={pending}
+        saveMaster={saveMaster}
+        updateMasterStatus={updateMasterStatus}
+        type={type}
+      />
+    );
+  }
+
   const config = {
-    customers: {
-      title: "Customers",
-      icon: Users,
-      rows: workspace.customers.map((item) => ({
-        id: item.id,
-        cells: [item.code, item.name, item.phone ?? "-", item.email ?? "-"],
-        active: item.isActive,
-      })),
-      columns: ["Kode", "Nama", "Telepon", "Email"],
-      resource: "customer",
-    },
-    suppliers: {
-      title: "Suppliers",
-      icon: Truck,
-      rows: workspace.suppliers.map((item) => ({
-        id: item.id,
-        cells: [item.code, item.name, item.phone ?? "-", item.email ?? "-"],
-        active: item.isActive,
-      })),
-      columns: ["Kode", "Nama", "Telepon", "Email"],
-      resource: "supplier",
-    },
     products: {
       title: "Products",
       icon: Package,
@@ -592,18 +1062,7 @@ function MasterDataPanel({
       columns: ["SKU", "Nama", "Kategori", "Tipe"],
       resource: "product",
     },
-    warehouses: {
-      title: "Warehouses",
-      icon: Warehouse,
-      rows: workspace.warehouses.map((item) => ({
-        id: item.id,
-        cells: [item.code, item.name, item.location ?? "-"],
-        active: item.isActive,
-      })),
-      columns: ["Kode", "Nama", "Lokasi"],
-      resource: "warehouse",
-    },
-  }[type];
+  }.products;
   const Icon = config.icon;
 
   return (
@@ -618,10 +1077,7 @@ function MasterDataPanel({
         </div>
       </div>
 
-      {type === "customers" ? <CustomerSupplierForm type="customer" pending={pending} saveMaster={saveMaster} /> : null}
-      {type === "suppliers" ? <CustomerSupplierForm type="supplier" pending={pending} saveMaster={saveMaster} /> : null}
-      {type === "products" ? <ProductForm workspace={workspace} pending={pending} saveMaster={saveMaster} /> : null}
-      {type === "warehouses" ? <WarehouseForm pending={pending} saveWarehouse={saveWarehouse} /> : null}
+      <ProductForm workspace={workspace} pending={pending} saveMaster={saveMaster} />
 
       <div className="overflow-hidden rounded-xl border border-slate-200">
         <table className="mobile-card-table w-full text-sm">
@@ -663,51 +1119,15 @@ function MasterDataPanel({
   );
 }
 
-function LocationsPanel({ workspace, pending, saveLocation }: SettingsPanelProps) {
-  const [defaultCode] = useState(() => `LOC-${Date.now().toString().slice(-4)}`);
-
+function LocationsPanel({ workspace, pending, saveMaster, updateMasterStatus }: SettingsPanelProps) {
   return (
-    <section className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-950">Lokasi & Cabang</h2>
-        <p className="mt-1 text-sm text-slate-500">Cabang, outlet, store, workshop, dan mapping gudang operasional.</p>
-      </div>
-
-      <form action={saveLocation} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-        <TextField name="code" label="Kode lokasi" defaultValue={defaultCode} required />
-        <TextField name="name" label="Nama lokasi" placeholder="Outlet utama" required />
-        <SelectField name="type" label="Tipe">
-          <option value="branch">Branch</option>
-          <option value="outlet">Outlet</option>
-          <option value="store">Store</option>
-          <option value="warehouse">Warehouse</option>
-          <option value="workshop">Workshop</option>
-          <option value="office">Office</option>
-        </SelectField>
-        <SelectField name="warehouseId" label="Gudang terkait">
-          {workspace.warehouses.map((warehouse) => (
-            <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
-          ))}
-        </SelectField>
-        <div className="sm:col-span-2">
-          <ActionButton disabled={pending}>Simpan lokasi</ActionButton>
-        </div>
-      </form>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        {workspace.locations.map((location) => (
-          <div key={location.id} className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold text-slate-950">{location.name}</p>
-                <p className="mt-1 text-sm text-slate-500">{location.code}</p>
-              </div>
-              <StatusPill tone={location.isActive ? "emerald" : "gray"}>{location.type}</StatusPill>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
+    <MasterDirectoryPanel
+      workspace={workspace}
+      pending={pending}
+      saveMaster={saveMaster}
+      updateMasterStatus={updateMasterStatus}
+      type="locations"
+    />
   );
 }
 
@@ -1104,6 +1524,22 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     }
   }
 
+  async function updateMasterStatus(resource: string, ids: string[], isActive: boolean) {
+    setPending(true);
+
+    try {
+      await postObject("/api/erp/master-data", { resource, ids, isActive }, "PATCH");
+      notify.info(
+        `${resourceLabel(resource)} ${isActive ? "diaktifkan kembali" : "dinonaktifkan"}`,
+        { description: `${ids.length} data diproses.` },
+      );
+    } catch (caught) {
+      notify.error(`${resourceLabel(resource)} gagal diperbarui`, { description: caught instanceof Error ? caught.message : "Coba lagi." });
+    } finally {
+      setPending(false);
+    }
+  }
+
   function saveBusiness(formData: FormData) {
     void saveMaster("business", {
       displayName: String(formData.get("displayName")),
@@ -1353,6 +1789,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     saveWarehouse,
     saveMaster,
     archiveMaster,
+    updateMasterStatus,
     applyTemplate,
     createBusinessFromSettings,
     uploadBusinessLogo,

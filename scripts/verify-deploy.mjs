@@ -72,6 +72,7 @@ const requiredMigrations = [
   "supabase/migrations/025_industry_catalog_recipes_mrp.sql",
   "supabase/migrations/026_fix_document_sequence_key_ambiguity.sql",
   "supabase/migrations/027_prevent_negative_inventory_stock.sql",
+  "supabase/migrations/028_auth_security_events_and_counterparty_tax_ids.sql",
 ];
 
 const requiredFiles = [
@@ -124,6 +125,10 @@ requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql
 requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql", "new.type in ('sale', 'transfer_out', 'adjustment_out')");
 requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql", "Nilai stok tidak cukup");
 requireFileSnippet("supabase/migrations/027_prevent_negative_inventory_stock.sql", "for each row execute function public.ensure_stock_movement_consistency()");
+requireFileSnippet("supabase/migrations/028_auth_security_events_and_counterparty_tax_ids.sql", "create table if not exists public.auth_security_events");
+requireFileSnippet("supabase/migrations/028_auth_security_events_and_counterparty_tax_ids.sql", "auth_security_events_email_window_idx");
+requireFileSnippet("supabase/migrations/028_auth_security_events_and_counterparty_tax_ids.sql", "revoke all on public.auth_security_events from public, anon, authenticated");
+requireFileSnippet("supabase/migrations/028_auth_security_events_and_counterparty_tax_ids.sql", "add column if not exists tax_id text");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");

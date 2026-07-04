@@ -43,7 +43,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 027", () => {
+  it("keeps production ERP migrations in order through 028", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -74,6 +74,7 @@ describe("Supabase migration contract", () => {
       "025_industry_catalog_recipes_mrp.sql",
       "026_fix_document_sequence_key_ambiguity.sql",
       "027_prevent_negative_inventory_stock.sql",
+      "028_auth_security_events_and_counterparty_tax_ids.sql",
     ]);
   });
 
@@ -343,6 +344,22 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("for each row execute function public.ensure_stock_movement_consistency()");
     expect(migration).toContain("revoke execute on function public.current_stock_value(uuid, uuid, uuid) from public, anon, authenticated");
     expect(migration).toContain("grant execute on function public.current_stock_value(uuid, uuid, uuid) to service_role");
+  });
+
+  it("adds auth security event logging and counterparty tax ids", () => {
+    const migration = readFileSync(join(migrationsDir, "028_auth_security_events_and_counterparty_tax_ids.sql"), "utf8");
+
+    expect(migration).toContain("create table if not exists public.auth_security_events");
+    expect(migration).toContain("email_hash text");
+    expect(migration).toContain("ip_hash text not null");
+    expect(migration).toContain("auth_security_events_email_window_idx");
+    expect(migration).toContain("alter table public.auth_security_events enable row level security");
+    expect(migration).toContain("revoke all on public.auth_security_events from public, anon, authenticated");
+    expect(migration).toContain("grant select, insert, update, delete on public.auth_security_events to service_role");
+    expect(migration).toContain("alter table public.customers");
+    expect(migration).toContain("add column if not exists tax_id text");
+    expect(migration).toContain("alter table public.suppliers");
+    expect(migration).toContain("suppliers_business_tax_id_idx");
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {

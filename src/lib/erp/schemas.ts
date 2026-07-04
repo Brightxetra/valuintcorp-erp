@@ -147,6 +147,7 @@ export const masterResourceSchema = z.enum([
   "supplier",
   "product",
   "warehouse",
+  "location",
   "employee",
   "business",
   "tax_profile",
@@ -161,6 +162,7 @@ export const masterDataMutationSchema = z.object({
 export const customerSchema = z.object({
   code: z.string().min(2),
   name: z.string().min(2),
+  taxId: optionalText,
   phone: optionalText,
   email: optionalText,
   address: optionalText,
@@ -171,6 +173,7 @@ export const customerSchema = z.object({
 export const supplierSchema = z.object({
   code: z.string().min(2),
   name: z.string().min(2),
+  taxId: optionalText,
   phone: optionalText,
   email: optionalText,
   address: optionalText,

@@ -15,6 +15,7 @@ import {
   Filter,
 } from "lucide-react";
 import type { ErpWorkspace } from "@/lib/erp/types";
+import type { InventoryPosition } from "@/lib/inventory/valuation";
 import { valueInventory } from "@/lib/inventory/valuation";
 import { notify } from "@/lib/notify";
 
@@ -42,6 +43,17 @@ function formatCurrency(amount: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function movementLabel(type: string) {
+  return {
+    purchase: "Stok masuk",
+    sale: "Penjualan",
+    transfer_in: "Transfer masuk",
+    transfer_out: "Transfer keluar",
+    adjustment_in: "Penyesuaian masuk",
+    adjustment_out: "Penyesuaian keluar",
+  }[type] ?? type;
 }
 
 // ============================================================================
@@ -79,6 +91,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<InventoryPosition | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Calculate stock positions
@@ -120,6 +133,20 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   const totalNilaiStok = positions.reduce((sum, pos) => sum + pos.value, 0);
   const totalSKU = new Set(positions.map((pos) => pos.itemId)).size;
   const alertCount = alerts.length;
+  const selectedProduct = selectedPosition
+    ? workspace.products.find((product) => product.id === selectedPosition.itemId)
+    : undefined;
+  const selectedWarehouse = selectedPosition
+    ? workspace.warehouses.find((warehouse) => warehouse.id === selectedPosition.warehouseId)
+    : undefined;
+  const selectedIsLow =
+    Boolean(selectedPosition && selectedProduct && selectedProduct.reorderPoint >= selectedPosition.quantity);
+  const selectedMovements = selectedPosition
+    ? workspace.stockMovements
+        .filter((movement) => movement.itemId === selectedPosition.itemId && movement.warehouseId === selectedPosition.warehouseId)
+        .toSorted((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 8)
+    : [];
 
   const [stockReceipt, setStockReceipt] = useState({
     itemId: "",
@@ -421,8 +448,13 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
                         {formatCurrency(pos.value)}
                       </td>
                       <td data-mobile-label="Aksi" className="px-4 py-3 text-center">
-                        <button className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-100">
-                          <ChevronRight className="size-4" />
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPosition(pos)}
+                          aria-label={`Lihat detail stok ${product?.sku ?? "produk"} di ${warehouse?.name ?? "gudang"}`}
+                          className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                        >
+                          <ChevronRight className="size-4" aria-hidden />
                         </button>
                       </td>
                     </tr>
@@ -433,6 +465,69 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
           </table>
         </div>
       </div>
+
+      <Modal
+        isOpen={Boolean(selectedPosition)}
+        onClose={() => setSelectedPosition(null)}
+        title="Detail Posisi Stok"
+        maxWidth="max-w-2xl"
+      >
+        {selectedPosition ? (
+          <div className="space-y-5">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-950">{selectedProduct?.name ?? "Produk tidak ditemukan"}</p>
+                  <p className="mt-1 text-sm text-slate-500">{selectedProduct?.sku ?? "-"} · {selectedWarehouse?.name ?? "-"}</p>
+                </div>
+                <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${selectedIsLow ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>
+                  {selectedIsLow ? "Stok rendah" : "Normal"}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Qty tersedia</p>
+                  <p className="mt-1 text-xl font-semibold text-slate-950">{selectedPosition.quantity} {selectedProduct?.unit ?? "pcs"}</p>
+                </div>
+                <div className="rounded-lg bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Nilai stok</p>
+                  <p className="mt-1 text-xl font-semibold text-slate-950">{formatCurrency(selectedPosition.value)}</p>
+                </div>
+                <div className="rounded-lg bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Avg cost</p>
+                  <p className="mt-1 text-base font-semibold text-slate-950">{formatCurrency(selectedPosition.averageCost)}</p>
+                </div>
+                <div className="rounded-lg bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Reorder point</p>
+                  <p className="mt-1 text-base font-semibold text-slate-950">{selectedProduct?.reorderPoint ?? 0}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-slate-950">Histori movement terakhir</h3>
+              <div className="mt-3 space-y-2">
+                {selectedMovements.length === 0 ? (
+                  <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">Belum ada movement untuk posisi ini.</p>
+                ) : (
+                  selectedMovements.map((movement) => (
+                    <div key={movement.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+                      <div>
+                        <p className="font-medium text-slate-950">{movementLabel(movement.type)}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{new Date(movement.date).toLocaleDateString("id-ID")}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-slate-950">{movement.quantity}</p>
+                        <p className="text-xs text-slate-500">{formatCurrency(movement.value)}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       {/* Stock Receipt Modal */}
       <Modal

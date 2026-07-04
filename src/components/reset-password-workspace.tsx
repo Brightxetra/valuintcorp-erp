@@ -10,6 +10,7 @@ import { clearServerSession, syncServerSession } from "@/lib/erp/client-api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 type ResetPhase = "loading" | "password" | "success" | "error";
+const maxResetAttempts = 5;
 
 interface ResetSessionTokens {
   accessToken: string;
@@ -54,12 +55,25 @@ function tokensFromSession(session: Session): ResetSessionTokens {
   };
 }
 
+async function postResetEvent(status: "invalid_callback" | "limited_attempt" | "completed", email?: string, reason?: string) {
+  await fetch("/api/auth/password/reset-event", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      status,
+      ...(email ? { email } : {}),
+      ...(reason ? { reason } : {}),
+    }),
+  }).catch(() => undefined);
+}
+
 export function ResetPasswordWorkspace() {
   const [phase, setPhase] = useState<ResetPhase>("loading");
   const [error, setError] = useState<string | null>(null);
   const [sessionTokens, setSessionTokens] = useState<ResetSessionTokens | null>(null);
   const [pending, setPending] = useState(false);
   const [nextPath, setNextPath] = useState("/login");
+  const [attemptCount, setAttemptCount] = useState(0);
 
   const title = useMemo(() => {
     if (phase === "success") return "Password berhasil direset";
@@ -126,7 +140,9 @@ export function ResetPasswordWorkspace() {
         }
       } catch (caught) {
         if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : "Reset password gagal diproses.");
+          const message = caught instanceof Error ? caught.message : "Reset password gagal diproses.";
+          void postResetEvent("invalid_callback", undefined, message);
+          setError(message);
           setPhase("error");
         }
       }
@@ -141,18 +157,37 @@ export function ResetPasswordWorkspace() {
 
   async function savePassword(formData: FormData) {
     if (!sessionTokens) return;
+    const activeResetTokens = sessionTokens;
 
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
 
     setError(null);
 
+    if (attemptCount >= maxResetAttempts) {
+      setError("Terlalu banyak percobaan. Minta link reset baru dari halaman login.");
+      void postResetEvent("limited_attempt", activeResetTokens.email, "attempt_limit_reached");
+      return;
+    }
+
+    function registerFailedAttempt(reason: string) {
+      setAttemptCount((current) => {
+        const next = current + 1;
+        if (next >= maxResetAttempts) {
+          void postResetEvent("limited_attempt", activeResetTokens.email, reason);
+        }
+        return next;
+      });
+    }
+
     if (password.length < passwordMinimumLength) {
+      registerFailedAttempt("password_too_short");
       setError(`Password minimal ${passwordMinimumLength} karakter.`);
       return;
     }
 
     if (password !== confirmPassword) {
+      registerFailedAttempt("password_confirmation_mismatch");
       setError("Konfirmasi password tidak sama.");
       return;
     }
@@ -167,14 +202,16 @@ export function ResetPasswordWorkspace() {
 
       const { data } = await supabase.auth.getSession();
       const activeSession = data.session;
-      const syncTokens = activeSession ? tokensFromSession(activeSession) : sessionTokens;
+      const syncTokens = activeSession ? tokensFromSession(activeSession) : activeResetTokens;
 
       await supabase.auth.signOut({ scope: "others" }).catch(() => undefined);
 
       const synced = await syncServerSession(null, syncTokens, { rememberMe: false, freshLogin: true });
+      void postResetEvent("completed", syncTokens.email);
       setNextPath(synced?.defaultPath || (synced?.hasBusiness ? "/dashboard" : "/login"));
       setPhase("success");
     } catch (caught) {
+      registerFailedAttempt("supabase_update_failed");
       setError(caught instanceof Error ? caught.message : "Password gagal direset.");
     } finally {
       setPending(false);
@@ -229,9 +266,9 @@ export function ResetPasswordWorkspace() {
               <TextField name="password" label="Password baru" type="password" autoComplete="new-password" required minLength={passwordMinimumLength} />
               <TextField name="confirmPassword" label="Konfirmasi password" type="password" autoComplete="new-password" required minLength={passwordMinimumLength} />
               {error ? <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-              <ActionButton className="w-full" disabled={pending}>
+              <ActionButton className="w-full" disabled={pending || attemptCount >= maxResetAttempts}>
                 <KeyRound className="size-4" aria-hidden />
-                {pending ? "Menyimpan..." : "Reset password"}
+                {pending ? "Menyimpan..." : attemptCount >= maxResetAttempts ? "Minta link baru" : "Reset password"}
               </ActionButton>
             </form>
           ) : null}

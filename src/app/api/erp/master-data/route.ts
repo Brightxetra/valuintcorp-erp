@@ -3,11 +3,13 @@ import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/
 import {
   archiveDemoMasterData,
   saveDemoMasterData,
+  updateDemoMasterDataStatus,
 } from "@/lib/erp/demo-store";
 import {
   businessUpdateSchema,
   customerSchema,
   employeeSchema,
+  locationSchema,
   masterDataMutationSchema,
   masterResourceSchema,
   productSchema,
@@ -25,6 +27,7 @@ const permissions: Record<MasterResource, Permission> = {
   supplier: "accounting:write",
   product: "inventory:manage",
   warehouse: "inventory:manage",
+  location: "business:update",
   employee: "hr:manage",
   business: "business:update",
   tax_profile: "tax:prepare",
@@ -40,6 +43,7 @@ function parseValues(resource: MasterResource, values: Record<string, unknown>) 
     supplier: supplierSchema,
     product: productSchema,
     warehouse: warehouseSchema,
+    location: locationSchema,
     employee: employeeSchema,
     business: businessUpdateSchema,
     tax_profile: taxProfileUpdateSchema,
@@ -54,6 +58,7 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       business_id: businessId,
       code: values.code,
       name: values.name,
+      tax_id: values.taxId ?? null,
       phone: values.phone ?? null,
       email: values.email ?? null,
       address: values.address ?? null,
@@ -67,6 +72,7 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       business_id: businessId,
       code: values.code,
       name: values.name,
+      tax_id: values.taxId ?? null,
       phone: values.phone ?? null,
       email: values.email ?? null,
       address: values.address ?? null,
@@ -107,6 +113,17 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       code: values.code,
       name: values.name,
       location: values.location ?? "",
+      is_active: values.isActive,
+    };
+  }
+
+  if (resource === "location") {
+    return {
+      business_id: businessId,
+      code: values.code,
+      name: values.name,
+      type: values.type,
+      warehouse_id: values.warehouseId ?? null,
       is_active: values.isActive,
     };
   }
@@ -163,6 +180,7 @@ function tableFor(resource: Exclude<MasterResource, "business" | "tax_profile">)
     supplier: "suppliers",
     product: "products",
     warehouse: "warehouses",
+    location: "locations",
     employee: "employees",
   }[resource];
 }
@@ -262,6 +280,50 @@ export async function DELETE(request: Request) {
     .update(inactiveValue)
     .eq("business_id", context.businessId)
     .eq("id", id);
+
+  if (error) {
+    return withDemoHeader(json({ error: error.message }, 422), context);
+  }
+
+  return reloadWorkspace(request, context);
+}
+
+export async function PATCH(request: Request) {
+  const payload = await request.json().catch(() => null);
+  const resource = masterResourceSchema.safeParse(payload?.resource);
+  const ids = Array.isArray(payload?.ids)
+    ? payload.ids.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : null;
+
+  if (!resource.success || ids.length === 0 || isActive === null) {
+    return json({ error: "Resource, ids, dan status aktif wajib diisi." }, 400);
+  }
+
+  if (resource.data === "business" || resource.data === "tax_profile") {
+    return json({ error: "Business dan tax profile tidak bisa diubah status lewat endpoint ini." }, 400);
+  }
+
+  const context = await requireApiPermission(request, permissions[resource.data]);
+
+  if (isApiResponse(context)) {
+    return context;
+  }
+
+  if (context.demoMode) {
+    return withDemoHeader(json({ workspace: updateDemoMasterDataStatus(resource.data, ids, isActive) }), context);
+  }
+
+  const supabase = createRequestSupabaseClient(request);
+  const activeValue =
+    resource.data === "employee"
+      ? { status: isActive ? "active" : "inactive" }
+      : { is_active: isActive };
+  const { error } = await supabase
+    .from(tableFor(resource.data))
+    .update(activeValue)
+    .eq("business_id", context.businessId)
+    .in("id", ids);
 
   if (error) {
     return withDemoHeader(json({ error: error.message }, 422), context);

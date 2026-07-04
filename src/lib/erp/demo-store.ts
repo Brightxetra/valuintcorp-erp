@@ -361,7 +361,7 @@ export function reverseDemoFixedAssetDocument(input: ReverseFixedAssetDocumentIn
 }
 
 export function saveDemoMasterData(
-  resource: "customer" | "supplier" | "product" | "warehouse" | "employee" | "business" | "tax_profile",
+  resource: "customer" | "supplier" | "product" | "warehouse" | "location" | "employee" | "business" | "tax_profile",
   id: string | undefined,
   values: Record<string, unknown>,
 ): ErpWorkspace {
@@ -403,6 +403,7 @@ export function saveDemoMasterData(
       businessId: workspace.business.id,
       code: String(values.code),
       name: String(values.name),
+      taxId: typeof values.taxId === "string" ? values.taxId : undefined,
       phone: typeof values.phone === "string" ? values.phone : undefined,
       email: typeof values.email === "string" ? values.email : undefined,
       address: typeof values.address === "string" ? values.address : undefined,
@@ -422,6 +423,7 @@ export function saveDemoMasterData(
       businessId: workspace.business.id,
       code: String(values.code),
       name: String(values.name),
+      taxId: typeof values.taxId === "string" ? values.taxId : undefined,
       phone: typeof values.phone === "string" ? values.phone : undefined,
       email: typeof values.email === "string" ? values.email : undefined,
       address: typeof values.address === "string" ? values.address : undefined,
@@ -480,6 +482,23 @@ export function saveDemoMasterData(
       ...workspace,
       warehouses: upsertById(workspace.warehouses, id, warehouse, warehouse),
       activities: [activity("inventory", id ? "warehouse updated" : "warehouse created", `${warehouse.name} disimpan.`), ...workspace.activities],
+    });
+  }
+
+  if (resource === "location") {
+    const location: Location = {
+      id: id ?? generatedId("loc"),
+      businessId: workspace.business.id,
+      code: String(values.code),
+      name: String(values.name),
+      type: String(values.type ?? "branch") as Location["type"],
+      warehouseId: typeof values.warehouseId === "string" ? values.warehouseId : undefined,
+      isActive: Boolean(values.isActive ?? true),
+    };
+    return refresh({
+      ...workspace,
+      locations: upsertById(workspace.locations, id, location, location),
+      activities: [activity("accounting", id ? "location updated" : "location created", `${location.name} disimpan.`), ...workspace.activities],
     });
   }
 
@@ -778,33 +797,55 @@ export function rollbackDemoDailySummary(input: SummaryActionInput): ErpWorkspac
 }
 
 export function archiveDemoMasterData(
-  resource: "customer" | "supplier" | "product" | "warehouse" | "employee",
+  resource: "customer" | "supplier" | "product" | "warehouse" | "location" | "employee",
   id: string,
 ): ErpWorkspace {
+  return updateDemoMasterDataStatus(resource, [id], false);
+}
+
+export function updateDemoMasterDataStatus(
+  resource: "customer" | "supplier" | "product" | "warehouse" | "location" | "employee",
+  ids: string[],
+  isActive: boolean,
+): ErpWorkspace {
   workspace = currentWorkspace();
+  const selectedIds = new Set(ids);
+  const employeeStatus = isActive ? "active" : "inactive";
+
   return refresh({
     ...workspace,
     customers:
       resource === "customer"
-        ? workspace.customers.map((item) => (item.id === id ? { ...item, isActive: false } : item))
+        ? workspace.customers.map((item) => (selectedIds.has(item.id) ? { ...item, isActive } : item))
         : workspace.customers,
     suppliers:
       resource === "supplier"
-        ? workspace.suppliers.map((item) => (item.id === id ? { ...item, isActive: false } : item))
+        ? workspace.suppliers.map((item) => (selectedIds.has(item.id) ? { ...item, isActive } : item))
         : workspace.suppliers,
     products:
       resource === "product"
-        ? workspace.products.map((item) => (item.id === id ? { ...item, isActive: false } : item))
+        ? workspace.products.map((item) => (selectedIds.has(item.id) ? { ...item, isActive } : item))
         : workspace.products,
     warehouses:
       resource === "warehouse"
-        ? workspace.warehouses.map((item) => (item.id === id ? { ...item, isActive: false } : item))
+        ? workspace.warehouses.map((item) => (selectedIds.has(item.id) ? { ...item, isActive } : item))
         : workspace.warehouses,
+    locations:
+      resource === "location"
+        ? workspace.locations.map((item) => (selectedIds.has(item.id) ? { ...item, isActive } : item))
+        : workspace.locations,
     employees:
       resource === "employee"
-        ? workspace.employees.map((item) => (item.id === id ? { ...item, status: "inactive" } : item))
+        ? workspace.employees.map((item) => (selectedIds.has(item.id) ? { ...item, status: employeeStatus } : item))
         : workspace.employees,
-    activities: [activity("accounting", "master archived", `${resource} ${id} dinonaktifkan.`), ...workspace.activities],
+    activities: [
+      activity(
+        "accounting",
+        isActive ? "master reactivated" : "master archived",
+        `${ids.length} ${resource} ${isActive ? "diaktifkan kembali" : "dinonaktifkan"}.`,
+      ),
+      ...workspace.activities,
+    ],
   });
 }
 

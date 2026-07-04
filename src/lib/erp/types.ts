@@ -77,6 +77,7 @@ export interface Customer {
   businessId: string;
   code: string;
   name: string;
+  taxId?: string;
   phone?: string;
   email?: string;
   address?: string;
@@ -89,6 +90,7 @@ export interface Supplier {
   businessId: string;
   code: string;
   name: string;
+  taxId?: string;
   phone?: string;
   email?: string;
   address?: string;
