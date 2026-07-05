@@ -47,6 +47,7 @@ import {
   erpApiDownload,
   erpApiFetch,
   clearServerSession,
+  signOutLocalBrowserSession,
   shouldUseDemoFallbackBrowser,
   syncServerSession,
 } from "@/lib/erp/client-api";
@@ -2044,7 +2045,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
           typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("reason");
 
         if (reason === "session-expired" || reason === "session-revoked") {
-          await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+          await signOutLocalBrowserSession();
           await clearServerSession();
 
           if (!cancelled) {
@@ -2059,14 +2060,14 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
         }
 
         await clearServerSession();
-        await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+        await signOutLocalBrowserSession();
 
         if (!cancelled) {
           setCheckingSession(false);
         }
       } catch {
         if (!cancelled) {
-          await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+          await signOutLocalBrowserSession();
           await clearServerSession();
           setPending(false);
           setError("Sesi lama tidak bisa dipulihkan. Silakan login ulang.");
@@ -2343,10 +2344,10 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
                 {pending ? (
                   <>
                     <Loader2 className="size-4 animate-spin" aria-hidden />
-                    Mengirim instruksi...
+                    Mengirim request...
                   </>
                 ) : (
-                  "Kirim instruksi reset"
+                  "Request reset password"
                 )}
               </ActionButton>
               <a
@@ -2385,18 +2386,6 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
                     </span>
                   </span>
                 </label>
-                {mode === "login" ? (
-                  <a
-                    href={loginModeHref("forgot", loginNextPath)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      switchAuthMode("forgot");
-                    }}
-                    className="self-end rounded-lg px-2 py-1 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
-                  >
-                    Lupa password?
-                  </a>
-                ) : null}
               </div>
               {captchaVisible ? (
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
@@ -2415,6 +2404,18 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
                     }}
                   />
                 </div>
+              ) : null}
+              {mode === "login" ? (
+                <a
+                  href={loginModeHref("forgot", loginNextPath)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    switchAuthMode("forgot");
+                  }}
+                  className="block w-full rounded-lg px-3 py-2 text-center text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                >
+                  Lupa password?
+                </a>
               ) : null}
               <WorkspaceFeedback error={error} success={success} />
               <ActionButton className="w-full" disabled={pending} aria-busy={pending}>

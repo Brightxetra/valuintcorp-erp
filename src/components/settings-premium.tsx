@@ -36,7 +36,7 @@ import { SecuritySubmenuTabs, type SecuritySubmenu } from "@/components/security
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { permissionCatalog } from "@/lib/security/permissions";
-import { clearServerSession, syncServerSession } from "@/lib/erp/client-api";
+import { clearServerSession, signOutLocalBrowserSession, syncServerSession } from "@/lib/erp/client-api";
 import { notify } from "@/lib/notify";
 
 type SettingsCategory =
@@ -1231,7 +1231,7 @@ function SecurityPanel() {
       });
 
       if (body.current) {
-        await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+        await signOutLocalBrowserSession();
         await clearServerSession();
         window.location.assign("/login?reason=session-revoked");
         return;

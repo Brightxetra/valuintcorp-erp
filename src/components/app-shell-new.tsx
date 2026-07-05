@@ -39,8 +39,7 @@ import { notify } from "@/lib/notify";
 import { getMostSpecificActiveHref, pathMatchesHref } from "@/lib/navigation/active-link";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { posExperienceForPermissions, type Permission } from "@/lib/security/permissions";
-import { browserIdleSessionExpired, clearServerSession, touchServerSessionActivity } from "@/lib/erp/client-api";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { browserIdleSessionExpired, clearServerSession, signOutLocalBrowserSession, touchServerSessionActivity } from "@/lib/erp/client-api";
 import { getAccessiblePosBranches } from "@/lib/pos/branches";
 import { posLocationStorageKey, readStoredPosLocationId } from "@/lib/pos/preferences";
 
@@ -768,7 +767,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
     async function endExpiredSession() {
       if (ended) return;
       ended = true;
-      await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+      await signOutLocalBrowserSession();
       await clearServerSession();
       router.push("/login?reason=session-expired");
     }
@@ -815,7 +814,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
     setAccountMenuOpen(false);
 
     if (!demoMode) {
-      await createBrowserSupabaseClient().auth.signOut();
+      await signOutLocalBrowserSession();
     }
 
     await clearServerSession();

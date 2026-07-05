@@ -9,8 +9,7 @@ import { SecuritySubmenuTabs, type SecuritySubmenu } from "@/components/security
 import { cn } from "@/components/ui";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import type { LoginSessionDevice } from "@/lib/auth/login-sessions";
-import { clearServerSession } from "@/lib/erp/client-api";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { clearServerSession, signOutLocalBrowserSession } from "@/lib/erp/client-api";
 import { notify } from "@/lib/notify";
 
 function formatSessionDate(value: string | null) {
@@ -83,7 +82,7 @@ export function PosSecurityWorkspace({ initialWorkspace }: { initialWorkspace: E
       });
 
       if (body.current) {
-        await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+        await signOutLocalBrowserSession();
         await clearServerSession();
         window.location.assign("/login?reason=session-revoked");
         return;

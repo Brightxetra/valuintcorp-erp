@@ -146,6 +146,12 @@ async function getAccessToken() {
   return (await getBrowserSession())?.access_token ?? null;
 }
 
+export async function signOutLocalBrowserSession() {
+  if (!isSupabaseBrowserEnabled()) return;
+
+  await createBrowserSupabaseClient().auth.signOut({ scope: "local" }).catch(() => undefined);
+}
+
 export async function syncServerSession(
   businessId?: string | null,
   explicitTokens?: SessionSyncTokens | null,
@@ -154,7 +160,7 @@ export async function syncServerSession(
   const freshLogin = options.freshLogin === true;
 
   if (!freshLogin && browserIdleSessionExpired()) {
-    await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+    await signOutLocalBrowserSession();
     clearBrowserSessionCookies();
     return null;
   }
@@ -228,7 +234,7 @@ export async function clearServerSession() {
 export async function touchServerSessionActivity(force = false) {
   if (shouldUseDemoFallbackBrowser()) return true;
   if (browserIdleSessionExpired()) {
-    await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+    await signOutLocalBrowserSession();
     clearBrowserSessionCookies();
     return false;
   }
@@ -255,7 +261,7 @@ export async function touchServerSessionActivity(force = false) {
   }).catch(() => null);
 
   if (response?.status === 401) {
-    await createBrowserSupabaseClient().auth.signOut().catch(() => undefined);
+    await signOutLocalBrowserSession();
     clearBrowserSessionCookies();
     return false;
   }
