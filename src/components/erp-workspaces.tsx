@@ -1964,15 +1964,13 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [authCaptchaRequired, setAuthCaptchaRequired] = useState(false);
   const [resetCaptchaRequired, setResetCaptchaRequired] = useState(false);
-  const [authFailureCount, setAuthFailureCount] = useState(0);
   const demoFallback = shouldUseDemoFallbackBrowser();
   const supabaseEnabled = !demoFallback;
   const [checkingSession, setCheckingSession] = useState(supabaseEnabled);
   const hcaptchaSiteKey = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY;
   const captchaConfigured = supabaseEnabled && Boolean(hcaptchaSiteKey);
-  const authCaptchaVisible = captchaConfigured && mode !== "forgot" && (authCaptchaRequired || authFailureCount >= 2);
+  const authCaptchaVisible = captchaConfigured && mode !== "forgot";
   const resetCaptchaVisible = captchaConfigured && mode === "forgot" && resetCaptchaRequired;
   const captchaVisible = authCaptchaVisible || resetCaptchaVisible;
   const loginPanelTitle = mode === "forgot" ? "Reset password akun" : "Masuk ke Valuintcorp ERP";
@@ -2170,9 +2168,6 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
         throw new Error("Login berhasil, tapi sesi server belum tersimpan. Coba klik Masuk sekali lagi.");
       }
 
-      setAuthFailureCount(0);
-      setAuthCaptchaRequired(false);
-
       const bootstrap = await tryBootstrapDemoAccount();
 
       if (bootstrap?.demoAccount && bootstrap.businessId) {
@@ -2200,11 +2195,6 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
       redirecting = true;
       router.replace(destinationAfterLogin(requestedNext, false));
     } catch (caught) {
-      setAuthFailureCount((current) => {
-        const next = current + 1;
-        if (next >= 2) setAuthCaptchaRequired(true);
-        return next;
-      });
       setError(caught instanceof Error ? caught.message : "Auth gagal diproses.");
     } finally {
       if (captchaVisible) {
