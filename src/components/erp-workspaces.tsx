@@ -59,6 +59,21 @@ function currentLoginNextPath() {
   return new URLSearchParams(window.location.search).get("next");
 }
 
+type LoginMode = "login" | "register" | "forgot";
+
+type LoginWorkspaceProps = {
+  initialMode?: LoginMode;
+  loginNextPath?: string | null;
+};
+
+function loginModeHref(mode: LoginMode, nextPath: string | null) {
+  const params = new URLSearchParams();
+  if (nextPath) params.set("next", nextPath);
+  if (mode !== "login") params.set("mode", mode);
+  const query = params.toString();
+  return `/login${query ? `?${query}` : ""}`;
+}
+
 function waitForNextPaint() {
   if (typeof window === "undefined") return Promise.resolve();
   return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -1941,10 +1956,10 @@ export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: 
   );
 }
 
-export function LoginWorkspace() {
+export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: LoginWorkspaceProps = {}) {
   const router = useRouter();
   const captchaRef = useRef<HCaptchaInstance | null>(null);
-  const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
+  const [mode, setMode] = useState<LoginMode>(initialMode);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -2061,13 +2076,17 @@ export function LoginWorkspace() {
     };
   }, [router, supabaseEnabled]);
 
-  function switchAuthMode(nextMode: "login" | "register" | "forgot") {
+  function switchAuthMode(nextMode: LoginMode) {
     if (pending) return;
     setMode(nextMode);
     setError(null);
     setSuccess(null);
     setCaptchaToken(null);
     captchaRef.current?.resetCaptcha();
+
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", loginModeHref(nextMode, currentLoginNextPath()));
+    }
   }
 
   async function submitAuth(formData: FormData) {
@@ -2268,22 +2287,28 @@ export function LoginWorkspace() {
         </a>
         <Panel title="Masuk ke Valuintcorp ERP" description="Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.">
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => switchAuthMode("login")}
-              disabled={pending}
-              className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
+            <a
+              href={loginModeHref("login", loginNextPath)}
+              onClick={(event) => {
+                event.preventDefault();
+                switchAuthMode("login");
+              }}
+              aria-current={mode === "login" ? "page" : undefined}
+              className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
             >
               Login
-            </button>
-            <button
-              type="button"
-              onClick={() => switchAuthMode("register")}
-              disabled={pending}
-              className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "px-3 py-2 text-sm text-slate-600"}
+            </a>
+            <a
+              href={loginModeHref("register", loginNextPath)}
+              onClick={(event) => {
+                event.preventDefault();
+                switchAuthMode("register");
+              }}
+              aria-current={mode === "register" ? "page" : undefined}
+              className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
             >
               Register
-            </button>
+            </a>
           </div>
           {mode === "forgot" ? (
             <form
@@ -2326,14 +2351,16 @@ export function LoginWorkspace() {
                   "Kirim instruksi reset"
                 )}
               </ActionButton>
-              <button
-                type="button"
-                onClick={() => switchAuthMode("login")}
-                disabled={pending}
-                className="w-full rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50"
+              <a
+                href={loginModeHref("login", loginNextPath)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  switchAuthMode("login");
+                }}
+                className="block w-full rounded-lg px-3 py-2 text-center text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
               >
                 Kembali ke login
-              </button>
+              </a>
             </form>
           ) : (
             <form
@@ -2361,14 +2388,16 @@ export function LoginWorkspace() {
                   </span>
                 </label>
                 {mode === "login" ? (
-                  <button
-                    type="button"
-                    onClick={() => switchAuthMode("forgot")}
-                    disabled={pending}
-                    className="self-end rounded-lg px-2 py-1 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                  <a
+                    href={loginModeHref("forgot", loginNextPath)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      switchAuthMode("forgot");
+                    }}
+                    className="self-end rounded-lg px-2 py-1 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
                   >
                     Lupa password?
-                  </button>
+                  </a>
                 ) : null}
               </div>
               {captchaVisible ? (

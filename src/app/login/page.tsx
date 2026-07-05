@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 type LoginPageProps = {
   searchParams: Promise<{
+    mode?: string | string[];
     next?: string | string[];
   }>;
 };
@@ -16,12 +17,18 @@ function firstSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function loginMode(value: string | string[] | undefined) {
+  const mode = firstSearchParam(value);
+  return mode === "register" || mode === "forgot" ? mode : "login";
+}
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const params = await searchParams;
+  const nextPath = firstSearchParam(params.next);
   const accessToken = await getServerAccessToken();
 
   if (accessToken) {
-    const [{ next }, context] = await Promise.all([searchParams, getServerWorkspaceContext()]);
-    const nextPath = firstSearchParam(next);
+    const context = await getServerWorkspaceContext();
 
     if (context) {
       const permissions = context.permissions ?? permissionsForRole(context.role);
@@ -36,5 +43,5 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     }
   }
 
-  return <LoginWorkspace />;
+  return <LoginWorkspace initialMode={loginMode(params.mode)} loginNextPath={nextPath ?? null} />;
 }
