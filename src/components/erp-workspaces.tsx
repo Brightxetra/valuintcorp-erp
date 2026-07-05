@@ -1964,14 +1964,22 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [authCaptchaRequired, setAuthCaptchaRequired] = useState(false);
+  const [resetCaptchaRequired, setResetCaptchaRequired] = useState(false);
   const [authFailureCount, setAuthFailureCount] = useState(0);
   const demoFallback = shouldUseDemoFallbackBrowser();
   const supabaseEnabled = !demoFallback;
   const [checkingSession, setCheckingSession] = useState(supabaseEnabled);
   const hcaptchaSiteKey = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY;
   const captchaConfigured = supabaseEnabled && Boolean(hcaptchaSiteKey);
-  const captchaVisible = captchaConfigured && (captchaRequired || authFailureCount >= 2);
+  const authCaptchaVisible = captchaConfigured && mode !== "forgot" && (authCaptchaRequired || authFailureCount >= 2);
+  const resetCaptchaVisible = captchaConfigured && mode === "forgot" && resetCaptchaRequired;
+  const captchaVisible = authCaptchaVisible || resetCaptchaVisible;
+  const loginPanelTitle = mode === "forgot" ? "Reset password akun" : "Masuk ke Valuintcorp ERP";
+  const loginPanelDescription =
+    mode === "forgot"
+      ? "Masukkan email akun untuk menerima instruksi reset password."
+      : "Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.";
 
   useEffect(() => {
     let cancelled = false;
@@ -2163,7 +2171,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
       }
 
       setAuthFailureCount(0);
-      setCaptchaRequired(false);
+      setAuthCaptchaRequired(false);
 
       const bootstrap = await tryBootstrapDemoAccount();
 
@@ -2194,7 +2202,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
     } catch (caught) {
       setAuthFailureCount((current) => {
         const next = current + 1;
-        if (next >= 2) setCaptchaRequired(true);
+        if (next >= 2) setAuthCaptchaRequired(true);
         return next;
       });
       setError(caught instanceof Error ? caught.message : "Auth gagal diproses.");
@@ -2241,9 +2249,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
       });
       const body = await response.json().catch(() => ({} as Record<string, unknown>));
 
-      if (body.captchaRequired) {
-        setCaptchaRequired(true);
-      }
+      setResetCaptchaRequired(Boolean(body.captchaRequired));
 
       setSuccess(
         typeof body.message === "string"
@@ -2285,31 +2291,33 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
           <ArrowLeft className="size-4" aria-hidden />
           Kembali ke website
         </a>
-        <Panel title="Masuk ke Valuintcorp ERP" description="Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.">
-          <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-            <a
-              href={loginModeHref("login", loginNextPath)}
-              onClick={(event) => {
-                event.preventDefault();
-                switchAuthMode("login");
-              }}
-              aria-current={mode === "login" ? "page" : undefined}
-              className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
-            >
-              Login
-            </a>
-            <a
-              href={loginModeHref("register", loginNextPath)}
-              onClick={(event) => {
-                event.preventDefault();
-                switchAuthMode("register");
-              }}
-              aria-current={mode === "register" ? "page" : undefined}
-              className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
-            >
-              Register
-            </a>
-          </div>
+        <Panel title={loginPanelTitle} description={loginPanelDescription}>
+          {mode === "forgot" ? null : (
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
+              <a
+                href={loginModeHref("login", loginNextPath)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  switchAuthMode("login");
+                }}
+                aria-current={mode === "login" ? "page" : undefined}
+                className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
+              >
+                Login
+              </a>
+              <a
+                href={loginModeHref("register", loginNextPath)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  switchAuthMode("register");
+                }}
+                aria-current={mode === "register" ? "page" : undefined}
+                className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
+              >
+                Register
+              </a>
+            </div>
+          )}
           {mode === "forgot" ? (
             <form
               onSubmit={(event) => {
