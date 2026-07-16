@@ -9,8 +9,10 @@ import {
   serverRefreshTokenCookie,
   serverSessionIdCookie,
   serverSessionRememberCookie,
+  isSupabaseEnvConfigured,
   shouldUseDemoFallback,
 } from "@/lib/auth/runtime";
+import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
 import { getLoginSessionStatus, revokeLoginSessionByToken, upsertLoginSession } from "@/lib/auth/login-sessions";
 import {
@@ -96,6 +98,10 @@ function permissionsForSessionMembership(membership: {
 export async function POST(request: Request) {
   if (shouldUseDemoFallback()) {
     return NextResponse.json({ demoMode: true }, { headers: { "cache-control": "no-store" } });
+  }
+
+  if (!isSupabaseEnvConfigured()) {
+    return authenticationConfigurationUnavailableResponse();
   }
 
   const payload = await request.json().catch(() => null);

@@ -1,18 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isApiResponse, requireApiPermission } from "@/lib/auth/api";
 
-const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const originalAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
 afterEach(() => {
-  process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalAnon;
+  vi.unstubAllEnvs();
 });
 
 describe("api permission guard", () => {
-  it("allows demo owner requests when Supabase is not configured", async () => {
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  it("allows demo owner requests only when demo mode is explicit", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("VERCEL_ENV", "preview");
 
     const context = await requireApiPermission(new Request("http://localhost/api"), "reports:export");
 
@@ -24,8 +22,10 @@ describe("api permission guard", () => {
   });
 
   it("denies demo staff report exports", async () => {
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("VERCEL_ENV", "preview");
 
     const response = await requireApiPermission(
       new Request("http://localhost/api", { headers: { "x-demo-role": "staff" } }),
@@ -35,6 +35,23 @@ describe("api permission guard", () => {
     expect(isApiResponse(response)).toBe(true);
     if (isApiResponse(response)) {
       expect(response.status).toBe(403);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+  });
+
+  it("returns service unavailable instead of a synthetic owner when config is missing", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
+
+    const response = await requireApiPermission(
+      new Request("http://localhost/api", { headers: { "x-demo-role": "owner" } }),
+      "reports:export",
+    );
+
+    expect(isApiResponse(response)).toBe(true);
+    if (isApiResponse(response)) {
+      expect(response.status).toBe(503);
       expect(response.headers.get("cache-control")).toBe("no-store");
     }
   });

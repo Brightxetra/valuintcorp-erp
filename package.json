@@ -12,6 +12,8 @@
     "benchmark:raw": "node scripts/benchmark-raw-transactions.mjs",
     "seed:demo-accounts": "node scripts/seed-demo-accounts.mjs",
     "verify:deploy": "node scripts/verify-deploy.mjs",
+    "verify:deploy:live": "node scripts/verify-deploy.mjs --live",
+    "verify:deploy:local": "node scripts/verify-deploy.mjs --profile=local",
     "test:watch": "vitest"
   },
   "dependencies": {

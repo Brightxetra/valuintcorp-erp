@@ -2,6 +2,42 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
+const args = process.argv.slice(2);
+const allowedArguments = new Set(["--live", "--profile=production", "--profile=local"]);
+const unknownArguments = args.filter((argument) => !allowedArguments.has(argument));
+const profileArguments = args.filter((argument) => argument.startsWith("--profile="));
+
+if (unknownArguments.length > 0 || profileArguments.length > 1) {
+  const details = unknownArguments.length > 0 ? unknownArguments.join(", ") : "duplicate --profile arguments";
+  console.error(`Invalid deploy verification arguments: ${details}`);
+  process.exit(2);
+}
+
+const profileArgument = profileArguments[0];
+const profile = profileArgument?.slice("--profile=".length) || "production";
+
+if (!new Set(["production", "local"]).has(profile)) {
+  console.error(`Unknown deploy verification profile: ${profile}`);
+  process.exit(2);
+}
+
+function environmentFlagEnabled(value) {
+  const normalized = value?.trim().toLowerCase();
+  return Boolean(normalized && !["0", "false", "no", "off"].includes(normalized));
+}
+
+const localProfileBlocked =
+  environmentFlagEnabled(process.env.CI) ||
+  process.env.VERCEL === "1" ||
+  Boolean(process.env.VERCEL_ENV) ||
+  process.env.VALUINTCORP_DEPLOYMENT_ENV === "production" ||
+  process.env.NODE_ENV === "production";
+
+if (profile === "local" && localProfileBlocked) {
+  console.error("The local deploy verification profile cannot run in CI or a production runtime.");
+  process.exit(2);
+}
+
 function loadEnvFile(fileName) {
   const filePath = join(process.cwd(), fileName);
   if (!existsSync(filePath)) return;
@@ -18,30 +54,90 @@ function loadEnvFile(fileName) {
   }
 }
 
-loadEnvFile(".env.local");
-loadEnvFile(".env");
+if (profile === "local") {
+  loadEnvFile(".env.local");
+  loadEnvFile(".env");
+}
 
-const strict = process.env.VERIFY_DEPLOY_STRICT === "true";
-const liveCheck = process.env.VERIFY_DEPLOY_LIVE === "true";
+const liveCheck = args.includes("--live") || process.env.VERIFY_DEPLOY_LIVE === "true";
 const issues = [];
 const warnings = [];
 
 function requireEnv(name) {
-  if (!process.env[name]) issues.push(`Missing env: ${name}`);
+  if (process.env[name]?.trim()) return;
+
+  const message = `Missing env: ${name}`;
+  if (profile === "production") {
+    issues.push(message);
+  } else {
+    warnings.push(message);
+  }
 }
 
 requireEnv("NEXT_PUBLIC_SUPABASE_URL");
 requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+requireEnv("NEXT_PUBLIC_HCAPTCHA_SITE_KEY");
 requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 requireEnv("SUPABASE_ERP_ATTACHMENTS_BUCKET");
 requireEnv("CRON_SECRET");
 
-if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
-  issues.push("NEXT_PUBLIC_DEMO_MODE must be false for production deploy.");
+if (profile === "production" && process.env.NEXT_PUBLIC_DEMO_MODE !== "false") {
+  issues.push("NEXT_PUBLIC_DEMO_MODE must be explicitly set to false for production deploy.");
+} else if (
+  profile === "local" &&
+  process.env.NEXT_PUBLIC_DEMO_MODE !== undefined &&
+  !["true", "false"].includes(process.env.NEXT_PUBLIC_DEMO_MODE)
+) {
+  issues.push("NEXT_PUBLIC_DEMO_MODE must be either true or false.");
+} else if (
+  profile === "local" &&
+  process.env.NEXT_PUBLIC_DEMO_MODE !== "true" &&
+  (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+) {
+  warnings.push("Local runtime will fail closed unless Supabase is configured or NEXT_PUBLIC_DEMO_MODE=true.");
 }
 
-if (process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED !== "true") {
+if (
+  profile === "production" &&
+  (process.env.NEXT_PUBLIC_VALUINTCORP_E2E_MODE === "true" ||
+    process.env.VALUINTCORP_E2E_DEMO_MODE === "true")
+) {
+  issues.push("E2E runtime markers must not be enabled for production deploy.");
+}
+
+if (
+  process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED !== undefined &&
+  !["true", "false"].includes(process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED)
+) {
+  issues.push("NEXT_PUBLIC_DEMO_LOGIN_ENABLED must be either true or false.");
+} else if (process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED !== "true") {
   warnings.push("NEXT_PUBLIC_DEMO_LOGIN_ENABLED is not true; demo account bootstrap will be disabled.");
+}
+
+if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  try {
+    const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL);
+    if (url.protocol !== "https:") {
+      issues.push("NEXT_PUBLIC_SUPABASE_URL must use HTTPS.");
+    }
+  } catch {
+    issues.push("NEXT_PUBLIC_SUPABASE_URL must be a valid URL.");
+  }
+}
+
+if (
+  process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET &&
+  !/^[a-z0-9][a-z0-9._-]*$/i.test(process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET)
+) {
+  issues.push("SUPABASE_ERP_ATTACHMENTS_BUCKET has an invalid name.");
+}
+
+const hostedProduction =
+  process.env.VERCEL_ENV === "production" ||
+  process.env.VALUINTCORP_DEPLOYMENT_ENV === "production";
+
+if (hostedProduction && !liveCheck) {
+  issues.push("Hosted production verification requires --live or VERIFY_DEPLOY_LIVE=true.");
 }
 
 const requiredMigrations = [
@@ -110,8 +206,6 @@ requireFileSnippet("supabase/migrations/018_lockdown_security_definer_rpcs.sql",
 requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "create table if not exists public.branch_expenses");
 requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "create or replace function public.post_pos_sale_internal");
 requireFileSnippet("supabase/migrations/019_branch_pos_and_member_access.sql", "create or replace function public.post_branch_expense_internal");
-requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "grant select, insert, update, delete on all tables in schema public to authenticated, service_role");
-requireFileSnippet("supabase/migrations/020_api_role_table_privileges.sql", "alter default privileges in schema public");
 requireFileSnippet("supabase/migrations/021_user_login_sessions.sql", "create table if not exists public.user_login_sessions");
 requireFileSnippet("supabase/migrations/021_user_login_sessions.sql", "session_token_hash text not null unique");
 requireFileSnippet("supabase/migrations/022_employee_profiles_and_bpjs_policy.sql", "create table if not exists public.bpjs_policies");
@@ -139,7 +233,7 @@ if (existsSync(join(process.cwd(), "vercel.json"))) {
 
 async function runLiveSchemaCheck() {
   if (!liveCheck) {
-    warnings.push("Live Supabase schema check skipped. Set VERIFY_DEPLOY_LIVE=true to verify production tables.");
+    warnings.push("Live Supabase schema check skipped. Use --live to verify production tables.");
     return;
   }
 
@@ -148,8 +242,20 @@ async function runLiveSchemaCheck() {
     return;
   }
 
+  async function fetchWithTimeout(input, init = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
+    global: { fetch: fetchWithTimeout },
   });
   const requiredTables = [
     "businesses",
@@ -165,18 +271,23 @@ async function runLiveSchemaCheck() {
     "attachments",
     "branch_expenses",
     "user_login_sessions",
+    "auth_security_events",
   ];
 
-  for (const table of requiredTables) {
-    const { error } = await supabase.from(table).select("id", { head: true, count: "exact" }).limit(1);
+  const tableIssues = await Promise.all(
+    requiredTables.map(async (table) => {
+      const { error } = await supabase.from(table).select("id", { head: true }).limit(1);
+      return error ? `Live Supabase table check failed for public.${table}: ${error.message}` : null;
+    }),
+  );
 
-    if (error) {
-      issues.push(`Live Supabase table check failed for public.${table}: ${error.message}`);
-    }
-  }
+  issues.push(...tableIssues.filter(Boolean));
+  warnings.push("Live check currently proves table reachability only; migration history, effective grants, RLS, RPC, triggers, Storage policies, and project identity still require the planned deployment-health contract.");
 }
 
 await runLiveSchemaCheck();
+
+console.log(`Deploy verification profile: ${profile}. Live check: ${liveCheck ? "enabled" : "disabled"}.`);
 
 if (issues.length === 0) {
   console.log("Deploy verification passed.");
@@ -190,6 +301,6 @@ if (warnings.length > 0) {
   for (const warning of warnings) console.log(`- ${warning}`);
 }
 
-if (strict && issues.length > 0) {
-  process.exit(1);
+if (issues.length > 0) {
+  process.exitCode = 1;
 }

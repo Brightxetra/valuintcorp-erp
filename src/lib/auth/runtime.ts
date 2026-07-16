@@ -1,4 +1,8 @@
 import { hasSupabasePublicConfig } from "@/lib/supabase/config";
+import {
+  isProductionBuildE2ETestRuntime,
+  isProductionDeployment,
+} from "@/lib/config/deployment-environment";
 
 export const serverAccessTokenCookie = "valuintcorp.sb-access-token";
 export const serverRefreshTokenCookie = "valuintcorp.sb-refresh-token";
@@ -25,5 +29,10 @@ export function isExplicitDemoMode() {
 }
 
 export function shouldUseDemoFallback() {
-  return !isSupabaseEnvConfigured() || isExplicitDemoMode();
+  if (!isExplicitDemoMode()) return false;
+  if (process.env.NODE_ENV === "production") {
+    return isProductionBuildE2ETestRuntime();
+  }
+
+  return !isProductionDeployment();
 }

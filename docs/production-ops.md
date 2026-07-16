@@ -2,15 +2,16 @@
 
 ## Deployment
 
-- Apply migrations `001` through `021` in order on a clean Supabase project before enabling production traffic. Migrations `019` and `020` are required before enabling branch POS or per-member menu access; migration `021` is required for idle timeout, remembered sessions, and Settings > Security device logout.
-- Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_DEMO_MODE=false`, `NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true`, `SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments`, and `CRON_SECRET`.
+- Apply migrations `001` through `028` in order on a clean Supabase project before enabling production traffic. Verify the live migration history separately; repository files are not proof that production is current.
+- Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_HCAPTCHA_SITE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_DEMO_MODE=false`, `NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true`, `SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments`, and `CRON_SECRET`. Non-Vercel production runtimes must also set `VALUINTCORP_DEPLOYMENT_ENV=production`.
+- Never configure `NEXT_PUBLIC_VALUINTCORP_E2E_MODE` or `VALUINTCORP_E2E_DEMO_MODE` in a deployed environment. They belong only to the Playwright-managed production-build test server, and strict deploy verification rejects them.
 - Enable Supabase Auth leaked password protection before accepting production sign-ups.
 - Confirm `/login` creates a Supabase browser session and `/api/auth/session` writes the server session cookie.
 - Confirm `src/proxy.ts` redirects protected routes to `/login?next=...` when the cookie is missing.
 - Create a tenant from `/onboarding`, apply an industry template, create one location, and verify `/api/erp/workspace` does not include unbounded raw transaction rows.
 - Run `npm run seed:demo-accounts`, then verify a demo account login creates a `demo_sandboxes` tenant and normal user login still uses production onboarding.
 - Confirm Vercel Cron calls `/api/ops/demo-reset` with `CRON_SECRET` and only demo sandbox tenants are reset.
-- Run `npm run verify:deploy`; use `VERIFY_DEPLOY_STRICT=true npm run verify:deploy` in CI/deploy gates.
+- Run `npm run verify:deploy` for strict static validation and `npm run verify:deploy:live` before production promotion. The current live command is only a bounded table-reachability smoke check; migration history, grants/RLS, RPCs, triggers, Storage policies, and project identity require the planned deployment-health contract before release approval. Use `npm run verify:deploy:local` only for local diagnostics; it is rejected in CI and production runtimes.
 
 ## Backup And Restore
 

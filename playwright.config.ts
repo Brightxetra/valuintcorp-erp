@@ -24,7 +24,11 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           NEXT_PUBLIC_DEMO_MODE: "true",
+          NEXT_PUBLIC_VALUINTCORP_E2E_MODE: "true",
           NEXT_PUBLIC_DEMO_LOGIN_ENABLED: "false",
+          VALUINTCORP_DEPLOYMENT_ENV: "test",
+          VALUINTCORP_E2E_DEMO_MODE: "true",
+          VERCEL_ENV: "",
         },
       },
   projects: [

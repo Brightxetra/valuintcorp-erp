@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
@@ -27,6 +28,10 @@ function createTokenSupabaseClient(authorization: string) {
 export async function POST(request: Request) {
   if (shouldUseDemoFallback()) {
     return json({ runtimeMode: "demo_fallback", demoAccount: false, businessId: null });
+  }
+
+  if (!isSupabaseEnvConfigured()) {
+    return authenticationConfigurationUnavailableResponse();
   }
 
   if (!demoLoginEnabled()) {

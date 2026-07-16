@@ -44,7 +44,7 @@ npm run benchmark:raw -- 100000
 
 ## Supabase
 
-Copy `.env.example` to `.env.local` for local work. If Supabase variables are empty, API routes run in explicit demo mode and use the `x-demo-role` request header for permission tests.
+Copy `.env.example` to `.env.local` for local development. Demo fallback is opt-in through `NEXT_PUBLIC_DEMO_MODE=true`; missing Supabase variables alone fail closed and never create a synthetic demo owner. A production runtime ignores this flag. The Playwright production-build harness is the sole exception and requires both its public browser marker and a private server-only E2E marker. Hosted/public demos use normal Supabase Auth accounts.
 
 Apply migrations in order:
 
@@ -76,6 +76,7 @@ supabase/migrations/024_supabase_advisor_rls_and_pos_trigger_hardening.sql
 supabase/migrations/025_industry_catalog_recipes_mrp.sql
 supabase/migrations/026_fix_document_sequence_key_ambiguity.sql
 supabase/migrations/027_prevent_negative_inventory_stock.sql
+supabase/migrations/028_auth_security_events_and_counterparty_tax_ids.sql
 ```
 
 Required env vars for Supabase-backed API authorization:
@@ -133,5 +134,7 @@ Run deploy checks before hosting:
 
 ```bash
 npm run verify:deploy
-VERIFY_DEPLOY_STRICT=true npm run verify:deploy
+npm run verify:deploy:live
 ```
+
+`verify:deploy` is strict by default and reads only the process environment. `verify:deploy:live` also performs a bounded table-reachability smoke check against the configured Supabase project. It does not yet prove migration history, effective grants/RLS, RPCs, triggers, Storage policies, or project identity; those remain a separate release blocker until the deployment-health contract is implemented. For local diagnostics that may load `.env.local`, use `npm run verify:deploy:local`; that profile is rejected in CI and production runtimes.
