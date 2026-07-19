@@ -1,42 +1,104 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isExplicitDemoMode, isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
 
-const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const originalAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const originalDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE;
-
 afterEach(() => {
-  process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalAnon;
-  process.env.NEXT_PUBLIC_DEMO_MODE = originalDemoMode;
+  vi.unstubAllEnvs();
 });
 
 describe("runtime demo detection", () => {
-  it("uses demo fallback when Supabase env is missing", () => {
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    process.env.NEXT_PUBLIC_DEMO_MODE = "false";
+  it("fails closed when Supabase env is missing and demo is not explicit", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
 
     expect(isSupabaseEnvConfigured()).toBe(false);
-    expect(shouldUseDemoFallback()).toBe(true);
+    expect(shouldUseDemoFallback()).toBe(false);
   });
 
   it("allows production mode when Supabase env is configured and explicit demo is false", () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co\u200b";
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon\n";
-    process.env.NEXT_PUBLIC_DEMO_MODE = "false";
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co\u200b");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "sb_publishable_runtime\n");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
 
     expect(isSupabaseEnvConfigured()).toBe(true);
     expect(isExplicitDemoMode()).toBe(false);
     expect(shouldUseDemoFallback()).toBe(false);
   });
 
-  it("forces demo fallback when explicit demo mode is true", () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
-    process.env.NEXT_PUBLIC_DEMO_MODE = "true";
+  it("allows explicit demo fallback outside a production deployment", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VERCEL_ENV", "preview");
 
     expect(isExplicitDemoMode()).toBe(true);
     expect(shouldUseDemoFallback()).toBe(true);
+  });
+
+  it("rejects explicit demo fallback in a production deployment", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "sb_publishable_runtime");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "production");
+
+    expect(isExplicitDemoMode()).toBe(true);
+    expect(shouldUseDemoFallback()).toBe(false);
+  });
+
+  it("always fails closed for self-hosted production", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("VALUINTCORP_DEPLOYMENT_ENV", "");
+
+    expect(shouldUseDemoFallback()).toBe(false);
+  });
+
+  it("allows a production-built E2E runtime only with matching public and private markers", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NEXT_PUBLIC_VALUINTCORP_E2E_MODE", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("VALUINTCORP_DEPLOYMENT_ENV", "test");
+    vi.stubEnv("VALUINTCORP_E2E_DEMO_MODE", "true");
+
+    expect(shouldUseDemoFallback()).toBe(false);
+
+    vi.stubEnv("NEXT_PUBLIC_VALUINTCORP_E2E_MODE", "true");
+    expect(shouldUseDemoFallback()).toBe(true);
+
+    vi.stubEnv("VALUINTCORP_E2E_DEMO_MODE", "false");
+    expect(shouldUseDemoFallback()).toBe(false);
+  });
+
+  it("never accepts the E2E marker on Vercel", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("VALUINTCORP_DEPLOYMENT_ENV", "test");
+    vi.stubEnv("VALUINTCORP_E2E_DEMO_MODE", "true");
+
+    expect(shouldUseDemoFallback()).toBe(false);
+  });
+
+  it("rejects demo fallback in a production-built preview runtime", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("VERCEL_ENV", "preview");
+
+    expect(shouldUseDemoFallback()).toBe(false);
+  });
+
+  it("does not treat a partial Supabase config as demo authorization", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
+
+    expect(isSupabaseEnvConfigured()).toBe(false);
+    expect(shouldUseDemoFallback()).toBe(false);
   });
 });

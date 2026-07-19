@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { signOutMock } = vi.hoisted(() => ({
+const { hasConfigMock, signOutMock } = vi.hoisted(() => ({
+  hasConfigMock: vi.fn(),
   signOutMock: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/config", () => ({
-  hasSupabasePublicConfig: () => true,
+  hasSupabasePublicConfig: hasConfigMock,
 }));
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -16,12 +17,24 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
-import { buildBrowserCookie, signOutLocalBrowserSession } from "@/lib/erp/client-api";
+import {
+  buildBrowserCookie,
+  isSupabaseBrowserEnabled,
+  shouldUseDemoFallbackBrowser,
+  signOutLocalBrowserSession,
+} from "@/lib/erp/client-api";
 
 describe("ERP client API auth helpers", () => {
   beforeEach(() => {
+    hasConfigMock.mockReset();
+    hasConfigMock.mockReturnValue(true);
     signOutMock.mockReset();
     signOutMock.mockResolvedValue({ error: null });
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("builds secure browser cookies for session cleanup", () => {
@@ -40,5 +53,35 @@ describe("ERP client API auth helpers", () => {
     await signOutLocalBrowserSession();
 
     expect(signOutMock).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("does not enable browser demo fallback when Supabase config is missing", () => {
+    hasConfigMock.mockReturnValue(false);
+
+    expect(isSupabaseBrowserEnabled()).toBe(false);
+    expect(shouldUseDemoFallbackBrowser()).toBe(false);
+  });
+
+  it("enables browser demo fallback only through the explicit flag", () => {
+    hasConfigMock.mockReturnValue(false);
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NODE_ENV", "test");
+
+    expect(shouldUseDemoFallbackBrowser()).toBe(true);
+  });
+
+  it("fails closed in a production browser build even when demo is explicit", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+
+    expect(shouldUseDemoFallbackBrowser()).toBe(false);
+  });
+
+  it("recognizes the browser half of the production-built E2E harness", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    vi.stubEnv("NEXT_PUBLIC_VALUINTCORP_E2E_MODE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+
+    expect(shouldUseDemoFallbackBrowser()).toBe(true);
   });
 });

@@ -47,6 +47,7 @@ import {
   erpApiDownload,
   erpApiFetch,
   clearServerSession,
+  isSupabaseBrowserEnabled,
   signOutLocalBrowserSession,
   shouldUseDemoFallbackBrowser,
   syncServerSession,
@@ -182,7 +183,7 @@ export function DashboardWorkspace({ initialWorkspace }: { initialWorkspace: Erp
       {loading || error || demoMode ? (
         <WorkspaceFeedback
           error={error}
-          success={loading ? "Memuat workspace production..." : demoMode ? "Demo fallback aktif. Isi Supabase env untuk mode produksi." : null}
+          success={loading ? "Memuat workspace production..." : demoMode ? "Demo fallback eksplisit aktif. Data ini bukan production." : null}
         />
       ) : null}
 
@@ -1967,7 +1968,9 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [resetCaptchaRequired, setResetCaptchaRequired] = useState(false);
   const demoFallback = shouldUseDemoFallbackBrowser();
-  const supabaseEnabled = !demoFallback;
+  const supabaseConfigured = isSupabaseBrowserEnabled();
+  const runtimeMisconfigured = !demoFallback && !supabaseConfigured;
+  const supabaseEnabled = !demoFallback && supabaseConfigured;
   const [checkingSession, setCheckingSession] = useState(supabaseEnabled);
   const hcaptchaSiteKey = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY;
   const captchaConfigured = supabaseEnabled && Boolean(hcaptchaSiteKey);
@@ -2111,7 +2114,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
     await waitForNextPaint();
 
     if (demoFallback) {
-      setSuccess("Demo mode aktif. Supabase env belum dikonfigurasi.");
+      setSuccess("Demo fallback lokal aktif.");
       redirecting = true;
       await waitForMinimumLoadingFeedback();
       router.replace(sanitizeLoginNextPath(currentLoginNextPath()));
@@ -2260,6 +2263,25 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
     }
   }
 
+  if (runtimeMisconfigured) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-md items-center overflow-x-clip px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+        <div className="w-full rounded-2xl border border-red-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-600" aria-hidden />
+            <div>
+              <p className="font-semibold text-slate-950">Layanan autentikasi belum tersedia</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Konfigurasi layanan belum lengkap. Tidak ada mode demo otomatis; hubungi administrator
+                sistem dan coba kembali setelah deployment diperbaiki.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (checkingSession) {
     return (
       <div className="mx-auto flex min-h-screen max-w-md items-center overflow-x-clip px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
@@ -2285,28 +2307,24 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
         <Panel title={loginPanelTitle} description={loginPanelDescription}>
           {mode === "forgot" ? null : (
             <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-              <a
-                href={loginModeHref("login", loginNextPath)}
-                onClick={(event) => {
-                  event.preventDefault();
-                  switchAuthMode("login");
-                }}
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => switchAuthMode("login")}
                 aria-current={mode === "login" ? "page" : undefined}
                 className={mode === "login" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
               >
                 Login
-              </a>
-              <a
-                href={loginModeHref("register", loginNextPath)}
-                onClick={(event) => {
-                  event.preventDefault();
-                  switchAuthMode("register");
-                }}
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => switchAuthMode("register")}
                 aria-current={mode === "register" ? "page" : undefined}
                 className={mode === "register" ? "rounded-md bg-white px-3 py-2 text-center text-sm font-medium shadow-sm" : "px-3 py-2 text-center text-sm text-slate-600"}
               >
                 Register
-              </a>
+              </button>
             </div>
           )}
           {mode === "forgot" ? (

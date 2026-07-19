@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 
@@ -23,6 +24,10 @@ export async function GET(request: Request) {
       demoAccount: false,
       businessId: null,
     });
+  }
+
+  if (!isSupabaseEnvConfigured()) {
+    return authenticationConfigurationUnavailableResponse();
   }
 
   const authorization = request.headers.get("authorization");

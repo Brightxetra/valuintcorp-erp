@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { permissionsForMember, permissionsForRole, type Permission } from "@/lib/security/permissions";
 import type { BusinessRole } from "@/lib/domain/types";
 import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { validateRequestSession } from "@/lib/auth/session-guard";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
@@ -91,6 +92,10 @@ export async function requireApiPermission(
     return { ...demoContext, role, permissions: permissionsForRole(role) };
   }
 
+  if (!isSupabaseEnvConfigured()) {
+    return authenticationConfigurationUnavailableResponse();
+  }
+
   const sessionGuard = await validateRequestSession(request);
 
   if (!sessionGuard.ok) {
@@ -176,6 +181,10 @@ export async function requireAuthenticatedUser(
       userEmail: "demo@valuintcorp.test",
       userName: "Demo Owner",
     };
+  }
+
+  if (!isSupabaseEnvConfigured()) {
+    return authenticationConfigurationUnavailableResponse();
   }
 
   const sessionGuard = await validateRequestSession(request);

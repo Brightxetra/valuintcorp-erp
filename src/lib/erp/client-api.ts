@@ -55,7 +55,11 @@ export function isExplicitDemoModeBrowser() {
 }
 
 export function shouldUseDemoFallbackBrowser() {
-  return !isSupabaseBrowserEnabled() || isExplicitDemoModeBrowser();
+  return (
+    isExplicitDemoModeBrowser() &&
+    (process.env.NODE_ENV !== "production" ||
+      process.env.NEXT_PUBLIC_VALUINTCORP_E2E_MODE === "true")
+  );
 }
 
 function idleSessionTimeoutMs() {

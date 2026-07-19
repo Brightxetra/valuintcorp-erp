@@ -7,8 +7,10 @@ import {
   serverRefreshTokenCookie,
   serverSessionIdCookie,
   serverSessionRememberCookie,
+  isSupabaseEnvConfigured,
   shouldUseDemoFallback,
 } from "@/lib/auth/runtime";
+import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { upsertLoginSession } from "@/lib/auth/login-sessions";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
 import { validateRequestSession } from "@/lib/auth/session-guard";
@@ -44,6 +46,10 @@ function touchCookie(
 export async function POST(request: Request) {
   if (shouldUseDemoFallback()) {
     return NextResponse.json({ ok: true, demoMode: true }, { headers: { "cache-control": "no-store" } });
+  }
+
+  if (!isSupabaseEnvConfigured()) {
+    return authenticationConfigurationUnavailableResponse();
   }
 
   const guard = await validateRequestSession(request);

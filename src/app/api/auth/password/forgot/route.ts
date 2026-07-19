@@ -7,7 +7,8 @@ import {
   recordAuthSecurityEvent,
   shouldShowCaptcha,
 } from "@/lib/auth/security-events";
-import { shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { logApiWarning } from "@/lib/observability/logger";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 
@@ -67,6 +68,10 @@ export async function POST(request: Request) {
       reason: "demo_fallback",
     });
     return genericResponse();
+  }
+
+  if (!isSupabaseEnvConfigured()) {
+    return authenticationConfigurationUnavailableResponse();
   }
 
   const risk = await evaluatePasswordResetRisk(request, parsed.data.email);
