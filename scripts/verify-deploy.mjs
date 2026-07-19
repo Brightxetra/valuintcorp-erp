@@ -233,10 +233,12 @@ const requiredMigrations = [
   "supabase/migrations/026_fix_document_sequence_key_ambiguity.sql",
   "supabase/migrations/027_prevent_negative_inventory_stock.sql",
   "supabase/migrations/20260705004700_auth_security_events_and_counterparty_tax_ids.sql",
+  "supabase/migrations/20260719072824_harden_public_api_privileges.sql",
 ];
 
 const requiredFiles = [
   ...requiredMigrations,
+  "supabase/tests/public_api_privileges.test.sql",
   "src/app/api/demo/bootstrap/route.ts",
   "src/app/api/ops/demo-reset/route.ts",
   "src/app/api/erp/business-logo/signed-upload/route.ts",
@@ -287,6 +289,18 @@ requireFileSnippet("supabase/migrations/20260705004700_auth_security_events_and_
 requireFileSnippet("supabase/migrations/20260705004700_auth_security_events_and_counterparty_tax_ids.sql", "auth_security_events_email_window_idx");
 requireFileSnippet("supabase/migrations/20260705004700_auth_security_events_and_counterparty_tax_ids.sql", "revoke all on public.auth_security_events from public, anon, authenticated");
 requireFileSnippet("supabase/migrations/20260705004700_auth_security_events_and_counterparty_tax_ids.sql", "add column if not exists tax_id text");
+requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "alter default privileges for role postgres in schema public");
+requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "revoke all privileges on tables");
+requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "revoke all privileges on sequences");
+requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "revoke execute on functions");
+requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "revoke truncate, references, trigger, maintain");
+requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "revoke all privileges on table");
+requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "grant select, insert on table public.activity_events");
+requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_table_privilege");
+requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_sequence_privilege");
+requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_function_privilege");
+requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "create extension if not exists pgtap with schema extensions");
+requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "rollback;");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");
