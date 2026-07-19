@@ -44,7 +44,7 @@ npm run benchmark:raw -- 100000
 
 ## Supabase
 
-Copy `.env.example` to `.env.local` for local development. Demo fallback is opt-in through `NEXT_PUBLIC_DEMO_MODE=true`; missing Supabase variables alone fail closed and never create a synthetic demo owner. A production runtime ignores this flag. The Playwright production-build harness is the sole exception and requires both its public browser marker and a private server-only E2E marker. Hosted/public demos use normal Supabase Auth accounts.
+Copy `.env.example` to `.env.local` for local development. Demo fallback is opt-in through `NEXT_PUBLIC_DEMO_MODE=true`; missing Supabase variables alone fail closed and never create a synthetic demo owner. Production and self-hosted `NODE_ENV=production` builds/starts enforce the complete configuration because public browser variables are frozen at build time. A trusted Vercel preview (`VERCEL=1` plus `VERCEL_ENV=preview`) runs a marker/key safety gate without requiring production-only secrets. The Playwright production-build harness is the sole non-Vercel exception and requires explicit demo mode plus matching public and private E2E markers. Hosted/public demos use normal Supabase Auth accounts.
 
 Apply migrations in order:
 
@@ -84,6 +84,7 @@ Required env vars for Supabase-backed API authorization:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_PROJECT_REF=
 NEXT_PUBLIC_HCAPTCHA_SITE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments
@@ -92,7 +93,7 @@ NEXT_PUBLIC_DEMO_MODE=false
 NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true
 ```
 
-`NEXT_PUBLIC_HCAPTCHA_SITE_KEY` is the public hCaptcha site key used by the login/register form. Keep the hCaptcha secret only in Supabase Auth Attack Protection, not in this app's env vars.
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` accepts the preferred publishable key or a legacy anon key. `SUPABASE_SERVICE_ROLE_KEY` accepts a backend-only secret key or legacy service-role key and must never use a `NEXT_PUBLIC_` name. `SUPABASE_PROJECT_REF` pins privileged clients and checks to `https://<project-ref>.supabase.co` while still allowing a configured custom domain for public traffic. `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` is the public hCaptcha site key used by the login/register form. Keep the hCaptcha secret only in Supabase Auth Attack Protection, not in this app's env vars.
 
 Create a tenant from `/onboarding` after the authenticated owner signs in, or call `create_business_with_owner(legal_name, display_name, industry, owner_name, tax_id)`. Migration 005 seeds the owner role, chart of accounts, current report period, tax profile, default warehouse, and bootstrap activity. Migration 006 adds horizontal UMKM scale primitives: locations, industry templates, feature flags, transaction sources, raw transactions, settlement records, and daily summaries. Migration 007 adds pending invites, source mappings, tenant-isolated Storage policies, and attachment owner validation. Browser UI API calls attach both `Authorization: Bearer <access_token>` and `x-business-id: <business_uuid>` through the ERP provider, while `/api/auth/session` mirrors the access token into a short-lived server cookie for guarded initial renders.
 
@@ -114,8 +115,9 @@ Production readiness checklists are in `docs/production-ops.md`; pilot UAT scena
 
 Hosted/public demos should use Supabase Auth accounts, not `NEXT_PUBLIC_DEMO_MODE=true`.
 
-```bash
-npm run seed:demo-accounts
+```powershell
+$env:DEMO_ACCOUNT_PASSWORD = '<set-an-explicit-seed-only-secret>'
+npm.cmd run seed:demo-accounts
 ```
 
 Default seeded accounts:
@@ -126,7 +128,7 @@ demo.finance@valuintcorp.test
 demo.staff@valuintcorp.test
 ```
 
-Default password is `password-demo`; override with `DEMO_ACCOUNT_PASSWORD`.
+`DEMO_ACCOUNT_PASSWORD` is mandatory, has no default, and is never printed by the seed script. Store it only in the seed operator's secret environment; it is not a production runtime requirement.
 
 When a seeded demo user logs in, `/api/demo/bootstrap` creates or reuses a dedicated sandbox tenant, marks it in `demo_sandboxes`, and keeps all normal API/RLS behavior active. `/api/ops/demo-reset` resets due demo sandboxes through service-role RPC only after validating `CRON_SECRET`; `vercel.json` schedules this daily at midnight Jakarta time.
 
@@ -137,4 +139,4 @@ npm run verify:deploy
 npm run verify:deploy:live
 ```
 
-`verify:deploy` is strict by default and reads only the process environment. `verify:deploy:live` also performs a bounded table-reachability smoke check against the configured Supabase project. It does not yet prove migration history, effective grants/RLS, RPCs, triggers, Storage policies, or project identity; those remain a separate release blocker until the deployment-health contract is implemented. For local diagnostics that may load `.env.local`, use `npm run verify:deploy:local`; that profile is rejected in CI and production runtimes.
+`verify:deploy` is strict by default and reads only the process environment. `verify:deploy:live` validates the frontend API key against both the configured Supabase origin and the canonical `SUPABASE_PROJECT_REF`, then performs a bounded privileged reachability check only through the canonical project origin across identity, sales, purchasing, inventory, accounting, reporting/tax, raw-data, attachment, fixed-asset, branch, and session tables. Migration history, effective grants/RLS, RPCs, triggers, and Storage policies remain separate release gates. For local diagnostics that may load `.env.local`, use `npm run verify:deploy:local`; that profile is rejected in CI and production runtimes.

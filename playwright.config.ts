@@ -28,6 +28,7 @@ export default defineConfig({
           NEXT_PUBLIC_DEMO_LOGIN_ENABLED: "false",
           VALUINTCORP_DEPLOYMENT_ENV: "test",
           VALUINTCORP_E2E_DEMO_MODE: "true",
+          VERCEL: "",
           VERCEL_ENV: "",
         },
       },

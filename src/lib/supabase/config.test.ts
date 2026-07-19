@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   getSupabasePublicConfig,
   hasSupabasePublicConfig,
+  isSupabasePublicKey,
+  isSupabaseServiceRoleKey,
   sanitizeSupabaseEnvValue,
 } from "@/lib/supabase/config";
 
@@ -12,6 +14,10 @@ afterEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalAnon;
 });
+function legacyKey(role: string) {
+  return `header.${Buffer.from(JSON.stringify({ role })).toString("base64url")}.signature`;
+}
+
 
 describe("Supabase config", () => {
   it("removes characters that cannot be used in browser fetch headers", () => {
@@ -30,5 +36,26 @@ describe("Supabase config", () => {
       url: "https://example.supabase.co",
       anonKey: "sb_publishable__AB",
     });
+  });
+
+  it("accepts only publishable or legacy anon keys as browser configuration", () => {
+    expect(isSupabasePublicKey("sb_publishable_public-example")).toBe(true);
+    expect(isSupabasePublicKey(legacyKey("anon"))).toBe(true);
+    expect(isSupabasePublicKey("sb_secret_private-example")).toBe(false);
+    expect(isSupabasePublicKey(legacyKey("service_role"))).toBe(false);
+    expect(isSupabasePublicKey("unknown-key-format")).toBe(false);
+
+    expect(isSupabaseServiceRoleKey("sb_secret_private-example")).toBe(true);
+    expect(isSupabaseServiceRoleKey(legacyKey("service_role"))).toBe(true);
+    expect(isSupabaseServiceRoleKey("sb_publishable_public-example")).toBe(false);
+    expect(isSupabaseServiceRoleKey(legacyKey("anon"))).toBe(false);
+  });
+
+  it("fails closed instead of exposing a secret-shaped frontend key", () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_secret_private-example";
+
+    expect(hasSupabasePublicConfig()).toBe(false);
+    expect(getSupabasePublicConfig()).toBeNull();
   });
 });

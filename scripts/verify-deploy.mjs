@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createClient } from "@supabase/supabase-js";
+import {
+  assertSupabasePublicKey,
+  assertSupabaseServiceRoleKey,
+  resolveSupabaseProjectIdentity,
+  verifyLiveSupabaseSchema,
+} from "./verify-supabase-deploy.mjs";
 
 const args = process.argv.slice(2);
 const allowedArguments = new Set(["--live", "--profile=production", "--profile=local"]);
@@ -26,12 +31,33 @@ function environmentFlagEnabled(value) {
   return Boolean(normalized && !["0", "false", "no", "off"].includes(normalized));
 }
 
+function processEnvironmentValue(name) {
+  return process.env[name]?.trim() ?? "";
+}
+
+function isTrustedVercelNonProduction() {
+  const vercelEnvironment = processEnvironmentValue("VERCEL_ENV");
+  return (
+    processEnvironmentValue("VERCEL") === "1" &&
+    (vercelEnvironment === "preview" || vercelEnvironment === "development")
+  );
+}
+
+function isProductionRuntime() {
+  return (
+    processEnvironmentValue("VERCEL_ENV") === "production" ||
+    processEnvironmentValue("VALUINTCORP_DEPLOYMENT_ENV") === "production" ||
+    (processEnvironmentValue("NODE_ENV") === "production" &&
+      !isTrustedVercelNonProduction())
+  );
+}
+
 const localProfileBlocked =
   environmentFlagEnabled(process.env.CI) ||
-  process.env.VERCEL === "1" ||
-  Boolean(process.env.VERCEL_ENV) ||
-  process.env.VALUINTCORP_DEPLOYMENT_ENV === "production" ||
-  process.env.NODE_ENV === "production";
+  processEnvironmentValue("VERCEL") === "1" ||
+  Boolean(processEnvironmentValue("VERCEL_ENV")) ||
+  processEnvironmentValue("VALUINTCORP_DEPLOYMENT_ENV") === "production" ||
+  processEnvironmentValue("NODE_ENV") === "production";
 
 if (profile === "local" && localProfileBlocked) {
   console.error("The local deploy verification profile cannot run in CI or a production runtime.");
@@ -59,7 +85,8 @@ if (profile === "local") {
   loadEnvFile(".env");
 }
 
-const liveCheck = args.includes("--live") || process.env.VERIFY_DEPLOY_LIVE === "true";
+const liveCheck =
+  args.includes("--live") || processEnvironmentValue("VERIFY_DEPLOY_LIVE") === "true";
 const issues = [];
 const warnings = [];
 
@@ -77,21 +104,46 @@ function requireEnv(name) {
 requireEnv("NEXT_PUBLIC_SUPABASE_URL");
 requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 requireEnv("NEXT_PUBLIC_HCAPTCHA_SITE_KEY");
+requireEnv("SUPABASE_PROJECT_REF");
 requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 requireEnv("SUPABASE_ERP_ATTACHMENTS_BUCKET");
 requireEnv("CRON_SECRET");
 
-if (profile === "production" && process.env.NEXT_PUBLIC_DEMO_MODE !== "false") {
+const configuredPublicKey = processEnvironmentValue("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const configuredServiceRoleKey = processEnvironmentValue("SUPABASE_SERVICE_ROLE_KEY");
+
+if (configuredServiceRoleKey) {
+  try {
+    assertSupabaseServiceRoleKey(configuredServiceRoleKey);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase service key is invalid.";
+    if (!issues.includes(message)) issues.push(message);
+  }
+}
+
+if (configuredPublicKey) {
+  try {
+    assertSupabasePublicKey(configuredPublicKey, configuredServiceRoleKey);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase public key is invalid.";
+    if (!issues.includes(message)) issues.push(message);
+  }
+}
+
+const demoMode = processEnvironmentValue("NEXT_PUBLIC_DEMO_MODE");
+const demoModeConfigured = process.env.NEXT_PUBLIC_DEMO_MODE !== undefined;
+
+if (profile === "production" && demoMode !== "false") {
   issues.push("NEXT_PUBLIC_DEMO_MODE must be explicitly set to false for production deploy.");
 } else if (
   profile === "local" &&
-  process.env.NEXT_PUBLIC_DEMO_MODE !== undefined &&
-  !["true", "false"].includes(process.env.NEXT_PUBLIC_DEMO_MODE)
+  demoModeConfigured &&
+  !["true", "false"].includes(demoMode)
 ) {
   issues.push("NEXT_PUBLIC_DEMO_MODE must be either true or false.");
 } else if (
   profile === "local" &&
-  process.env.NEXT_PUBLIC_DEMO_MODE !== "true" &&
+  demoMode !== "true" &&
   (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 ) {
   warnings.push("Local runtime will fail closed unless Supabase is configured or NEXT_PUBLIC_DEMO_MODE=true.");
@@ -99,18 +151,20 @@ if (profile === "production" && process.env.NEXT_PUBLIC_DEMO_MODE !== "false") {
 
 if (
   profile === "production" &&
-  (process.env.NEXT_PUBLIC_VALUINTCORP_E2E_MODE === "true" ||
-    process.env.VALUINTCORP_E2E_DEMO_MODE === "true")
+  (processEnvironmentValue("NEXT_PUBLIC_VALUINTCORP_E2E_MODE") === "true" ||
+    processEnvironmentValue("VALUINTCORP_E2E_DEMO_MODE") === "true")
 ) {
   issues.push("E2E runtime markers must not be enabled for production deploy.");
 }
 
+const demoLoginEnabled = processEnvironmentValue("NEXT_PUBLIC_DEMO_LOGIN_ENABLED");
+
 if (
   process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED !== undefined &&
-  !["true", "false"].includes(process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED)
+  !["true", "false"].includes(demoLoginEnabled)
 ) {
   issues.push("NEXT_PUBLIC_DEMO_LOGIN_ENABLED must be either true or false.");
-} else if (process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED !== "true") {
+} else if (demoLoginEnabled !== "true") {
   warnings.push("NEXT_PUBLIC_DEMO_LOGIN_ENABLED is not true; demo account bootstrap will be disabled.");
 }
 
@@ -125,6 +179,18 @@ if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
   }
 }
 
+if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_PROJECT_REF) {
+  try {
+    resolveSupabaseProjectIdentity(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_PROJECT_REF,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase project identity is invalid.";
+    if (!issues.includes(message)) issues.push(message);
+  }
+}
+
 if (
   process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET &&
   !/^[a-z0-9][a-z0-9._-]*$/i.test(process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET)
@@ -132,12 +198,10 @@ if (
   issues.push("SUPABASE_ERP_ATTACHMENTS_BUCKET has an invalid name.");
 }
 
-const hostedProduction =
-  process.env.VERCEL_ENV === "production" ||
-  process.env.VALUINTCORP_DEPLOYMENT_ENV === "production";
+const productionRuntime = isProductionRuntime();
 
-if (hostedProduction && !liveCheck) {
-  issues.push("Hosted production verification requires --live or VERIFY_DEPLOY_LIVE=true.");
+if (productionRuntime && !liveCheck) {
+  issues.push("Production verification requires --live or VERIFY_DEPLOY_LIVE=true.");
 }
 
 const requiredMigrations = [
@@ -237,52 +301,36 @@ async function runLiveSchemaCheck() {
     return;
   }
 
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    issues.push("VERIFY_DEPLOY_LIVE=true requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    !process.env.SUPABASE_PROJECT_REF ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY
+  ) {
+    issues.push(
+      "VERIFY_DEPLOY_LIVE=true requires NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_PROJECT_REF, and SUPABASE_SERVICE_ROLE_KEY.",
+    );
     return;
   }
 
-  async function fetchWithTimeout(input, init = {}) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const { tableIssues } = await verifyLiveSupabaseSchema({
+      projectRef: process.env.SUPABASE_PROJECT_REF,
+      publicKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    });
 
-    try {
-      return await fetch(input, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timeout);
+    issues.push(...tableIssues);
+    if (tableIssues.length === 0) {
+      warnings.push(
+        "Live check proves the configured frontend key/project pairing and bounded canonical Supabase service-role table reachability; migration history, effective grants/RLS, RPCs, triggers, and Storage policies remain separate release gates.",
+      );
     }
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : "Supabase public API check failed.");
+    return;
   }
-
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
-    global: { fetch: fetchWithTimeout },
-  });
-  const requiredTables = [
-    "businesses",
-    "business_members",
-    "member_invites",
-    "locations",
-    "transaction_sources",
-    "demo_sandboxes",
-    "fixed_assets",
-    "raw_transactions",
-    "daily_transaction_summaries",
-    "settlement_records",
-    "attachments",
-    "branch_expenses",
-    "user_login_sessions",
-    "auth_security_events",
-  ];
-
-  const tableIssues = await Promise.all(
-    requiredTables.map(async (table) => {
-      const { error } = await supabase.from(table).select("id", { head: true }).limit(1);
-      return error ? `Live Supabase table check failed for public.${table}: ${error.message}` : null;
-    }),
-  );
-
-  issues.push(...tableIssues.filter(Boolean));
-  warnings.push("Live check currently proves table reachability only; migration history, effective grants, RLS, RPC, triggers, Storage policies, and project identity still require the planned deployment-health contract.");
 }
 
 await runLiveSchemaCheck();

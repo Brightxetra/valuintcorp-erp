@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import {
+  assertSupabaseServiceRoleKey,
+  createPinnedSupabaseFetch,
+  resolveSupabaseProjectIdentity,
+} from "./verify-supabase-deploy.mjs";
 
 function loadEnvFile(fileName) {
   const filePath = join(process.cwd(), fileName);
@@ -21,13 +26,31 @@ function loadEnvFile(fileName) {
 loadEnvFile(".env.local");
 loadEnvFile(".env");
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const password = process.env.DEMO_ACCOUNT_PASSWORD || "password-demo";
-const templateId = process.env.DEMO_ACCOUNT_TEMPLATE_ID || "food_beverage";
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
+const projectRef = process.env.SUPABASE_PROJECT_REF?.trim() ?? "";
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
+const password = process.env.DEMO_ACCOUNT_PASSWORD?.trim() ?? "";
+const templateId = process.env.DEMO_ACCOUNT_TEMPLATE_ID?.trim() || "food_beverage";
 
-if (!url || !serviceRoleKey) {
-  console.error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");
+const missingEnvironment = [];
+if (!url) missingEnvironment.push("NEXT_PUBLIC_SUPABASE_URL");
+if (!projectRef) missingEnvironment.push("SUPABASE_PROJECT_REF");
+if (!serviceRoleKey) missingEnvironment.push("SUPABASE_SERVICE_ROLE_KEY");
+if (!password) missingEnvironment.push("DEMO_ACCOUNT_PASSWORD");
+
+if (missingEnvironment.length > 0) {
+  console.error(`Missing ${missingEnvironment.join(", ")}.`);
+  process.exit(1);
+}
+
+let identity;
+let normalizedServiceRoleKey;
+
+try {
+  identity = resolveSupabaseProjectIdentity(url, projectRef);
+  normalizedServiceRoleKey = assertSupabaseServiceRoleKey(serviceRoleKey);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Supabase seed configuration is invalid.");
   process.exit(1);
 }
 
@@ -44,10 +67,16 @@ const accounts = process.env.DEMO_ACCOUNT_EMAILS
       .map((email) => ({ email, role: "owner", displayName: `Demo ${email}` }))
   : defaultAccounts;
 
-const supabase = createClient(url, serviceRoleKey, {
+const supabase = createClient(identity.canonicalOrigin, normalizedServiceRoleKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
+  },
+  global: {
+    fetch: createPinnedSupabaseFetch({
+      expectedOrigin: identity.canonicalOrigin,
+      timeoutMs: 30_000,
+    }),
   },
 });
 
@@ -128,4 +157,4 @@ for (const account of accounts) {
   console.log(`Seeded demo account ${normalized.email} as ${normalized.role}.`);
 }
 
-console.log(`Demo account password: ${password}`);
+console.log("Demo accounts seeded with the configured DEMO_ACCOUNT_PASSWORD.");

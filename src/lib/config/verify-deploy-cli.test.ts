@@ -10,6 +10,7 @@ const deploymentEnvironmentNames = [
   "NEXT_PUBLIC_DEMO_LOGIN_ENABLED",
   "VALUINTCORP_E2E_DEMO_MODE",
   "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_PROJECT_REF",
   "SUPABASE_ERP_ATTACHMENTS_BUCKET",
   "CRON_SECRET",
   "VERIFY_DEPLOY_LIVE",
@@ -19,7 +20,9 @@ const deploymentEnvironmentNames = [
   "CI",
 ] as const;
 
-function isolatedEnvironment(overrides: NodeJS.ProcessEnv = {}) {
+type EnvironmentOverrides = Record<string, string | undefined>;
+
+function isolatedEnvironment(overrides: EnvironmentOverrides = {}) {
   const environment = { ...process.env };
 
   for (const name of deploymentEnvironmentNames) {
@@ -30,14 +33,15 @@ function isolatedEnvironment(overrides: NodeJS.ProcessEnv = {}) {
   return { ...environment, ...overrides };
 }
 
-function validEnvironment(overrides: NodeJS.ProcessEnv = {}) {
+function validEnvironment(overrides: EnvironmentOverrides = {}) {
   return isolatedEnvironment({
-    NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key",
+    NEXT_PUBLIC_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_public-example",
     NEXT_PUBLIC_HCAPTCHA_SITE_KEY: "captcha-site-key",
     NEXT_PUBLIC_DEMO_MODE: "false",
     NEXT_PUBLIC_DEMO_LOGIN_ENABLED: "true",
-    SUPABASE_SERVICE_ROLE_KEY: "do-not-print-service-role-key",
+    SUPABASE_PROJECT_REF: "abcdefghijklmnopqrst",
+    SUPABASE_SERVICE_ROLE_KEY: "sb_secret_do-not-print-service-role-key",
     SUPABASE_ERP_ATTACHMENTS_BUCKET: "erp-attachments",
     CRON_SECRET: "do-not-print-cron-secret",
     ...overrides,
@@ -67,6 +71,62 @@ describe("deploy verifier CLI", () => {
     expect(result.stdout).toContain("Deploy verification passed.");
   });
 
+  it("requires the expected Supabase project ref", () => {
+    const result = runVerifier([], validEnvironment({ SUPABASE_PROJECT_REF: "" }));
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("Missing env: SUPABASE_PROJECT_REF");
+  });
+
+  it("rejects a hosted Supabase URL that does not match the expected project", () => {
+    const result = runVerifier(
+      [],
+      validEnvironment({ NEXT_PUBLIC_SUPABASE_URL: "https://zyxwvutsrqponmlkjihg.supabase.co" }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("NEXT_PUBLIC_SUPABASE_URL does not match SUPABASE_PROJECT_REF");
+  });
+
+  it("rejects an unsafe frontend key statically without printing it", () => {
+    const publicKey = "sb_secret_do-not-print-frontend-key";
+    const result = runVerifier([], validEnvironment({ NEXT_PUBLIC_SUPABASE_ANON_KEY: publicKey }));
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY must be a publishable key or legacy anon key",
+    );
+    expect(`${result.stdout}${result.stderr}`).not.toContain(publicKey);
+  });
+
+  it("rejects a frontend key that duplicates the privileged key", () => {
+    const duplicatedKey = "sb_secret_duplicate-key";
+    const result = runVerifier(
+      [],
+      validEnvironment({
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: duplicatedKey,
+        SUPABASE_SERVICE_ROLE_KEY: duplicatedKey,
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY must not match SUPABASE_SERVICE_ROLE_KEY",
+    );
+    expect(`${result.stdout}${result.stderr}`).not.toContain(duplicatedKey);
+  });
+
+  it("rejects a public-shaped privileged key", () => {
+    const serviceRoleKey = "sb_publishable_do-not-print-service-key";
+    const result = runVerifier([], validEnvironment({ SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey }));
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "SUPABASE_SERVICE_ROLE_KEY must be a secret key or legacy service_role key",
+    );
+    expect(`${result.stdout}${result.stderr}`).not.toContain(serviceRoleKey);
+  });
+
   it("rejects demo fallback in the production profile", () => {
     const result = runVerifier([], validEnvironment({ NEXT_PUBLIC_DEMO_MODE: "true" }));
 
@@ -82,6 +142,20 @@ describe("deploy verifier CLI", () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("E2E runtime markers must not be enabled");
+  });
+
+  it("normalizes padded control flags before validation", () => {
+    const e2eResult = runVerifier(
+      [],
+      validEnvironment({
+        NEXT_PUBLIC_DEMO_MODE: " false ",
+        NEXT_PUBLIC_DEMO_LOGIN_ENABLED: " true ",
+        NEXT_PUBLIC_VALUINTCORP_E2E_MODE: " true ",
+      }),
+    );
+
+    expect(e2eResult.status).toBe(1);
+    expect(e2eResult.stdout).toContain("E2E runtime markers must not be enabled");
   });
 
   it("provides an explicit non-blocking local profile for missing credentials", () => {
@@ -110,7 +184,49 @@ describe("deploy verifier CLI", () => {
     const result = runVerifier([], validEnvironment({ VALUINTCORP_DEPLOYMENT_ENV: "production" }));
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("Hosted production verification requires --live");
+    expect(result.stdout).toContain("Production verification requires --live");
+  });
+
+  it("requires live verification for plain NODE_ENV production", () => {
+    const result = runVerifier([], validEnvironment({ NODE_ENV: "production" }));
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("Production verification requires --live");
+  });
+
+  it("does not trust a preview marker without the Vercel system marker", () => {
+    const result = runVerifier(
+      [],
+      validEnvironment({ NODE_ENV: "production", VERCEL_ENV: "preview" }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("Production verification requires --live");
+  });
+
+  it("does not require a live check for a trusted Vercel preview", () => {
+    const result = runVerifier(
+      [],
+      validEnvironment({ NODE_ENV: "production", VERCEL: " 1 ", VERCEL_ENV: " preview " }),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Deploy verification passed.");
+  });
+
+  it("requires a live check when a trusted preview is explicitly labelled production", () => {
+    const result = runVerifier(
+      [],
+      validEnvironment({
+        NODE_ENV: "production",
+        VERCEL: "1",
+        VERCEL_ENV: "preview",
+        VALUINTCORP_DEPLOYMENT_ENV: "production",
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("Production verification requires --live");
   });
 
   it("never prints configured secrets", () => {
