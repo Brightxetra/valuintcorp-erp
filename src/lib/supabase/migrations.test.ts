@@ -43,7 +43,7 @@ function readFilesRecursive(dir: string): string[] {
 }
 
 describe("Supabase migration contract", () => {
-  it("keeps production ERP migrations in order through 028", () => {
+  it("keeps migrations 001 through 027 followed by the timestamped production migration", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -74,7 +74,7 @@ describe("Supabase migration contract", () => {
       "025_industry_catalog_recipes_mrp.sql",
       "026_fix_document_sequence_key_ambiguity.sql",
       "027_prevent_negative_inventory_stock.sql",
-      "028_auth_security_events_and_counterparty_tax_ids.sql",
+      "20260705004700_auth_security_events_and_counterparty_tax_ids.sql",
     ]);
   });
 
@@ -347,7 +347,10 @@ describe("Supabase migration contract", () => {
   });
 
   it("adds auth security event logging and counterparty tax ids", () => {
-    const migration = readFileSync(join(migrationsDir, "028_auth_security_events_and_counterparty_tax_ids.sql"), "utf8");
+    const migration = readFileSync(
+      join(migrationsDir, "20260705004700_auth_security_events_and_counterparty_tax_ids.sql"),
+      "utf8",
+    );
 
     expect(migration).toContain("create table if not exists public.auth_security_events");
     expect(migration).toContain("email_hash text");

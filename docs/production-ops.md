@@ -2,7 +2,7 @@
 
 ## Deployment
 
-- Apply migrations `001` through `028` in order on a clean Supabase project before enabling production traffic. Verify the live migration history separately; repository files are not proof that production is current.
+- Apply migrations `001` through `027`, followed by `20260705004700_auth_security_events_and_counterparty_tax_ids.sql`, in order on a clean Supabase project before enabling production traffic. Verify the live migration history separately; repository files are not proof that production is current.
 - Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable preferred; legacy anon supported), `SUPABASE_PROJECT_REF`, `NEXT_PUBLIC_HCAPTCHA_SITE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (secret preferred; legacy service-role supported), `NEXT_PUBLIC_DEMO_MODE=false`, `NEXT_PUBLIC_DEMO_LOGIN_ENABLED=true`, `SUPABASE_ERP_ATTACHMENTS_BUCKET=erp-attachments`, and `CRON_SECRET`. Production/self-hosted builds and starts enforce the complete configuration. A trusted Vercel preview (`VERCEL=1` plus `VERCEL_ENV=preview`) uses the reduced marker/key gate; `VALUINTCORP_DEPLOYMENT_ENV=production` remains an optional explicit label that always restores full enforcement.
 - Never configure `NEXT_PUBLIC_VALUINTCORP_E2E_MODE` or `VALUINTCORP_E2E_DEMO_MODE` in a deployed environment. They belong only to the Playwright-managed production-build test server, and strict deploy verification rejects them.
 - Enable Supabase Auth leaked password protection before accepting production sign-ups.

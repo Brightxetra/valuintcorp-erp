@@ -76,7 +76,7 @@ supabase/migrations/024_supabase_advisor_rls_and_pos_trigger_hardening.sql
 supabase/migrations/025_industry_catalog_recipes_mrp.sql
 supabase/migrations/026_fix_document_sequence_key_ambiguity.sql
 supabase/migrations/027_prevent_negative_inventory_stock.sql
-supabase/migrations/028_auth_security_events_and_counterparty_tax_ids.sql
+supabase/migrations/20260705004700_auth_security_events_and_counterparty_tax_ids.sql
 ```
 
 Required env vars for Supabase-backed API authorization:
