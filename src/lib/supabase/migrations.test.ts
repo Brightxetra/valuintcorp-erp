@@ -3,6 +3,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
+const aclMigrationFile = "20260719072824_harden_public_api_privileges.sql";
+const aclRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "public_api_privileges.test.sql",
+);
 const sensitiveJsonbRpcs = [
   "apply_industry_template",
   "post_daily_summary",
@@ -42,8 +49,30 @@ function readFilesRecursive(dir: string): string[] {
   });
 }
 
+function normalizeSql(sql: string): string {
+  return sql.replace(/--.*$/gm, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 describe("Supabase migration contract", () => {
-  it("keeps migrations 001 through 027 followed by the timestamped production migration", () => {
+  it("uses unique, ascending migration versions and timestamped versions after the live baseline", () => {
+    const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
+
+    for (const file of files) {
+      expect(file).toMatch(/^(\d{3}|\d{14})_[a-z0-9_]+\.sql$/);
+    }
+
+    const versions = files.map((file) => Number(file.split("_", 1)[0]));
+    expect(new Set(versions).size).toBe(versions.length);
+    expect(versions).toEqual([...versions].sort((left, right) => left - right));
+
+    const liveBaselineIndex = files.indexOf(
+      "20260705004700_auth_security_events_and_counterparty_tax_ids.sql",
+    );
+    expect(liveBaselineIndex).toBeGreaterThanOrEqual(0);
+    expect(files.slice(liveBaselineIndex + 1).every((file) => /^\d{14}_/.test(file))).toBe(true);
+  });
+
+  it("keeps migrations 001 through 027 followed by timestamped migrations", () => {
     const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql")).sort();
 
     expect(files).toEqual([
@@ -75,6 +104,7 @@ describe("Supabase migration contract", () => {
       "026_fix_document_sequence_key_ambiguity.sql",
       "027_prevent_negative_inventory_stock.sql",
       "20260705004700_auth_security_events_and_counterparty_tax_ids.sql",
+      aclMigrationFile,
     ]);
   });
 
@@ -363,6 +393,90 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("add column if not exists tax_id text");
     expect(migration).toContain("alter table public.suppliers");
     expect(migration).toContain("suppliers_business_tax_id_idx");
+  });
+
+  it("contains the bounded forward-only Data API privilege contract", () => {
+    const migration = normalizeSql(readFileSync(join(migrationsDir, aclMigrationFile), "utf8"));
+    const allCurrentTableRevokes =
+      migration.match(/revoke [^;]+ on all tables in schema public [^;]+;/g) ?? [];
+
+    expect(migration).toContain("begin; set local lock_timeout = '5s';");
+    expect(migration).toContain("set local statement_timeout = '30s';");
+    expect(migration).toContain(
+      "alter default privileges for role postgres in schema public revoke all privileges on tables from anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "alter default privileges for role postgres in schema public revoke all privileges on sequences from anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "alter default privileges for role postgres revoke execute on functions from public;",
+    );
+    expect(migration).toContain(
+      "alter default privileges for role postgres in schema public revoke execute on functions from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "revoke truncate, references, trigger, maintain on all tables in schema public from public, anon, authenticated;",
+    );
+    expect(allCurrentTableRevokes).toEqual([
+      "revoke truncate, references, trigger, maintain on all tables in schema public from public, anon, authenticated;",
+    ]);
+    expect(migration).toContain(
+      "revoke all privileges on table public.audit_logs, public.industry_templates, public.demo_user_accounts, public.demo_sandboxes, public.activity_events from public, anon, authenticated;",
+    );
+    expect(migration).toContain(
+      "grant select on table public.audit_logs, public.industry_templates, public.demo_user_accounts, public.demo_sandboxes to authenticated;",
+    );
+    expect(migration).toContain(
+      "grant select, insert on table public.activity_events to authenticated;",
+    );
+    expect(migration).not.toContain("alter default privileges for role supabase_admin");
+    expect(migration).not.toContain(
+      "revoke select on all tables in schema public from authenticated",
+    );
+    expect(migration).not.toMatch(
+      /revoke (?:select|insert|update|delete)\b[^;]*on all tables in schema public[^;]*authenticated;/,
+    );
+    expect(migration).not.toMatch(
+      /revoke[^;]+on all tables in schema public[^;]*service_role;/,
+    );
+    expect(migration).not.toContain(
+      "revoke all privileges on all tables in schema public",
+    );
+    expect(migration).not.toContain(" cascade;");
+    expect(migration).not.toMatch(
+      /revoke all privileges on table\b[^;]+from[^;]*service_role;/,
+    );
+    expect(migration).not.toContain("app_private.");
+    expect(migration.match(/\bgrant\b/g) ?? []).toHaveLength(2);
+    expect(migration).toMatch(/commit;$/);
+  });
+
+  it("ships a transactional PostgreSQL 17 ACL rehearsal contract", () => {
+    const rehearsal = normalizeSql(readFileSync(aclRehearsalFile, "utf8"));
+
+    expect(rehearsal).toContain(
+      "begin; create extension if not exists pgtap with schema extensions; select plan(16);",
+    );
+    expect(rehearsal).toContain("current_user::text, 'postgres'");
+    expect(rehearsal).toContain("has_table_privilege");
+    expect(rehearsal).toContain("has_sequence_privilege");
+    expect(rehearsal).toContain("has_function_privilege");
+    expect(rehearsal).toContain("aclexplode");
+    expect(rehearsal).toContain("service_role");
+    expect(rehearsal).toContain("public.acl_default_table_probe_20260719");
+    expect(rehearsal).toContain("public.acl_default_sequence_probe_20260719");
+    expect(rehearsal).toContain("public.acl_default_function_probe_20260719()");
+
+    for (const privilege of [
+      "truncate",
+      "references",
+      "trigger",
+      "maintain",
+    ]) {
+      expect(rehearsal).toContain(`'${privilege}'`);
+    }
+
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
   });
 
   it("routes sensitive ERP mutations through the service-role RPC helper", () => {
