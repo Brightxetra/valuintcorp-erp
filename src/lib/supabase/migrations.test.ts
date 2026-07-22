@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 
 const migrationsDir = join(process.cwd(), "supabase", "migrations");
 const aclMigrationFile = "20260719072824_harden_public_api_privileges.sql";
+const stockReceiptMigrationFile = "20260719081805_stock_receipt_service_rpc.sql";
+const stockReceiptIndexMigrationFile =
+  "20260722033028_stock_receipt_operation_key_unique_index.sql";
+const stockReceiptActivationMigrationFile =
+  "20260722033031_activate_stock_receipt_service_rpc.sql";
 const aclRehearsalFile = join(
   process.cwd(),
   "supabase",
@@ -35,6 +40,7 @@ const actorServiceRpcs = [
   ...sensitiveJsonbRpcs,
   "post_pos_sale",
   "post_branch_expense",
+  "post_stock_receipt",
 ];
 
 function readFilesRecursive(dir: string): string[] {
@@ -105,6 +111,9 @@ describe("Supabase migration contract", () => {
       "027_prevent_negative_inventory_stock.sql",
       "20260705004700_auth_security_events_and_counterparty_tax_ids.sql",
       aclMigrationFile,
+      stockReceiptMigrationFile,
+      stockReceiptIndexMigrationFile,
+      stockReceiptActivationMigrationFile,
     ]);
   });
 
@@ -451,6 +460,116 @@ describe("Supabase migration contract", () => {
     expect(migration).toMatch(/commit;$/);
   });
 
+  it("adds an actor-bound, atomic, and idempotent stock receipt command", () => {
+    const migration = normalizeSql(
+      [
+        stockReceiptMigrationFile,
+        stockReceiptActivationMigrationFile,
+      ]
+        .map((file) => readFileSync(join(migrationsDir, file), "utf8"))
+        .join("\n"),
+    );
+    const indexMigration = normalizeSql(
+      readFileSync(join(migrationsDir, stockReceiptIndexMigrationFile), "utf8"),
+    );
+
+    expect(migration).toContain("begin; set local lock_timeout = '5s';");
+    expect(migration).toContain("set local statement_timeout = '30s';");
+    expect(migration).toContain(
+      "alter table public.stock_movements add column if not exists operation_key uuid;",
+    );
+    expect(indexMigration).toBe(
+      "create unique index concurrently stock_movements_business_operation_key_uidx on public.stock_movements (business_id, operation_key) where operation_key is not null;",
+    );
+    expect(indexMigration).not.toContain("begin;");
+    expect(indexMigration).not.toContain("if not exists");
+    expect(migration).toContain(
+      "stock receipt operation-key index is missing, invalid, or has the wrong definition",
+    );
+    expect(migration).toContain(
+      "stock receipt operation identity columns are missing or have an incompatible definition",
+    );
+    expect(migration).toContain(
+      "stock receipt operation identity constraint is missing or has an incompatible definition",
+    );
+    expect(migration).toContain("index_record.indisvalid");
+    expect(migration).toContain("index_record.indisready");
+    expect(migration).toContain("index_record.indisunique");
+    expect(migration).toContain(
+      "stock receipt migrations must run as the postgres role",
+    );
+    expect(migration).toContain(
+      "create or replace function app_private.protect_stock_movement_operation_key()",
+    );
+    expect(migration).toContain("language plpgsql security invoker set search_path = pg_catalog");
+    expect(migration).toContain("current_user <> 'postgres'");
+    expect(migration).toContain("app.stock_receipt_operation_key");
+    expect(migration).toContain(
+      "before insert or update or delete on public.stock_movements",
+    );
+    expect(migration).toContain("command-owned stock movements are immutable");
+    expect(migration).toContain("command-owned stock movements cannot be deleted");
+    expect(migration).toContain(
+      "revoke all on function app_private.protect_stock_movement_operation_key() from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "create or replace function app_private.lock_stock_movement_posting_window()",
+    );
+    expect(migration).toContain(
+      "create trigger coordinate_stock_movement_posting_window before insert or update or delete on public.stock_movements",
+    );
+    expect(migration).toContain(
+      "begin perform pg_advisory_xact_lock_shared( hashtextextended('posting-period-dml-global', 0) ); if tg_op = 'insert' then first_business_id := new.business_id;",
+    );
+    expect(migration).toContain(
+      "if tg_op in ('update', 'delete') and public.is_period_locked(old.business_id, old.date)",
+    );
+    expect(migration).toContain(
+      "create or replace function app_private.post_stock_receipt_internal(payload jsonb) returns jsonb language plpgsql security invoker set search_path = pg_catalog",
+    );
+    expect(migration).toContain(
+      "app_private.member_has_permission( target_business_id, 'inventory:manage' )",
+    );
+    expect(migration).toContain("pg_advisory_xact_lock");
+    expect(migration).toContain("posting-period-dml-global");
+    expect(migration).toContain(
+      "create or replace function app_private.lock_report_period_posting_window() returns trigger language plpgsql security invoker set search_path = pg_catalog as $$ declare first_business_id uuid; second_business_id uuid; begin if not pg_try_advisory_xact_lock( hashtextextended('posting-period-dml-global', 0) ) then raise exception 'posting activity is in flight. retry the period change.' using errcode = '55p03'; end if;",
+    );
+    expect(migration).toContain("hashtextextended");
+    expect(migration).toContain("movement.operation_key = request_operation_key");
+    expect(migration).toContain("'created', false, 'replayed', true");
+    expect(migration).toContain(
+      "idempotency key was already used for a different stock receipt",
+    );
+    expect(migration).toContain("product.is_purchasable = true");
+    expect(migration).toContain("warehouse.is_active = true");
+    expect(migration).toContain("public.is_period_locked(target_business_id, receipt_date)");
+    expect(migration).toContain("insert into public.stock_movements");
+    expect(migration).toContain("insert into public.activity_events");
+    expect(migration).toContain("'stock receipt'");
+    expect(migration).toContain(
+      "revoke all on function app_private.post_stock_receipt_internal(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "create or replace function public.post_stock_receipt(payload jsonb) returns jsonb language plpgsql security definer set search_path = pg_catalog",
+    );
+    expect(migration).toContain("app_private.apply_request_actor");
+    expect(migration).toContain("payload - 'actoruserid'");
+    expect(migration).toContain(
+      "alter function public.post_stock_receipt(jsonb) owner to postgres;",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.post_stock_receipt(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.post_stock_receipt(jsonb) to service_role;",
+    );
+    expect(migration).not.toContain(
+      "grant execute on function public.post_stock_receipt(jsonb) to authenticated",
+    );
+    expect(migration).toMatch(/commit;$/);
+  });
+
   it("ships a transactional PostgreSQL 17 ACL rehearsal contract", () => {
     const rehearsal = normalizeSql(readFileSync(aclRehearsalFile, "utf8"));
 
@@ -494,5 +613,20 @@ describe("Supabase migration contract", () => {
     expect(apiContents).toContain(`.rpc("create_business_with_owner_for_actor"`);
     expect(helper).toContain("createServiceSupabaseClient");
     expect(helper).toContain("actorUserId");
+  });
+
+  it("keeps the stock receipt route command-only", () => {
+    const route = readFileSync(
+      join(process.cwd(), "src", "app", "api", "erp", "stock-receipts", "route.ts"),
+      "utf8",
+    );
+
+    expect(route).toContain('callActorServiceRpc(\n    "post_stock_receipt"');
+    expect(route).toContain('request.headers.get("idempotency-key")');
+    expect(route).not.toContain('.from("products")');
+    expect(route).not.toContain('.from("warehouses")');
+    expect(route).not.toContain('.from("stock_movements")');
+    expect(route).not.toContain('.from("activity_events")');
+    expect(route).not.toContain("loadSupabaseWorkspace");
   });
 });

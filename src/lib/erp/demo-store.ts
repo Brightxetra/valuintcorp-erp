@@ -51,6 +51,7 @@ import {
   saveFixedAsset,
 } from "@/lib/erp/posting";
 import { refreshErpWorkspace } from "@/lib/erp/operations";
+import { canonicalizeStockReceiptAmounts } from "@/lib/erp/stock-receipt-decimal";
 import {
   buildSummaryJournal,
   defaultProductTypeForTemplate,
@@ -72,15 +73,24 @@ type DemoBranchExpense = {
   journalEntryId: string;
 };
 
+interface DemoStockReceiptOperation {
+  fingerprint: string;
+}
+
 
 const demoGlobal = globalThis as typeof globalThis & {
   __valuintcorpDemoWorkspace?: ErpWorkspace;
   __valuintcorpDemoBranchExpenses?: DemoBranchExpense[];
+  __valuintcorpDemoStockReceiptOperations?: Map<string, DemoStockReceiptOperation>;
 };
 
 let workspace = demoGlobal.__valuintcorpDemoWorkspace ?? createDemoErpWorkspace();
 demoGlobal.__valuintcorpDemoWorkspace = workspace;
 let branchExpenses = demoGlobal.__valuintcorpDemoBranchExpenses ?? [];
+const stockReceiptOperations =
+  demoGlobal.__valuintcorpDemoStockReceiptOperations ??
+  new Map<string, DemoStockReceiptOperation>();
+demoGlobal.__valuintcorpDemoStockReceiptOperations = stockReceiptOperations;
 
 function currentWorkspace(): ErpWorkspace {
   workspace = demoGlobal.__valuintcorpDemoWorkspace ?? workspace;
@@ -138,6 +148,7 @@ export function getDemoErpStore(): ErpWorkspace {
 export function resetDemoErpStore(): ErpWorkspace {
   branchExpenses = [];
   demoGlobal.__valuintcorpDemoBranchExpenses = branchExpenses;
+  stockReceiptOperations.clear();
   return setDemoWorkspace(createDemoErpWorkspace());
 }
 export function getDemoBranchExpenses(locationId: string, date: string): DemoBranchExpense[] {
@@ -222,23 +233,73 @@ export function createDemoStockReceipt(input: CreateStockReceiptInput): ErpWorks
     throw new Error("Gudang tidak ditemukan atau tidak aktif.");
   }
 
+  const canonical = canonicalDemoStockReceipt(input);
+
   const movement: StockMovement = {
     id: generatedId("sm"),
     businessId: workspace.business.id,
-    itemId: input.itemId,
-    warehouseId: input.warehouseId,
-    date: input.date,
+    itemId: canonical.itemId,
+    warehouseId: canonical.warehouseId,
+    date: canonical.date,
     type: "purchase",
-    quantity: input.quantity,
-    value: input.quantity * input.unitCost,
-    memo: input.memo ?? "Stok masuk manual",
+    quantity: canonical.quantity,
+    value: canonical.value,
+    memo: canonical.memo,
   };
 
   return refresh({
     ...workspace,
     stockMovements: [...workspace.stockMovements, movement],
-    activities: [activity("inventory", "stock receipt", `${product.sku} stok masuk ${input.quantity} ${product.unit}.`), ...workspace.activities],
+    activities: [activity("inventory", "stock receipt", `${product.sku} stok masuk ${canonical.quantity} ${product.unit}.`), ...workspace.activities],
   });
+}
+
+function canonicalDemoStockReceipt(input: CreateStockReceiptInput) {
+  const amounts = canonicalizeStockReceiptAmounts(
+    input.quantity,
+    input.unitCost,
+  );
+
+  return {
+    itemId: input.itemId,
+    warehouseId: input.warehouseId,
+    quantity: amounts.quantity.value,
+    unitCost: amounts.unitCost.value,
+    value: amounts.value.value,
+    date: input.date,
+    memo: input.memo ?? "Stok masuk manual",
+  };
+}
+
+function stockReceiptFingerprint(input: CreateStockReceiptInput) {
+  return JSON.stringify(canonicalDemoStockReceipt(input));
+}
+
+export function createIdempotentDemoStockReceipt(
+  input: CreateStockReceiptInput,
+  operationKey: string,
+) {
+  const fingerprint = stockReceiptFingerprint(input);
+  const existing = stockReceiptOperations.get(operationKey);
+
+  if (existing) {
+    return {
+      workspace: currentWorkspace(),
+      created: false,
+      replayed: existing.fingerprint === fingerprint,
+      conflict: existing.fingerprint !== fingerprint,
+    } as const;
+  }
+
+  const nextWorkspace = createDemoStockReceipt(input);
+  stockReceiptOperations.set(operationKey, { fingerprint });
+
+  return {
+    workspace: nextWorkspace,
+    created: true,
+    replayed: false,
+    conflict: false,
+  } as const;
 }
 
 export function saveDemoProductStructure(input: ProductStructureInput): ErpWorkspace {

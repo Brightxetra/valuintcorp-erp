@@ -234,11 +234,15 @@ const requiredMigrations = [
   "supabase/migrations/027_prevent_negative_inventory_stock.sql",
   "supabase/migrations/20260705004700_auth_security_events_and_counterparty_tax_ids.sql",
   "supabase/migrations/20260719072824_harden_public_api_privileges.sql",
+  "supabase/migrations/20260719081805_stock_receipt_service_rpc.sql",
+  "supabase/migrations/20260722033028_stock_receipt_operation_key_unique_index.sql",
+  "supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql",
 ];
 
 const requiredFiles = [
   ...requiredMigrations,
   "supabase/tests/public_api_privileges.test.sql",
+  "supabase/tests/stock_receipt_service_rpc.test.sql",
   "src/app/api/demo/bootstrap/route.ts",
   "src/app/api/ops/demo-reset/route.ts",
   "src/app/api/erp/business-logo/signed-upload/route.ts",
@@ -296,11 +300,28 @@ requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privile
 requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "revoke truncate, references, trigger, maintain");
 requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "revoke all privileges on table");
 requireFileSnippet("supabase/migrations/20260719072824_harden_public_api_privileges.sql", "grant select, insert on table public.activity_events");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "add column if not exists operation_key uuid");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "add column if not exists operation_fingerprint text");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "app_private.protect_stock_movement_operation_key");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "app_private.lock_stock_movement_posting_window");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "coordinate_stock_movement_posting_window");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "posting-period-dml-global");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "app_private.post_stock_receipt_internal");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "pg_advisory_xact_lock_shared");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "app_private.lock_report_period_posting_window");
+requireFileSnippet("supabase/migrations/20260719081805_stock_receipt_service_rpc.sql", "pg_advisory_xact_lock");
+requireFileSnippet("supabase/migrations/20260722033028_stock_receipt_operation_key_unique_index.sql", "create unique index concurrently stock_movements_business_operation_key_uidx");
+requireFileSnippet("supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql", "index_record.indisvalid");
+requireFileSnippet("supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql", "create or replace function public.post_stock_receipt");
+requireFileSnippet("supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql", "grant execute on function public.post_stock_receipt(jsonb)");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_table_privilege");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_sequence_privilege");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_function_privilege");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "create extension if not exists pgtap with schema extensions");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "rollback;");
+requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "Idempotency key was already used");
+requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "operation_key and operation_fingerprint can only be assigned by the stock receipt command.");
+requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "rollback;");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");

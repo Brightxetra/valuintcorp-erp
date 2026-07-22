@@ -46,6 +46,39 @@ export interface SessionSyncOptions {
   freshLogin?: boolean;
 }
 
+export class ErpApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ErpApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export function isDefinitiveErpApiError(error: unknown) {
+  return (
+    error instanceof ErpApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    ![408, 425, 429].includes(error.status)
+  );
+}
+
+export function hasErpApiErrorCode(
+  error: unknown,
+  codes: readonly string[],
+) {
+  if (!(error instanceof ErpApiError) || !error.body || typeof error.body !== "object") {
+    return false;
+  }
+
+  const code = "code" in error.body ? error.body.code : undefined;
+  return typeof code === "string" && codes.includes(code);
+}
+
 export function isSupabaseBrowserEnabled() {
   return hasSupabasePublicConfig();
 }
@@ -315,7 +348,7 @@ export async function erpApiFetch<T>(
           ? "Validasi form gagal. Periksa field yang wajib diisi."
           : "Aksi gagal diproses.";
 
-    throw new Error(message);
+    throw new ErpApiError(message, response.status, body);
   }
 
   return body as T;

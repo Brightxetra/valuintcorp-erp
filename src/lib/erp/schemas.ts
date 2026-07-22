@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalizeStockReceiptAmounts } from "@/lib/erp/stock-receipt-decimal";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tanggal harus YYYY-MM-DD.");
 const positiveMoney = z.coerce.number().int().positive();
@@ -120,14 +121,61 @@ export const createStockAdjustmentSchema = z.object({
   date: isoDate,
 });
 
-export const createStockReceiptSchema = z.object({
-  itemId: z.string().min(1),
-  warehouseId: z.string().min(1),
-  quantity: positiveQuantity,
-  unitCost: nonNegativeMoney,
-  date: isoDate,
-  memo: optionalText,
-});
+const stockReceiptDate = isoDate.refine((value) => {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}, "Tanggal stok masuk tidak valid.");
+
+const stockReceiptMemo = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().max(500).optional(),
+);
+
+// Below 2^39, the binary64 spacing stays smaller than one four-decimal unit,
+// so browser number parsing cannot silently collapse adjacent valid quantities.
+const maxPreciselyRoundedStockReceiptQuantity = 2 ** 39;
+
+export const createStockReceiptSchema = z
+  .object({
+    itemId: z.string().min(1),
+    warehouseId: z.string().min(1),
+    quantity: z.number().positive().lt(maxPreciselyRoundedStockReceiptQuantity),
+    unitCost: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    date: stockReceiptDate,
+    memo: stockReceiptMemo,
+  })
+  .superRefine((value, context) => {
+    const canonical = canonicalizeStockReceiptAmounts(
+      value.quantity,
+      value.unitCost,
+    );
+
+    if (canonical.quantity.scaled <= BigInt(0)) {
+      context.addIssue({
+        code: "custom",
+        message: "Qty stok masuk terlalu kecil setelah dibulatkan ke 4 desimal.",
+        path: ["quantity"],
+      });
+    }
+
+    if (canonical.quantity.scaled > BigInt(Number.MAX_SAFE_INTEGER)) {
+      context.addIssue({
+        code: "custom",
+        message: "Qty stok masuk terlalu besar untuk diproses aman pada presisi 4 desimal.",
+        path: ["quantity"],
+      });
+    }
+
+    if (
+      canonical.value.scaled >= BigInt("1000000000000000000")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Nilai stok masuk melebihi batas numeric(18,2).",
+        path: ["unitCost"],
+      });
+    }
+  });
 
 export const createPayrollRunSchema = z
   .object({
