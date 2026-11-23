@@ -9,8 +9,40 @@ describe("login routing", () => {
     expect(sanitizeLoginNextPath("/login?next=/dashboard")).toBe("/dashboard");
   });
 
+  it.each([
+    "/\\evil.example",
+    "/\\\\evil.example/path",
+    "/%5Cevil.example",
+    "/%5cevil.example",
+    "/%2Fevil.example",
+    "/%2fevil.example",
+    "///evil.example",
+    "/\u0000evil.example",
+    "/\nevil.example",
+  ])("rejects ambiguous network-path input %j", (candidate) => {
+    expect(sanitizeLoginNextPath(candidate)).toBe("/dashboard");
+  });
+
+  it("rejects the decoded mixed-slash exploit from the login query", () => {
+    const decoded = decodeURIComponent("%2F%5Cevil.example");
+
+    expect(decoded).toBe("/\\evil.example");
+    expect(sanitizeLoginNextPath(decoded)).toBe("/dashboard");
+  });
+
   it("keeps safe internal destinations", () => {
     expect(sanitizeLoginNextPath("/transaksi/invoice?action=new")).toBe("/transaksi/invoice?action=new");
+    expect(sanitizeLoginNextPath("/reports?period=2026-08#summary")).toBe(
+      "/reports?period=2026-08#summary",
+    );
+  });
+
+  it("returns only a canonical same-origin path", () => {
+    const destination = sanitizeLoginNextPath("/produk/../dashboard?tab=one#top");
+    const resolved = new URL(destination, "https://erp.valuintcorp.test");
+
+    expect(destination).toBe("/dashboard?tab=one#top");
+    expect(resolved.origin).toBe("https://erp.valuintcorp.test");
   });
 
   it("sends users with a business away from stale onboarding redirects", () => {

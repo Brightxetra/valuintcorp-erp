@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { FeedbackToast } from "@/components/feedback-toast";
+import type { PublicWorkspaceLoadProfile } from "@/lib/erp/workspace-profiles";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import {
   type BusinessOption,
@@ -38,10 +39,12 @@ const ErpContext = createContext<ErpContextValue | null>(null);
 export function ErpWorkspaceProvider({
   autoRefresh = false,
   initialWorkspace,
+  profile = "shell",
   children,
 }: {
   autoRefresh?: boolean;
   initialWorkspace: ErpWorkspace;
+  profile?: PublicWorkspaceLoadProfile;
   children: React.ReactNode;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
@@ -90,14 +93,14 @@ export function ErpWorkspaceProvider({
       }
 
       setActiveBusinessId(nextBusinessId);
-      const workspaceResult = await loadWorkspaceForBusiness(nextBusinessId);
+      const workspaceResult = await loadWorkspaceForBusiness(nextBusinessId, profile);
       setWorkspace(workspaceResult.workspace);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Workspace production gagal dimuat.");
     } finally {
       setLoading(false);
     }
-  }, [demoMode, setActiveBusinessId]);
+  }, [demoMode, profile, setActiveBusinessId]);
 
   useEffect(() => {
     if (!autoRefresh) return undefined;
@@ -118,7 +121,7 @@ export function ErpWorkspaceProvider({
       setError(null);
 
       try {
-        const result = await loadWorkspaceForBusiness(activeBusinessId);
+        const result = await loadWorkspaceForBusiness(activeBusinessId, profile);
         setWorkspace(result.workspace);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Workspace gagal dimuat.");
@@ -126,7 +129,7 @@ export function ErpWorkspaceProvider({
         setLoading(false);
       }
     })();
-  }, [activeBusinessId, demoMode, workspace.business.id]);
+  }, [activeBusinessId, demoMode, profile, workspace.business.id]);
 
   const request = useCallback(
     async <T,>(endpoint: string, options: RequestInit & { businessId?: string | null } = {}) =>

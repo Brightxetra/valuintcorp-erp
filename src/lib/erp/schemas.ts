@@ -93,7 +93,6 @@ export const createPaymentSchema = z.object({
 const posLineSchema = z.object({
   productId: z.string().min(1),
   quantity: positiveQuantity,
-  unitPrice: nonNegativeMoney,
 });
 
 export const postPosSaleSchema = z.object({

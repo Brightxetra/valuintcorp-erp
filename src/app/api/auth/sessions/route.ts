@@ -4,12 +4,11 @@ import { isApiResponse, requireAuthenticatedUser } from "@/lib/auth/api";
 import {
   listLoginSessionsForUser,
   revokeLoginSessionForUser,
-  upsertLoginSession,
+  touchLoginSession,
 } from "@/lib/auth/login-sessions";
 import {
   appendClearSessionCookies,
   nowSeconds,
-  parseCookieHeader,
   requestCookie,
   rememberCookieValue,
   sessionCookieMaxAge,
@@ -59,23 +58,27 @@ export async function GET(request: Request) {
     });
   }
 
-  const cookies = parseCookieHeader(request.headers.get("cookie"));
-  const rememberMe = cookies.get(serverSessionRememberCookie) === "1";
-  const sessionToken = requestCookie(request, serverSessionIdCookie) ?? crypto.randomUUID();
+  const sessionToken = user.sessionToken;
+  const supabaseSessionId = user.supabaseSessionId;
+  if (!sessionToken || !supabaseSessionId) {
+    return json({ error: "Sesi login tidak valid." }, 401);
+  }
 
-  await upsertLoginSession({
+  const touched = await touchLoginSession({
     request,
     sessionToken,
     userId: user.userId,
-    rememberMe,
+    supabaseSessionId,
+    rememberMe: user.rememberMe,
   });
+  if (!touched) return json({ error: "Session registry is temporarily unavailable." }, 503);
 
   return setCurrentSessionCookies(
     json({
       sessions: await listLoginSessionsForUser(user.userId, sessionToken),
     }),
     sessionToken,
-    rememberMe,
+    user.rememberMe,
   );
 }
 

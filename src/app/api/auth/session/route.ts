@@ -1,4 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { BusinessRole } from "@/lib/domain/types";
@@ -14,7 +13,15 @@ import {
 } from "@/lib/auth/runtime";
 import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
-import { getLoginSessionStatus, revokeLoginSessionByToken, upsertLoginSession } from "@/lib/auth/login-sessions";
+import {
+  createLoginSession,
+  getLoginSessionBinding,
+  getLoginSessionBySupabaseSession,
+  revokeLoginSessionByToken,
+  revokeOtherLoginSessionsForUser,
+  touchLoginSession,
+} from "@/lib/auth/login-sessions";
+import { isRecentSupabaseAuthentication } from "@/lib/auth/token";
 import {
   isIdleSessionExpired,
   nowSeconds,
@@ -25,10 +32,10 @@ import {
   sessionCookieOptions,
   sessionEndedResponse,
 } from "@/lib/auth/session-policy";
-import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 import { acceptPendingMemberInvitesForUser } from "@/lib/auth/member-invites";
 import { isPosOnlyPermissionSet, permissionsForMember, type Permission } from "@/lib/security/permissions";
+import { verifySupabaseAccessToken } from "@/lib/auth/verified-session";
 
 const optionalSessionTokenSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
@@ -40,7 +47,6 @@ const syncSessionSchema = z.object({
   refreshToken: optionalSessionTokenSchema,
   businessId: z.string().uuid().optional(),
   rememberMe: z.boolean().optional(),
-  freshLogin: z.boolean().optional(),
 });
 
 function setSessionCookies(
@@ -73,12 +79,11 @@ function setSessionCookies(
   }
 }
 
-function createTokenSupabaseClient(accessToken: string) {
-  const { url, anonKey } = requireSupabasePublicConfig("Supabase token client");
-  return createClient(url, anonKey, {
-    auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${accessToken}` } },
-  });
+function sessionRegistryUnavailableResponse() {
+  return NextResponse.json(
+    { error: "Session registry is temporarily unavailable." },
+    { status: 503, headers: { "cache-control": "no-store" } },
+  );
 }
 
 function permissionsForSessionMembership(membership: {
@@ -111,16 +116,95 @@ export async function POST(request: Request) {
     return NextResponse.json({ errors: parsed.error.flatten() }, { status: 400, headers: { "cache-control": "no-store" } });
   }
 
-  const supabase = createTokenSupabaseClient(parsed.data.accessToken);
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-
-  if (userError || !userData.user) {
+  const verifiedSession = await verifySupabaseAccessToken(parsed.data.accessToken);
+  if (!verifiedSession) {
     return NextResponse.json({ error: "Invalid or expired Supabase token." }, { status: 401, headers: { "cache-control": "no-store" } });
   }
 
   const serviceSupabase = isSupabaseServiceConfigured() ? createServiceSupabaseClient() : null;
-  if (serviceSupabase && userData.user.email) {
-    await acceptPendingMemberInvitesForUser(serviceSupabase, userData.user);
+  if (!serviceSupabase) return sessionRegistryUnavailableResponse();
+
+  const cookies = parseCookieHeader(request.headers.get("cookie"));
+  const existingRememberMe = cookies.get(serverSessionRememberCookie) === "1";
+  const rememberMe = parsed.data.rememberMe ?? existingRememberMe;
+  const existingSessionToken = requestCookie(request, serverSessionIdCookie);
+  const existingBinding = await getLoginSessionBinding(existingSessionToken);
+  const matchesVerifiedSession =
+    existingBinding.state === "active" &&
+    existingBinding.userId === verifiedSession.identity.userId &&
+    existingBinding.supabaseSessionId === verifiedSession.identity.sessionId;
+  const lastActivity = Number(cookies.get(serverLastActivityCookie) ?? "");
+  let sessionToken: string;
+
+  if (matchesVerifiedSession) {
+    if (isIdleSessionExpired(Number.isFinite(lastActivity) ? lastActivity : null, rememberMe)) {
+      return sessionEndedResponse("session-expired");
+    }
+
+    const touched = await touchLoginSession({
+      request,
+      sessionToken: existingSessionToken,
+      userId: verifiedSession.identity.userId,
+      supabaseSessionId: verifiedSession.identity.sessionId,
+      rememberMe,
+    });
+    if (!touched || !existingSessionToken) return sessionRegistryUnavailableResponse();
+    sessionToken = existingSessionToken;
+  } else {
+    if (existingBinding.state === "unavailable") return sessionRegistryUnavailableResponse();
+    if (!isRecentSupabaseAuthentication(verifiedSession.identity)) {
+      return sessionEndedResponse(
+        existingBinding.state === "revoked" ? "session-revoked" : "session-expired",
+      );
+    }
+
+    const registeredSupabaseSession = await getLoginSessionBySupabaseSession(
+      verifiedSession.identity.userId,
+      verifiedSession.identity.sessionId,
+    );
+    if (registeredSupabaseSession.state === "unavailable") {
+      return sessionRegistryUnavailableResponse();
+    }
+    if (registeredSupabaseSession.state !== "missing") {
+      return sessionEndedResponse(
+        registeredSupabaseSession.state === "revoked" ? "session-revoked" : "session-expired",
+      );
+    }
+
+    if (verifiedSession.identity.authenticationMethod === "recovery") {
+      const { error: authRevocationError } = await serviceSupabase.auth.admin.signOut(
+        parsed.data.accessToken,
+        "others",
+      );
+      if (authRevocationError) return sessionRegistryUnavailableResponse();
+
+      const appRevocation = await revokeOtherLoginSessionsForUser(
+        verifiedSession.identity.userId,
+        null,
+        "password_recovery",
+      );
+      if (!appRevocation.ok) return sessionRegistryUnavailableResponse();
+    }
+
+    sessionToken = crypto.randomUUID();
+    const created = await createLoginSession({
+      request,
+      sessionToken,
+      userId: verifiedSession.identity.userId,
+      supabaseSessionId: verifiedSession.identity.sessionId,
+      rememberMe,
+    });
+    if (!created.ok) {
+      return created.reason === "unavailable" || created.reason === "error"
+        ? sessionRegistryUnavailableResponse()
+        : sessionEndedResponse("session-expired");
+    }
+  }
+
+  const supabase = verifiedSession.client;
+  const user = verifiedSession.user;
+  if (user.email) {
+    await acceptPendingMemberInvitesForUser(serviceSupabase, user);
   }
 
   const membershipSupabase = serviceSupabase ?? supabase;
@@ -132,7 +216,7 @@ export async function POST(request: Request) {
       .from("business_members")
       .select("business_id, role, access_scope, access_permissions")
       .eq("business_id", parsed.data.businessId)
-      .eq("auth_user_id", userData.user.id)
+      .eq("auth_user_id", user.id)
       .maybeSingle();
 
     if (membershipError) {
@@ -149,7 +233,7 @@ export async function POST(request: Request) {
     const { data: membership, error: membershipError } = await membershipSupabase
       .from("business_members")
       .select("business_id, role, access_scope, access_permissions")
-      .eq("auth_user_id", userData.user.id)
+      .eq("auth_user_id", user.id)
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -170,46 +254,6 @@ export async function POST(request: Request) {
     { ok: true, defaultBusinessId, hasBusiness: Boolean(defaultBusinessId), defaultPath },
     { headers: { "cache-control": "no-store" } },
   );
-  const cookies = parseCookieHeader(request.headers.get("cookie"));
-  const existingRememberMe = cookies.get(serverSessionRememberCookie) === "1";
-  const rememberMe = parsed.data.rememberMe ?? existingRememberMe;
-  const existingSessionToken = requestCookie(request, serverSessionIdCookie);
-  const freshLogin = parsed.data.freshLogin === true;
-  const lastActivity = Number(cookies.get(serverLastActivityCookie) ?? "");
-
-  if (!freshLogin && isIdleSessionExpired(Number.isFinite(lastActivity) ? lastActivity : null, rememberMe)) {
-    return sessionEndedResponse("session-expired");
-  }
-
-  if (!freshLogin && !existingSessionToken) {
-    return sessionEndedResponse("session-expired");
-  }
-
-  if (existingSessionToken && !freshLogin) {
-    const existingSessionStatus = await getLoginSessionStatus(existingSessionToken);
-
-    if (existingSessionStatus === "revoked") {
-      return sessionEndedResponse("session-revoked");
-    }
-
-    if (existingSessionStatus === "expired") {
-      return sessionEndedResponse("session-expired");
-    }
-  }
-
-  if (existingSessionToken && freshLogin) {
-    await revokeLoginSessionByToken(existingSessionToken, userData.user.id, "superseded_login");
-  }
-
-  const sessionToken = freshLogin || !existingSessionToken ? crypto.randomUUID() : existingSessionToken;
-
-  await upsertLoginSession({
-    request,
-    sessionToken,
-    userId: userData.user.id,
-    rememberMe,
-  });
-
   setSessionCookies(response, {
     accessToken: parsed.data.accessToken,
     refreshToken: parsed.data.refreshToken,

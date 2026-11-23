@@ -8,7 +8,7 @@ export default async function AkunPage() {
   const workspace = await getInitialErpWorkspace({ profile: "accounting" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="accounting" workspace={workspace}>
       <AkunWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

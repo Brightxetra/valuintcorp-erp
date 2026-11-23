@@ -22,6 +22,7 @@ import {
   isSupabaseBrowserEnabled,
   shouldUseDemoFallbackBrowser,
   signOutLocalBrowserSession,
+  syncServerSession,
 } from "@/lib/erp/client-api";
 
 describe("ERP client API auth helpers", () => {
@@ -35,6 +36,7 @@ describe("ERP client API auth helpers", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("builds secure browser cookies for session cleanup", () => {
@@ -83,5 +85,28 @@ describe("ERP client API auth helpers", () => {
     vi.stubEnv("NODE_ENV", "production");
 
     expect(shouldUseDemoFallbackBrowser()).toBe(true);
+  });
+
+  it("never sends caller-controlled freshLogin to the server", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, defaultBusinessId: null, hasBusiness: false }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await syncServerSession(
+      null,
+      { accessToken: "verified-access", refreshToken: "refresh-token" },
+      { rememberMe: false, freshLogin: true },
+    );
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toEqual({
+      accessToken: "verified-access",
+      refreshToken: "refresh-token",
+      rememberMe: false,
+    });
   });
 });

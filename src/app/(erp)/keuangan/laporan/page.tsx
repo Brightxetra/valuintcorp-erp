@@ -8,7 +8,7 @@ export default async function LaporanPage() {
   const workspace = await getInitialErpWorkspace({ profile: "reports" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="reports" workspace={workspace}>
       <LaporanWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

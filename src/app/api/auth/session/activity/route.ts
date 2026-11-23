@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { isApiResponse, requireAuthenticatedUser } from "@/lib/auth/api";
 import {
   serverAccessTokenCookie,
   serverBusinessCookie,
@@ -7,13 +7,9 @@ import {
   serverRefreshTokenCookie,
   serverSessionIdCookie,
   serverSessionRememberCookie,
-  isSupabaseEnvConfigured,
-  shouldUseDemoFallback,
 } from "@/lib/auth/runtime";
-import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
-import { upsertLoginSession } from "@/lib/auth/login-sessions";
+import { touchLoginSession } from "@/lib/auth/login-sessions";
 import { accessTokenCookieMaxAge } from "@/lib/auth/token";
-import { validateRequestSession } from "@/lib/auth/session-guard";
 import {
   nowSeconds,
   parseCookieHeader,
@@ -21,16 +17,6 @@ import {
   sessionCookieMaxAge,
   sessionCookieOptions,
 } from "@/lib/auth/session-policy";
-import { requireSupabasePublicConfig } from "@/lib/supabase/config";
-
-function createAuthorizedSupabaseClient(authorization: string) {
-  const { url, anonKey } = requireSupabasePublicConfig("Supabase session activity");
-
-  return createClient(url, anonKey, {
-    auth: { persistSession: false },
-    global: { headers: { Authorization: authorization } },
-  });
-}
 
 function touchCookie(
   response: NextResponse,
@@ -44,30 +30,44 @@ function touchCookie(
 }
 
 export async function POST(request: Request) {
-  if (shouldUseDemoFallback()) {
+  const user = await requireAuthenticatedUser(request);
+  if (isApiResponse(user)) return user;
+  if (user.demoMode) {
     return NextResponse.json({ ok: true, demoMode: true }, { headers: { "cache-control": "no-store" } });
   }
 
-  if (!isSupabaseEnvConfigured()) {
-    return authenticationConfigurationUnavailableResponse();
-  }
-
-  const guard = await validateRequestSession(request);
-
-  if (!guard.ok) {
-    return guard.response;
+  if (!user.sessionToken || !user.supabaseSessionId) {
+    return NextResponse.json(
+      { error: "Sesi login tidak valid." },
+      { status: 401, headers: { "cache-control": "no-store" } },
+    );
   }
 
   const cookies = parseCookieHeader(request.headers.get("cookie"));
-  const maxAge = sessionCookieMaxAge(guard.rememberMe);
+  const maxAge = sessionCookieMaxAge(user.rememberMe);
   const accessToken = cookies.get(serverAccessTokenCookie);
   const refreshToken = cookies.get(serverRefreshTokenCookie);
   const businessId = cookies.get(serverBusinessCookie);
-  const sessionToken = guard.sessionToken ?? crypto.randomUUID();
+  const sessionToken = user.sessionToken;
+
+  const touched = await touchLoginSession({
+    request,
+    sessionToken,
+    userId: user.userId,
+    supabaseSessionId: user.supabaseSessionId,
+    rememberMe: user.rememberMe,
+  });
+  if (!touched) {
+    return NextResponse.json(
+      { error: "Session registry is temporarily unavailable." },
+      { status: 503, headers: { "cache-control": "no-store" } },
+    );
+  }
+
   const response = NextResponse.json(
     {
       ok: true,
-      rememberMe: guard.rememberMe,
+      rememberMe: user.rememberMe,
       idleTimeoutSeconds: maxAge,
     },
     { headers: { "cache-control": "no-store" } },
@@ -77,24 +77,8 @@ export async function POST(request: Request) {
   touchCookie(response, serverRefreshTokenCookie, refreshToken, maxAge);
   touchCookie(response, serverBusinessCookie, businessId, maxAge);
   touchCookie(response, serverSessionIdCookie, sessionToken, maxAge);
-  response.cookies.set(serverSessionRememberCookie, rememberCookieValue(guard.rememberMe), sessionCookieOptions(maxAge));
+  response.cookies.set(serverSessionRememberCookie, rememberCookieValue(user.rememberMe), sessionCookieOptions(maxAge));
   response.cookies.set(serverLastActivityCookie, String(nowSeconds()), sessionCookieOptions(maxAge));
-
-  const authorization = request.headers.get("authorization");
-
-  if (authorization) {
-    const supabase = createAuthorizedSupabaseClient(authorization);
-    const { data } = await supabase.auth.getUser();
-
-    if (data.user) {
-      await upsertLoginSession({
-        request,
-        sessionToken,
-        userId: data.user.id,
-        rememberMe: guard.rememberMe,
-      });
-    }
-  }
 
   return response;
 }

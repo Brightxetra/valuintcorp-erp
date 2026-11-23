@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 import { isApiResponse, requireAuthenticatedUser } from "@/lib/auth/api";
 import { revokeOtherLoginSessionsForUser } from "@/lib/auth/login-sessions";
 import { passwordChangeSchema } from "@/lib/auth/password";
-import { serverSessionIdCookie } from "@/lib/auth/runtime";
-import { requestCookie } from "@/lib/auth/session-policy";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
 function json(body: unknown, status = 200) {
@@ -52,6 +50,20 @@ export async function POST(request: Request) {
     return json({ error: "Password lama tidak sesuai." }, 401);
   }
 
+  const { error: signOutError } = await supabase.auth.signOut({ scope: "others" });
+  if (signOutError) {
+    return json({ error: "Sesi perangkat lain gagal dicabut. Coba lagi." }, 503);
+  }
+
+  const revokedOtherSessions = await revokeOtherLoginSessionsForUser(
+    user.userId,
+    null,
+    "password_changed",
+  );
+  if (!revokedOtherSessions.ok) {
+    return json({ error: "Registry sesi gagal diperbarui. Coba lagi." }, 503);
+  }
+
   const { error: updateError } = await supabase.auth.updateUser({
     password: parsed.data.newPassword,
   });
@@ -60,16 +72,9 @@ export async function POST(request: Request) {
     return json({ error: updateError.message }, 422);
   }
 
-  await supabase.auth.signOut({ scope: "others" }).catch(() => undefined);
-
-  const revokedOtherSessions = await revokeOtherLoginSessionsForUser(
-    user.userId,
-    requestCookie(request, serverSessionIdCookie),
-  );
-
   return json({
     ok: true,
-    revokedOtherSessions,
+    revokedOtherSessions: revokedOtherSessions.count,
     session: {
       accessToken: signedIn.session.access_token,
       refreshToken: signedIn.session.refresh_token,

@@ -8,7 +8,7 @@ export default async function InventoryPage() {
   const workspace = await getInitialErpWorkspace({ profile: "inventory" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="inventory" workspace={workspace}>
       <InventoryWorkspaceV2 initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

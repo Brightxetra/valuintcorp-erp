@@ -82,6 +82,8 @@ supabase/migrations/20260719072824_harden_public_api_privileges.sql
 supabase/migrations/20260719081805_stock_receipt_service_rpc.sql
 supabase/migrations/20260722033028_stock_receipt_operation_key_unique_index.sql
 supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql
+supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql
+supabase/migrations/20260723071331_validate_stock_movement_operation_identity.sql
 ```
 
 Required env vars for Supabase-backed API authorization:

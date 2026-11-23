@@ -237,12 +237,36 @@ const requiredMigrations = [
   "supabase/migrations/20260719081805_stock_receipt_service_rpc.sql",
   "supabase/migrations/20260722033028_stock_receipt_operation_key_unique_index.sql",
   "supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql",
+  "supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql",
+  "supabase/migrations/20260723071331_validate_stock_movement_operation_identity.sql",
+  "supabase/migrations/20260821070246_harden_member_invite_authority.sql",
+  "supabase/migrations/20260821074131_harden_bpjs_policy_authorization.sql",
+  "supabase/migrations/20260821083243_enforce_authoritative_pos_pricing.sql",
+  "supabase/migrations/20260821085938_enforce_command_only_financial_documents.sql",
+  "supabase/migrations/20260821093118_enforce_command_only_inventory_documents.sql",
+  "supabase/migrations/20260821100726_enforce_sensitive_read_boundaries.sql",
+  "supabase/migrations/20260821104115_bind_login_sessions_to_supabase_sessions.sql",
+  "supabase/migrations/20260821110627_harden_document_sequence_authority.sql",
 ];
 
 const requiredFiles = [
   ...requiredMigrations,
   "supabase/tests/public_api_privileges.test.sql",
   "supabase/tests/stock_receipt_service_rpc.test.sql",
+  "supabase/tests/inventory_mutation_hardening.test.sql",
+  "supabase/tests/member_invite_authority.test.sql",
+  "supabase/tests/bpjs_policy_authorization.test.sql",
+  "supabase/tests/pos_authoritative_pricing.test.sql",
+  "supabase/tests/financial_document_command_only.test.sql",
+  "supabase/tests/inventory_document_command_only.test.sql",
+  "supabase/tests/sensitive_read_boundaries.test.sql",
+  "supabase/tests/login_session_binding.test.sql",
+  "supabase/tests/document_sequence_authority.test.sql",
+  "ops/supabase/direct-main/MAINTENANCE-CHECKLIST.md",
+  "ops/supabase/direct-main/README.md",
+  "ops/supabase/direct-main/powershell/New-ReviewedAffectedScopeRestoreList.ps1",
+  "ops/supabase/direct-main/sql/preflight.sql",
+  "ops/supabase/direct-main/sql/postflight.sql",
   "src/app/api/demo/bootstrap/route.ts",
   "src/app/api/ops/demo-reset/route.ts",
   "src/app/api/erp/business-logo/signed-upload/route.ts",
@@ -257,7 +281,7 @@ function requireFileSnippet(file, snippet) {
   const filePath = join(process.cwd(), file);
   if (!existsSync(filePath)) return;
   const contents = readFileSync(filePath, "utf8");
-  if (!contents.includes(snippet)) issues.push(`Missing migration snippet in ${file}: ${snippet}`);
+  if (!contents.includes(snippet)) issues.push(`Missing required snippet in ${file}: ${snippet}`);
 }
 
 requireFileSnippet("supabase/migrations/007_production_ops_and_storage.sql", "create table if not exists public.member_invites");
@@ -314,14 +338,76 @@ requireFileSnippet("supabase/migrations/20260722033028_stock_receipt_operation_k
 requireFileSnippet("supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql", "index_record.indisvalid");
 requireFileSnippet("supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql", "create or replace function public.post_stock_receipt");
 requireFileSnippet("supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql", "grant execute on function public.post_stock_receipt(jsonb)");
+requireFileSnippet("supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql", "app_private.lock_pos_sale_inventory_keys");
+requireFileSnippet("supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql", "order by affected_item.item_id");
+requireFileSnippet("supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql", "revoke all on function public.post_pos_sale_internal(jsonb)");
+requireFileSnippet("supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql", "old.business_id, old.item_id, old.warehouse_id");
+requireFileSnippet("supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql", "projected_quantity");
+requireFileSnippet("supabase/migrations/20260723071331_validate_stock_movement_operation_identity.sql", "validate constraint stock_movements_operation_identity_pair_chk");
+requireFileSnippet("supabase/migrations/20260821070246_harden_member_invite_authority.sql", "app_private.member_invite_assignment_allowed_for_actor");
+requireFileSnippet("supabase/migrations/20260821070246_harden_member_invite_authority.sql", "app_private.protect_member_invite_update");
+requireFileSnippet("supabase/migrations/20260821070246_harden_member_invite_authority.sql", "public.accept_pending_member_invites_for_user");
+requireFileSnippet("supabase/migrations/20260821070246_harden_member_invite_authority.sql", "revoke all on function public.accept_member_invite(uuid)");
+requireFileSnippet("supabase/migrations/20260821074131_harden_bpjs_policy_authorization.sql", "public.upsert_bpjs_policy");
+requireFileSnippet("supabase/migrations/20260821083243_enforce_authoritative_pos_pricing.sql", "product.selling_price");
+requireFileSnippet("supabase/migrations/20260821085938_enforce_command_only_financial_documents.sql", "Actor lacks accounting:write permission for this business.");
+requireFileSnippet("supabase/migrations/20260821085938_enforce_command_only_financial_documents.sql", "revoke all privileges on table");
+requireFileSnippet("supabase/migrations/20260821093118_enforce_command_only_inventory_documents.sql", "app_private.member_has_warehouse_access");
+requireFileSnippet("supabase/migrations/20260821093118_enforce_command_only_inventory_documents.sql", "app_private.void_inventory_document_internal");
+requireFileSnippet("supabase/migrations/20260821093118_enforce_command_only_inventory_documents.sql", "revoke all privileges on table");
+requireFileSnippet("supabase/migrations/20260821100726_enforce_sensitive_read_boundaries.sql", "app_private.member_has_any_permission");
+requireFileSnippet("supabase/migrations/20260821100726_enforce_sensitive_read_boundaries.sql", "app_private.redact_audit_snapshot");
+requireFileSnippet("supabase/migrations/20260821100726_enforce_sensitive_read_boundaries.sql", "members can read erp attachment objects");
+requireFileSnippet("supabase/migrations/20260821100726_enforce_sensitive_read_boundaries.sql", "actor_user_id uuid");
+requireFileSnippet("supabase/migrations/20260821104115_bind_login_sessions_to_supabase_sessions.sql", "add column if not exists supabase_session_id uuid");
+requireFileSnippet("supabase/migrations/20260821104115_bind_login_sessions_to_supabase_sessions.sql", "user_login_sessions_supabase_session_uidx");
+requireFileSnippet("supabase/migrations/20260821104115_bind_login_sessions_to_supabase_sessions.sql", "revoke all privileges on table public.user_login_sessions");
+requireFileSnippet("supabase/migrations/20260821110627_harden_document_sequence_authority.sql", "revoke all privileges on table public.document_sequences");
+requireFileSnippet("supabase/migrations/20260821110627_harden_document_sequence_authority.sql", "set search_path = pg_catalog");
+requireFileSnippet("supabase/migrations/20260821110627_harden_document_sequence_authority.sql", "on conflict (business_id, sequence_key)");
+requireFileSnippet("supabase/tests/sensitive_read_boundaries.test.sql", "select plan(39)");
+requireFileSnippet("supabase/tests/sensitive_read_boundaries.test.sql", "service reconciliation rejects an unassigned location");
+requireFileSnippet("supabase/tests/login_session_binding.test.sql", "select plan(13)");
+requireFileSnippet("supabase/tests/login_session_binding.test.sql", "a Supabase session cannot mint a second application session");
+requireFileSnippet("supabase/tests/document_sequence_authority.test.sql", "select plan(20)");
+requireFileSnippet("supabase/tests/document_sequence_authority.test.sql", "a burst of allocations produces no duplicate number");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821070246'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821074131'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821083243'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821085938'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821093118'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821100726'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821104115'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "'20260821110627'");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "security_remediation_service_routine_guard");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "command_only_table_privilege_guard");
+requireFileSnippet("ops/supabase/direct-main/sql/postflight.sql", "supabase_session_binding_guard");
+requireFileSnippet("ops/supabase/direct-main/README.md", "contract/security migrations");
+requireFileSnippet("ops/supabase/direct-main/README.md", "reviewed-restore.toc");
+requireFileSnippet("ops/supabase/direct-main/powershell/New-ReviewedAffectedScopeRestoreList.ps1", "DIRECT-MAIN OMITTED NON-RESTORABLE ENTRY");
+requireFileSnippet("ops/supabase/direct-main/powershell/New-ReviewedAffectedScopeRestoreList.ps1", "unexpected non-postgres DEFAULT ACL owner");
+requireFileSnippet("ops/supabase/direct-main/MAINTENANCE-CHECKLIST.md", "Coordinated migration execution");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_table_privilege");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_sequence_privilege");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "has_function_privilege");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "create extension if not exists pgtap with schema extensions");
 requireFileSnippet("supabase/tests/public_api_privileges.test.sql", "rollback;");
 requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "Idempotency key was already used");
-requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "operation_key and operation_fingerprint can only be assigned by the stock receipt command.");
+requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "permission denied for table stock_movements");
 requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "rollback;");
+requireFileSnippet("supabase/tests/inventory_mutation_hardening.test.sql", "select plan(12)");
+requireFileSnippet("supabase/tests/inventory_mutation_hardening.test.sql", "moving an inbound row cannot leave its OLD inventory key negative");
+requireFileSnippet("supabase/tests/inventory_mutation_hardening.test.sql", "rollback;");
+requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "select plan(26)");
+requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "acceptance fails after the inviter loses user-management authority");
+requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "legitimate acceptance creates exactly one membership");
+requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "rollback;");
+requireFileSnippet("supabase/tests/bpjs_policy_authorization.test.sql", "select plan(31)");
+requireFileSnippet("supabase/tests/pos_authoritative_pricing.test.sql", "select plan(18)");
+requireFileSnippet("supabase/tests/financial_document_command_only.test.sql", "select plan(47)");
+requireFileSnippet("supabase/tests/financial_document_command_only.test.sql", "void preserves the original lines and creates a balanced reversal");
+requireFileSnippet("supabase/tests/inventory_document_command_only.test.sql", "select plan(48)");
+requireFileSnippet("supabase/tests/inventory_document_command_only.test.sql", "second transfer reversal is rejected before duplicate effects");
 
 if (existsSync(join(process.cwd(), "vercel.json"))) {
   const vercelConfig = readFileSync(join(process.cwd(), "vercel.json"), "utf8");

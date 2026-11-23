@@ -1,16 +1,17 @@
-import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
+import { isApiResponse, requireApiMembership, withDemoHeader } from "@/lib/auth/api";
 import { createDemoAttachment } from "@/lib/erp/demo-store";
 import { attachmentSchema } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
 import { logApiError, logApiInfo } from "@/lib/observability/logger";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(request: Request) {
-  const context = await requireApiPermission(request, "accounting:write");
+  const context = await requireApiMembership(request);
 
   if (isApiResponse(context)) {
     return context;
@@ -21,6 +22,21 @@ export async function POST(request: Request) {
 
   if (!parsed.success) {
     return withDemoHeader(json({ errors: parsed.error.flatten() }, 400), context);
+  }
+
+  const requiredPermission = parsed.data.ownerType === "payroll_run"
+    ? "payroll:run"
+    : "accounting:write";
+  if (!context.permissions.includes(requiredPermission)) {
+    return withDemoHeader(
+      json({ error: `Akses ${requiredPermission} diperlukan untuk lampiran ini.` }, 403),
+      context,
+    );
+  }
+
+  const expectedPathPrefix = `${context.businessId}/${parsed.data.ownerType}/${parsed.data.ownerId}/`;
+  if (!parsed.data.storagePath.startsWith(expectedPathPrefix)) {
+    return withDemoHeader(json({ error: "Path lampiran tidak sesuai tenant dan dokumen." }, 422), context);
   }
 
   if (context.demoMode) {
@@ -34,7 +50,28 @@ export async function POST(request: Request) {
   }
 
   const supabase = createRequestSupabaseClient(request);
-  const { error } = await supabase.from("attachments").insert({
+  const ownerTable = {
+    sales_invoice: "sales_invoices",
+    purchase_bill: "purchase_bills",
+    payment: "payments",
+    payroll_run: "payroll_runs",
+    fixed_asset: "fixed_assets",
+  }[parsed.data.ownerType];
+  const { data: owner, error: ownerError } = await supabase
+    .from(ownerTable)
+    .select("id")
+    .eq("business_id", context.businessId)
+    .eq("id", parsed.data.ownerId)
+    .maybeSingle();
+
+  if (ownerError || !owner?.id) {
+    return withDemoHeader(
+      json({ error: ownerError?.message ?? "Dokumen lampiran tidak ditemukan atau tidak diizinkan." }, 404),
+      context,
+    );
+  }
+
+  const { error } = await createServiceSupabaseClient().from("attachments").insert({
     business_id: context.businessId,
     owner_type: parsed.data.ownerType,
     owner_id: parsed.data.ownerId,

@@ -8,7 +8,7 @@ export default async function CatatanJurnalPage() {
   const workspace = await getInitialErpWorkspace({ profile: "accounting" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="accounting" workspace={workspace}>
       <JurnalWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

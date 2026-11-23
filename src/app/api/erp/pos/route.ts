@@ -45,6 +45,37 @@ function recipeAvailability(product: Row, products: Row[], structures: Row[], mo
   return Number.isFinite(maxFromIngredients) ? Math.max(maxFromIngredients, 0) : null;
 }
 
+function authoritativeDemoPosItems(
+  workspace: ReturnType<typeof getDemoErpStore>,
+  items: Array<{ productId: string; quantity: number }>,
+  warehouseId: string,
+) {
+  return items.map((item) => {
+    const product = workspace.products.find(
+      (candidate) =>
+        candidate.id === item.productId &&
+        candidate.businessId === workspace.business.id &&
+        candidate.isActive !== false &&
+        candidate.isSellable,
+    );
+
+    if (!product) {
+      throw new Error("Produk tidak ditemukan atau tidak bisa dijual.");
+    }
+
+    if (!Number.isFinite(product.sellingPrice) || product.sellingPrice <= 0) {
+      throw new Error(`Harga jual ${product.name} belum ditetapkan.`);
+    }
+
+    return {
+      productId: product.id,
+      quantity: item.quantity,
+      unitPrice: product.sellingPrice,
+      warehouseId,
+    };
+  });
+}
+
 export async function GET(request: Request) {
   const context = await requireApiPermission(request, "pos:read");
   if (isApiResponse(context)) return context;
@@ -129,7 +160,11 @@ export async function POST(request: Request) {
         customerId: customer.id,
         date,
         dueDate: date,
-        items: parsed.data.items.map((item) => ({ ...item, warehouseId: location.warehouseId })),
+        items: authoritativeDemoPosItems(
+          workspace,
+          parsed.data.items,
+          location.warehouseId,
+        ),
       }, { locationId: location.id, source: "pos" });
       const invoice = invoiceWorkspace.salesInvoices[0];
       if (!invoice) return withDemoHeader(json({ error: "Invoice POS demo tidak dapat dibuat." }, 422), context);
@@ -139,7 +174,23 @@ export async function POST(request: Request) {
       return withDemoHeader(json({ error: caught instanceof Error ? caught.message : "Transaksi POS demo gagal diposting." }, 422), context);
     }
   }
-  const { data, error } = await callActorServiceRpc("post_pos_sale", { ...parsed.data, businessId: context.businessId }, context.userId);
-  if (error) return withDemoHeader(json({ error: error.message }, 422), context);
-  return withDemoHeader(json({ saleId: data }, 201), context);
+  try {
+    const { data, error } = await callActorServiceRpc(
+      "post_pos_sale_v2",
+      { ...parsed.data, businessId: context.businessId },
+      context.userId,
+    );
+
+    if (error?.code === "PGRST202") {
+      return withDemoHeader(json({ error: "Upgrade keamanan harga POS belum diterapkan." }, 503), context);
+    }
+
+    if (error || typeof data !== "string") {
+      return withDemoHeader(json({ error: "Transaksi POS gagal diposting." }, 422), context);
+    }
+
+    return withDemoHeader(json({ saleId: data }, 201), context);
+  } catch {
+    return withDemoHeader(json({ error: "Layanan POS sementara tidak tersedia." }, 503), context);
+  }
 }

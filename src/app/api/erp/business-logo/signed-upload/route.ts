@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
-import { createRequestSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 const bucket = process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments";
 
@@ -46,8 +46,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = createRequestSupabaseClient(request);
-  const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(storagePath);
+  const { data, error } = await createServiceSupabaseClient()
+    .storage
+    .from(bucket)
+    .createSignedUploadUrl(storagePath);
 
   if (error) {
     return withDemoHeader(json({ error: error.message }, 422), context);

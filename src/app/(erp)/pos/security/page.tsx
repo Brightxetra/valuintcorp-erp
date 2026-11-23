@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export default async function PosSecurityPage() {
   const workspace = await getInitialErpWorkspace({ profile: "pos" });
-  return <WorkspacePageProvider workspace={workspace}><PosSecurityWorkspace initialWorkspace={workspace} /></WorkspacePageProvider>;
+  return <WorkspacePageProvider profile="pos" workspace={workspace}><PosSecurityWorkspace initialWorkspace={workspace} /></WorkspacePageProvider>;
 }

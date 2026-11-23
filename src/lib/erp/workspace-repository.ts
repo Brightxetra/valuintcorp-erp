@@ -953,7 +953,12 @@ export async function loadSupabaseWorkspace(
   options: WorkspaceLoadOptions = {},
 ): Promise<ErpWorkspace> {
   const profile = options.profile ?? "full";
-  const canManageMembers = (context.permissions ?? permissionsForRole(context.role)).includes("admin:manage_users");
+  const effectivePermissions = context.permissions ?? permissionsForRole(context.role);
+  const canManageMembers = effectivePermissions.includes("admin:manage_users");
+  const canReadPayroll = effectivePermissions.includes("payroll:run");
+  const businessProjection = needs(profile, "shell", "pos")
+    ? "id, display_name, industry, logo_url"
+    : "*";
   const salesLimit = listLimit(profile);
   const purchaseLimit = listLimit(profile);
   const paymentsLimit = listLimit(profile, 250, 10);
@@ -1086,7 +1091,7 @@ export async function loadSupabaseWorkspace(
     demoSandbox,
     activities,
   ] = await Promise.all([
-    supabase.from("businesses").select("*").eq("id", context.businessId).single(),
+    supabase.from("businesses").select(businessProjection).eq("id", context.businessId).single(),
     supabase
       .from("report_periods")
       .select("*")
@@ -1179,8 +1184,8 @@ export async function loadSupabaseWorkspace(
           ? supabase.from("warehouses").select("*").eq("business_id", context.businessId).order("code").limit(masterLimit)
           : supabase.from("warehouses").select("*").eq("business_id", context.businessId).order("code"))
       : skipRows(),
-    needs(profile, "shell", "dashboard", "sales", "cash", "accounting", "reports", "tax", "document-detail") ? salesInvoiceQuery() : skipRows(),
-    needs(profile, "shell", "dashboard", "purchases", "cash", "accounting", "reports", "tax", "document-detail") ? purchaseBillQuery() : skipRows(),
+    needs(profile, "dashboard", "sales", "cash", "accounting", "reports", "tax", "document-detail") ? salesInvoiceQuery() : skipRows(),
+    needs(profile, "dashboard", "purchases", "cash", "accounting", "reports", "tax", "document-detail") ? purchaseBillQuery() : skipRows(),
     needs(profile, "cash", "accounting", "reports", "tax", "document-detail") ? paymentsQuery() : skipRows(),
     needs(profile, "cash", "accounting", "reports", "document-detail") ? paymentAllocationsQuery() : skipRows(),
     needs(profile, "dashboard", "inventory", "accounting", "reports")
@@ -1235,7 +1240,7 @@ export async function loadSupabaseWorkspace(
           ? supabase.from("attendance").select("*").eq("business_id", context.businessId).order("date", { ascending: false }).limit(operationalLimit)
           : supabase.from("attendance").select("*").eq("business_id", context.businessId).order("date", { ascending: false }))
       : skipRows(),
-    needs(profile, "hr", "payroll", "dashboard", "reports")
+    needs(profile, "hr", "payroll", "dashboard", "reports") && canReadPayroll
       ? (operationalLimit
           ? supabase
               .from("payroll_runs")
@@ -1249,7 +1254,7 @@ export async function loadSupabaseWorkspace(
               .eq("business_id", context.businessId)
               .order("created_at", { ascending: false }))
       : skipRows(),
-    needs(profile, "shell", "dashboard", "accounting", "reports", "tax", "document-detail")
+    needs(profile, "dashboard", "accounting", "reports", "tax", "document-detail")
       ? (journalLimit
           ? supabase
               .from("journal_entries")
@@ -1277,7 +1282,7 @@ export async function loadSupabaseWorkspace(
               .eq("business_id", context.businessId)
               .order("created_at", { ascending: false }))
       : skipRows(),
-    needs(profile, "shell", "dashboard", "accounting", "reports")
+    needs(profile, "dashboard", "accounting", "reports")
       ? supabase
           .from("raw_import_batches")
           .select("*")
@@ -1317,7 +1322,7 @@ export async function loadSupabaseWorkspace(
           .order("settlement_date", { ascending: false })
           .limit(operationalLimit ?? 500)
       : skipRows(),
-    needs(profile, "shell", "dashboard", "accounting", "reports", "tax")
+    needs(profile, "dashboard", "accounting", "reports", "tax")
       ? supabase
           .from("daily_transaction_summaries")
           .select("*")
@@ -1469,7 +1474,7 @@ export async function loadSupabaseWorkspace(
 
   const baseWorkspace = {
     user,
-    permissions: context.permissions ?? permissionsForRole(context.role),
+    permissions: effectivePermissions,
     business: businessData,
     assignedLocationIds: context.assignedLocationIds ?? [],
     period,

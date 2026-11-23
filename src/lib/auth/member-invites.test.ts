@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { findAuthUserByEmail, normalizeInviteEmail, summarizeAuthUser } from "@/lib/auth/member-invites";
+import {
+  acceptPendingMemberInvitesForUser,
+  findAuthUserByEmail,
+  normalizeInviteEmail,
+  summarizeAuthUser,
+} from "@/lib/auth/member-invites";
 
 describe("member invite auth helpers", () => {
   it("normalizes invite email addresses before lookup/storage", () => {
@@ -66,5 +71,44 @@ describe("member invite auth helpers", () => {
       id: "existing-user",
       email: "Staff@Usaha.co.id",
     });
+  });
+
+  it("accepts pending invites only through the bounded service-role RPC", async () => {
+    const calls: Array<{ functionName: string; args: unknown }> = [];
+    const fakeService = {
+      rpc: async (functionName: string, args: unknown) => {
+        calls.push({ functionName, args });
+        return { data: 1, error: null };
+      },
+    } as unknown as SupabaseClient;
+
+    await expect(acceptPendingMemberInvitesForUser(fakeService, {
+      id: "target-user",
+      email: " New.Member@Usaha.CO.ID ",
+    })).resolves.toBe(1);
+
+    expect(calls).toEqual([{
+      functionName: "accept_pending_member_invites_for_user",
+      args: {
+        payload: {
+          targetUserId: "target-user",
+          targetEmail: "new.member@usaha.co.id",
+        },
+      },
+    }]);
+  });
+
+  it("does not fall back to direct membership writes when invite acceptance is rejected", async () => {
+    const fakeService = {
+      rpc: async () => ({
+        data: null,
+        error: { message: "The member invite authority is no longer valid." },
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(acceptPendingMemberInvitesForUser(fakeService, {
+      id: "target-user",
+      email: "target@example.com",
+    })).rejects.toThrow("The member invite authority is no longer valid.");
   });
 });

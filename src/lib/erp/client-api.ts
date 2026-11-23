@@ -9,7 +9,7 @@ import {
   serverSessionIdCookie,
   serverSessionRememberCookie,
 } from "@/lib/auth/runtime";
-import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
+import type { PublicWorkspaceLoadProfile } from "@/lib/erp/workspace-profiles";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { hasSupabasePublicConfig } from "@/lib/supabase/config";
@@ -214,7 +214,6 @@ export async function syncServerSession(
     refreshToken?: string;
     businessId?: string;
     rememberMe?: boolean;
-    freshLogin?: boolean;
   } = {
     accessToken,
   };
@@ -228,7 +227,6 @@ export async function syncServerSession(
   }
 
   payload.rememberMe = rememberMe;
-  payload.freshLogin = freshLogin;
 
   try {
     const response = await fetch("/api/auth/session", {
@@ -398,8 +396,10 @@ export async function loadBusinessOptions() {
   return erpApiFetch<{ businesses: BusinessOption[]; defaultBusinessId: string | null }>("/api/erp/businesses");
 }
 
-export async function loadWorkspaceForBusiness(businessId: string, profile: WorkspaceLoadProfile = "full") {
+export async function loadWorkspaceForBusiness(businessId: string, profile: PublicWorkspaceLoadProfile) {
   await syncServerSession(businessId);
-  const query = profile === "full" ? "" : `?profile=${encodeURIComponent(profile)}`;
-  return erpApiFetch<{ workspace: ErpWorkspace }>(`/api/erp/workspace${query}`, { businessId });
+  return erpApiFetch<{ workspace: ErpWorkspace }>(
+    `/api/erp/workspace?profile=${encodeURIComponent(profile)}`,
+    { businessId },
+  );
 }

@@ -37,11 +37,11 @@ select ok(
     where constraint_record.conrelid = 'public.stock_movements'::regclass
       and constraint_record.conname = 'stock_movements_operation_identity_pair_chk'
       and constraint_record.contype = 'c'
-      and not constraint_record.convalidated
+      and constraint_record.convalidated
       and pg_catalog.pg_get_constraintdef(constraint_record.oid)
         ilike '%(operation_key IS NULL) = (operation_fingerprint IS NULL)%'
   ),
-  'operation identity pairing is enforced for new rows without scanning legacy rows yet'
+  'operation identity pairing is enforced and validated for all rows'
 );
 
 select ok(
@@ -263,7 +263,8 @@ insert into public.business_members (
   auth_user_id,
   role,
   access_scope,
-  access_permissions
+  access_permissions,
+  location_ids
 )
 values
   (
@@ -271,6 +272,7 @@ values
     '20000000-0000-4000-8000-00000000a001',
     'owner',
     'role',
+    '{}',
     '{}'
   ),
   (
@@ -278,6 +280,7 @@ values
     '20000000-0000-4000-8000-00000000a001',
     'owner',
     'role',
+    '{}',
     '{}'
   ),
   (
@@ -285,14 +288,16 @@ values
     '20000000-0000-4000-8000-00000000a002',
     'staff',
     'custom',
-    '{}'
+    '{}',
+    array['41000000-0000-4000-8000-00000000a001'::uuid]
   ),
   (
     '10000000-0000-4000-8000-00000000a001',
     '20000000-0000-4000-8000-00000000a003',
     'staff',
     'custom',
-    array['inventory:manage']
+    array['inventory:manage'],
+    array['41000000-0000-4000-8000-00000000a001'::uuid]
   );
 
 insert into public.warehouses (
@@ -322,6 +327,35 @@ values
     '10000000-0000-4000-8000-00000000b001',
     'B-MAIN',
     'B Main',
+    true
+  );
+
+insert into public.locations (
+  id,
+  business_id,
+  code,
+  name,
+  type,
+  warehouse_id,
+  is_active
+)
+values
+  (
+    '41000000-0000-4000-8000-00000000a001',
+    '10000000-0000-4000-8000-00000000a001',
+    'A-MAIN-LOCATION',
+    'A Main Location',
+    'warehouse',
+    '40000000-0000-4000-8000-00000000a001',
+    true
+  ),
+  (
+    '41000000-0000-4000-8000-00000000b001',
+    '10000000-0000-4000-8000-00000000b001',
+    'B-MAIN-LOCATION',
+    'B Main Location',
+    'warehouse',
+    '40000000-0000-4000-8000-00000000b001',
     true
   );
 
@@ -1177,9 +1211,9 @@ select throws_ok(
     delete from public.stock_movements
     where id = '70000000-0000-4000-8000-00000000a002'
   $command$,
-  '55000',
-  'Period is locked. Use a correction or reversal entry.',
-  'legacy rows cannot be deleted from a locked period'
+  '42501',
+  'permission denied for table stock_movements',
+  'authenticated cannot delete legacy movements directly'
 );
 
 select throws_ok(
@@ -1188,9 +1222,9 @@ select throws_ok(
     set date = '2026-08-02'
     where id = '70000000-0000-4000-8000-00000000a002'
   $command$,
-  '55000',
-  'Period is locked. Use a correction or reversal entry.',
-  'legacy rows cannot be moved out of a locked old period'
+  '42501',
+  'permission denied for table stock_movements',
+  'authenticated cannot update legacy movements directly'
 );
 
 select throws_ok(
@@ -1217,8 +1251,8 @@ select throws_ok(
     )
   $command$,
   '42501',
-  'operation_key and operation_fingerprint can only be assigned by the stock receipt command.',
-  'authenticated direct DML cannot poison an operation key'
+  'permission denied for table stock_movements',
+  'authenticated direct DML cannot insert an operation key'
 );
 
 select throws_ok(
@@ -1245,11 +1279,11 @@ select throws_ok(
     )
   $command$,
   '42501',
-  'operation_key and operation_fingerprint can only be assigned by the stock receipt command.',
-  'authenticated direct DML cannot poison an operation fingerprint'
+  'permission denied for table stock_movements',
+  'authenticated direct DML cannot insert an operation fingerprint'
 );
 
-select lives_ok(
+select throws_ok(
   $command$
     insert into public.stock_movements (
       id,
@@ -1274,7 +1308,9 @@ select lives_ok(
       'Legacy NULL-key movement'
     )
   $command$,
-  'authenticated legacy inserts remain compatible when operation_key is NULL'
+  '42501',
+  'permission denied for table stock_movements',
+  'authenticated legacy inserts are closed even when operation_key is NULL'
 );
 
 select throws_ok(
@@ -1284,7 +1320,7 @@ select throws_ok(
     where id = '70000000-0000-4000-8000-00000000a001'
   $command$,
   '42501',
-  'Command-owned stock movements are immutable.',
+  'permission denied for table stock_movements',
   'authenticated DML cannot attach an operation key later'
 );
 
@@ -1296,7 +1332,7 @@ select throws_ok(
       and operation_key = '50000000-0000-4000-8000-00000000a017'
   $command$,
   '42501',
-  'Command-owned stock movements are immutable.',
+  'permission denied for table stock_movements',
   'authenticated DML cannot mutate a command-owned movement'
 );
 
@@ -1307,7 +1343,7 @@ select throws_ok(
       and operation_key = '50000000-0000-4000-8000-00000000a017'
   $command$,
   '42501',
-  'Command-owned stock movements cannot be deleted.',
+  'permission denied for table stock_movements',
   'authenticated DML cannot delete a command-owned movement'
 );
 
@@ -1397,14 +1433,14 @@ select is(
 drop trigger fail_stock_receipt_activity_test on public.activity_events;
 drop function app_private.fail_stock_receipt_activity_test();
 
-select ok(
+select is(
   (
-    select operation_key is null
-      and operation_fingerprint is null
+    select count(*)
     from public.stock_movements
     where id = '70000000-0000-4000-8000-00000000a001'
   ),
-  'legacy direct DML never acquires a command operation identity'
+  0::bigint,
+  'denied legacy direct DML leaves no stock movement row'
 );
 
 select is(

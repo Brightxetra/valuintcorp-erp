@@ -9,11 +9,85 @@ const stockReceiptIndexMigrationFile =
   "20260722033028_stock_receipt_operation_key_unique_index.sql";
 const stockReceiptActivationMigrationFile =
   "20260722033031_activate_stock_receipt_service_rpc.sql";
+const inventoryMutationHardeningMigrationFile =
+  "20260723071330_harden_inventory_mutation_locking.sql";
+const stockMovementIdentityValidationMigrationFile =
+  "20260723071331_validate_stock_movement_operation_identity.sql";
+const memberInviteAuthorityMigrationFile =
+  "20260821070246_harden_member_invite_authority.sql";
+const bpjsPolicyAuthorizationMigrationFile =
+  "20260821074131_harden_bpjs_policy_authorization.sql";
+const posAuthoritativePricingMigrationFile =
+  "20260821083243_enforce_authoritative_pos_pricing.sql";
+const financialDocumentCommandOnlyMigrationFile =
+  "20260821085938_enforce_command_only_financial_documents.sql";
+const inventoryDocumentCommandOnlyMigrationFile =
+  "20260821093118_enforce_command_only_inventory_documents.sql";
+const sensitiveReadBoundariesMigrationFile =
+  "20260821100726_enforce_sensitive_read_boundaries.sql";
+const loginSessionBindingMigrationFile =
+  "20260821104115_bind_login_sessions_to_supabase_sessions.sql";
+const documentSequenceAuthorityMigrationFile =
+  "20260821110627_harden_document_sequence_authority.sql";
 const aclRehearsalFile = join(
   process.cwd(),
   "supabase",
   "tests",
   "public_api_privileges.test.sql",
+);
+const inventoryMutationRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "inventory_mutation_hardening.test.sql",
+);
+const memberInviteAuthorityRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "member_invite_authority.test.sql",
+);
+const bpjsPolicyAuthorizationRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "bpjs_policy_authorization.test.sql",
+);
+const posAuthoritativePricingRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "pos_authoritative_pricing.test.sql",
+);
+const financialDocumentCommandOnlyRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "financial_document_command_only.test.sql",
+);
+const inventoryDocumentCommandOnlyRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "inventory_document_command_only.test.sql",
+);
+const sensitiveReadBoundariesRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "sensitive_read_boundaries.test.sql",
+);
+const loginSessionBindingRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "login_session_binding.test.sql",
+);
+const documentSequenceAuthorityRehearsalFile = join(
+  process.cwd(),
+  "supabase",
+  "tests",
+  "document_sequence_authority.test.sql",
 );
 const sensitiveJsonbRpcs = [
   "apply_industry_template",
@@ -39,8 +113,10 @@ const sensitiveJsonbRpcs = [
 const actorServiceRpcs = [
   ...sensitiveJsonbRpcs,
   "post_pos_sale",
+  "post_pos_sale_v2",
   "post_branch_expense",
   "post_stock_receipt",
+  "upsert_bpjs_policy",
 ];
 
 function readFilesRecursive(dir: string): string[] {
@@ -114,6 +190,16 @@ describe("Supabase migration contract", () => {
       stockReceiptMigrationFile,
       stockReceiptIndexMigrationFile,
       stockReceiptActivationMigrationFile,
+      inventoryMutationHardeningMigrationFile,
+      stockMovementIdentityValidationMigrationFile,
+      memberInviteAuthorityMigrationFile,
+      bpjsPolicyAuthorizationMigrationFile,
+      posAuthoritativePricingMigrationFile,
+      financialDocumentCommandOnlyMigrationFile,
+      inventoryDocumentCommandOnlyMigrationFile,
+      sensitiveReadBoundariesMigrationFile,
+      loginSessionBindingMigrationFile,
+      documentSequenceAuthorityMigrationFile,
     ]);
   });
 
@@ -568,6 +654,626 @@ describe("Supabase migration contract", () => {
       "grant execute on function public.post_stock_receipt(jsonb) to authenticated",
     );
     expect(migration).toMatch(/commit;$/);
+  });
+
+  it("hardens POS lock ordering and legacy stock movement updates forward-only", () => {
+    const hardeningMigration = normalizeSql(
+      readFileSync(
+        join(migrationsDir, inventoryMutationHardeningMigrationFile),
+        "utf8",
+      ),
+    );
+    const validationMigration = normalizeSql(
+      readFileSync(
+        join(migrationsDir, stockMovementIdentityValidationMigrationFile),
+        "utf8",
+      ),
+    );
+    const helperCallIndex = hardeningMigration.indexOf(
+      "app_private.lock_pos_sale_inventory_keys(trusted_payload)",
+    );
+    const legacyPostingCallIndex = hardeningMigration.indexOf(
+      "public.post_pos_sale_internal(trusted_payload)",
+    );
+
+    expect(hardeningMigration).toContain(
+      "begin; set local lock_timeout = '5s'; set local statement_timeout = '30s';",
+    );
+    expect(hardeningMigration).toContain(
+      "inventory locking migrations must run as the postgres role",
+    );
+    expect(hardeningMigration).toContain(
+      "create or replace function app_private.lock_pos_sale_inventory_keys(payload jsonb)",
+    );
+    expect(hardeningMigration).toContain(
+      "parent_product.fulfillment_method = 'recipe_on_sale'",
+    );
+    expect(hardeningMigration).toContain(
+      "join public.product_structure_lines structure_line",
+    );
+    expect(hardeningMigration).toContain("order by affected_item.item_id");
+    expect(hardeningMigration).toContain(
+      "'inventory-stock|' || target_business_id::text || '|' || affected_item_id::text || '|' || location_record.warehouse_id::text",
+    );
+    expect(hardeningMigration).toContain(
+      "revoke all on function app_private.lock_pos_sale_inventory_keys(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(helperCallIndex).toBeGreaterThanOrEqual(0);
+    expect(legacyPostingCallIndex).toBeGreaterThan(helperCallIndex);
+    expect(hardeningMigration).toContain(
+      "revoke all on function public.post_pos_sale(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(hardeningMigration).toContain(
+      "grant execute on function public.post_pos_sale(jsonb) to service_role;",
+    );
+    expect(hardeningMigration).toContain(
+      "revoke all on function public.post_pos_sale_internal(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(hardeningMigration).toContain(
+      "create or replace function public.ensure_stock_movement_consistency()",
+    );
+    expect(hardeningMigration).toContain(
+      "values (old.business_id, old.item_id, old.warehouse_id), (new.business_id, new.item_id, new.warehouse_id)",
+    );
+    expect(hardeningMigration).toContain(
+      "order by inventory_key.business_id, inventory_key.item_id, inventory_key.warehouse_id",
+    );
+    expect(hardeningMigration).toContain(
+      "projected_quantity := available_quantity - old_quantity_effect + new_quantity_effect;",
+    );
+    expect(hardeningMigration).toContain(
+      "projected_value := available_value - old_value_effect + new_value_effect;",
+    );
+    expect(hardeningMigration).toContain(
+      "if projected_quantity < 0 and projected_quantity < available_quantity",
+    );
+    expect(hardeningMigration).toContain(
+      "if projected_value < -0.5 and projected_value < available_value",
+    );
+    expect(hardeningMigration).not.toContain("drop function");
+    expect(hardeningMigration).not.toContain("drop constraint");
+    expect(hardeningMigration).toMatch(/commit;$/);
+
+    expect(validationMigration).toContain(
+      "alter table public.stock_movements validate constraint stock_movements_operation_identity_pair_chk;",
+    );
+    expect(validationMigration).toContain(
+      "constraint_record.convalidated",
+    );
+    expect(validationMigration).not.toContain("drop constraint");
+    expect(validationMigration).toMatch(/commit;$/);
+  });
+
+  it("enforces authoritative catalog pricing for every POS posting path", () => {
+    const migration = normalizeSql(
+      readFileSync(
+        join(migrationsDir, posAuthoritativePricingMigrationFile),
+        "utf8",
+      ),
+    );
+    const rehearsal = normalizeSql(
+      readFileSync(posAuthoritativePricingRehearsalFile, "utf8"),
+    );
+    const helperStart = migration.indexOf(
+      "create or replace function app_private.lock_pos_sale_inventory_keys(payload jsonb)",
+    );
+    const v2Start = migration.indexOf(
+      "create or replace function public.post_pos_sale_v2(payload jsonb)",
+    );
+    const internalStart = migration.indexOf(
+      "create or replace function public.post_pos_sale_internal(payload jsonb)",
+    );
+    const helperBody = migration.slice(helperStart, v2Start);
+
+    expect(migration).toContain(
+      "begin; set local lock_timeout = '5s'; set local statement_timeout = '30s';",
+    );
+    expect(migration).toContain(
+      "pos pricing migrations must run as the postgres role",
+    );
+    expect(helperStart).toBeGreaterThanOrEqual(0);
+    expect(v2Start).toBeGreaterThan(helperStart);
+    expect(internalStart).toBeGreaterThan(v2Start);
+    expect(helperBody).not.toContain("line_item->>'unitprice'");
+    expect(helperBody).toContain(
+      "line_product_id is null or qty is null or qty <= 0",
+    );
+    expect(migration).toContain(
+      "create or replace function public.post_pos_sale_v2(payload jsonb) returns uuid language plpgsql security definer set search_path = pg_catalog",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.post_pos_sale_v2(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.post_pos_sale_v2(jsonb) to service_role;",
+    );
+    expect(migration).toContain(
+      "create or replace function public.post_pos_sale_internal(payload jsonb) returns uuid language plpgsql security definer set search_path = pg_catalog",
+    );
+    expect(migration).toContain("for share of product");
+    expect(migration).toContain("product.selling_price");
+    expect(migration).toContain("if product_record.selling_price <= 0");
+    expect(migration).toContain("unit_price := product_record.selling_price");
+    expect(migration).toContain("resolved_items := resolved_items ||");
+    expect(migration).toContain(
+      "revoke all on function public.post_pos_sale_internal(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toMatch(/commit;$/);
+
+    expect(rehearsal).toContain("select plan(18)");
+    expect(rehearsal).toContain("unitprice\":-100");
+    expect(rehearsal).toContain("unitprice\":999999999");
+    expect(rehearsal).toContain(
+      "product pos price must be greater than zero",
+    );
+    expect(rehearsal).toContain("cross-tenant catalog product fails closed");
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("moves coupled financial documents behind actor-bound commands", () => {
+    const migration = normalizeSql(
+      readFileSync(
+        join(migrationsDir, financialDocumentCommandOnlyMigrationFile),
+        "utf8",
+      ),
+    );
+    const rehearsal = normalizeSql(
+      readFileSync(financialDocumentCommandOnlyRehearsalFile, "utf8"),
+    );
+
+    expect(migration).toContain(
+      "begin; set local lock_timeout = '5s'; set local statement_timeout = '30s';",
+    );
+    expect(migration).toContain(
+      "financial document command-only migrations must run as the postgres role",
+    );
+    expect(migration).toContain(
+      "revoke all privileges on table public.branch_expenses, public.payments, public.payment_allocations, public.purchase_bills, public.purchase_bill_lines, public.sales_invoices, public.sales_invoice_lines, public.journal_entries, public.journal_lines from public, anon, authenticated;",
+    );
+    expect(migration).toContain(
+      "grant select on table public.branch_expenses, public.payments, public.payment_allocations, public.purchase_bills, public.purchase_bill_lines, public.sales_invoices, public.sales_invoice_lines, public.journal_entries, public.journal_lines to authenticated;",
+    );
+    expect(migration).toContain("and policy.polcmd <> 'r'");
+
+    for (const command of [
+      "post_payment",
+      "post_purchase_bill",
+      "post_sales_invoice",
+      "void_document",
+    ]) {
+      expect(migration).toContain(
+        `create or replace function public.${command}(payload jsonb)`,
+      );
+      expect(migration).toContain(
+        `revoke all on function public.${command}(jsonb) from public, anon, authenticated, service_role;`,
+      );
+      expect(migration).toContain(
+        `grant execute on function public.${command}(jsonb) to service_role;`,
+      );
+      expect(migration).toContain(
+        `revoke all on function public.${command}_internal(jsonb) from public, anon, authenticated, service_role;`,
+      );
+    }
+
+    expect(migration).toContain(
+      "app_private.member_has_permission(target_business_id, 'accounting:write')",
+    );
+    expect(migration).toContain(
+      "create or replace function public.post_sales_invoice_internal(payload jsonb)",
+    );
+    expect(migration).toContain(
+      "sum(invoice.total - invoice.paid_amount)",
+    );
+    expect(migration).toContain(
+      "create or replace function public.post_payment_internal(payload jsonb)",
+    );
+    expect(migration).toContain(
+      "select invoice.total, invoice.paid_amount into total_amount, paid_amount",
+    );
+    expect(migration).toContain(
+      "paid_amount = invoice.paid_amount + payment_amount",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.post_branch_expense_internal(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.create_posted_journal(uuid, date, text, text, uuid, text, jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toMatch(/commit;$/);
+
+    expect(rehearsal).toContain("select plan(47)");
+    expect(rehearsal).toContain(
+      "authenticated cannot delete posted journal lines directly",
+    );
+    expect(rehearsal).toContain(
+      "custom finance member cannot use accounting commands without effective permission",
+    );
+    expect(rehearsal).toContain(
+      "an owner from another tenant cannot use accounting commands cross-tenant",
+    );
+    expect(rehearsal).toContain(
+      "payment command keeps payment, allocation, and document balance consistent",
+    );
+    expect(rehearsal).toContain(
+      "void preserves the original lines and creates a balanced reversal",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("moves inventory documents behind actor-bound commands and locked reversal", () => {
+    const migration = normalizeSql(
+      readFileSync(
+        join(migrationsDir, inventoryDocumentCommandOnlyMigrationFile),
+        "utf8",
+      ),
+    );
+    const rehearsal = normalizeSql(
+      readFileSync(inventoryDocumentCommandOnlyRehearsalFile, "utf8"),
+    );
+    const voidRoute = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "app",
+        "api",
+        "erp",
+        "documents",
+        "void",
+        "route.ts",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toContain(
+      "begin; set local lock_timeout = '5s'; set local statement_timeout = '30s';",
+    );
+    expect(migration).toContain(
+      "inventory document command-only migrations must run as the postgres role",
+    );
+    expect(migration).toContain(
+      "revoke all privileges on table public.stock_movements, public.stock_adjustments, public.stock_transfers from public, anon, authenticated;",
+    );
+    expect(migration).toContain(
+      "grant select on table public.stock_movements, public.stock_adjustments, public.stock_transfers to authenticated;",
+    );
+    expect(migration).toContain("and policy.polcmd <> 'r'");
+    expect(migration).toContain(
+      "create or replace function app_private.member_has_warehouse_access( target_business_id uuid, target_warehouse_id uuid )",
+    );
+    expect(migration).toContain(
+      "location.id = any(coalesce(member.location_ids, '{}'::uuid[]))",
+    );
+    expect(migration).toContain(
+      "app_private.member_has_permission(target_business_id, 'inventory:manage')",
+    );
+
+    for (const command of [
+      "post_stock_receipt",
+      "post_stock_adjustment",
+      "post_stock_transfer",
+      "void_document",
+    ]) {
+      expect(migration).toContain(
+        `create or replace function public.${command}(payload jsonb)`,
+      );
+      expect(migration).toContain(
+        `revoke all on function public.${command}(jsonb) from public, anon, authenticated, service_role;`,
+      );
+      expect(migration).toContain(
+        `grant execute on function public.${command}(jsonb) to service_role;`,
+      );
+    }
+
+    expect(migration).toContain(
+      "create or replace function app_private.void_inventory_document_internal(payload jsonb)",
+    );
+    expect(migration).toContain(
+      "'inventory-void|' || target_business_id::text || '|' || target_document_type || '|' || target_document_id::text",
+    );
+    expect(migration).toContain(
+      "inventory document is missing or already void",
+    );
+    expect(migration).toContain(
+      "revoke all on function app_private.post_stock_receipt_internal(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.post_stock_adjustment_internal(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.post_stock_transfer_internal(jsonb) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toMatch(/commit;$/);
+
+    expect(voidRoute).toContain("requireApiMembership(request)");
+    expect(voidRoute).toContain('? "inventory:manage"');
+    expect(voidRoute).toContain(': "accounting:write"');
+
+    expect(rehearsal).toContain("select plan(48)");
+    expect(rehearsal).toContain(
+      "authenticated cannot insert stock movements directly",
+    );
+    expect(rehearsal).toContain(
+      "custom inventory actor cannot adjust an unassigned warehouse",
+    );
+    expect(rehearsal).toContain(
+      "transfer requires assignment to both warehouses",
+    );
+    expect(rehearsal).toContain(
+      "stock receipt retry returns the existing result",
+    );
+    expect(rehearsal).toContain(
+      "second adjustment reversal is rejected before duplicate effects",
+    );
+    expect(rehearsal).toContain(
+      "second transfer reversal is rejected before duplicate effects",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("enforces permission-scoped sensitive reads, Storage capabilities, and actor-bound reconciliation", () => {
+    const migration = normalizeSql(
+      readFileSync(join(migrationsDir, sensitiveReadBoundariesMigrationFile), "utf8"),
+    );
+    const rehearsal = normalizeSql(
+      readFileSync(sensitiveReadBoundariesRehearsalFile, "utf8"),
+    );
+
+    expect(migration).toContain(
+      "create or replace function app_private.member_has_any_permission",
+    );
+    expect(migration).toContain(
+      "create policy \"payroll members can read payroll runs\"",
+    );
+    expect(migration).toContain(
+      "create policy \"assigned pos members can read branch expenses\"",
+    );
+    expect(migration).toContain(
+      "app_private.redact_audit_snapshot(tg_table_name, to_jsonb(new))",
+    );
+    expect(migration).toContain(
+      "drop policy if exists \"members can read erp attachment objects\" on storage.objects",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.reconciliation_rollup( uuid, uuid, uuid, text, date, date, integer ) to service_role",
+    );
+    expect(migration).toMatch(/commit;$/);
+
+    expect(rehearsal).toContain("select plan(39)");
+    expect(rehearsal).toContain(
+      "pos reader cannot enumerate attachment metadata",
+    );
+    expect(rehearsal).toContain(
+      "accounting reader cannot retrieve payroll audit records",
+    );
+    expect(rehearsal).toContain(
+      "inventory member sees only assigned production orders",
+    );
+    expect(rehearsal).toContain(
+      "service reconciliation rejects an unassigned location",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("binds application sessions to verified Supabase sessions and closes direct access", () => {
+    const migration = normalizeSql(
+      readFileSync(join(migrationsDir, loginSessionBindingMigrationFile), "utf8"),
+    );
+    const rehearsal = normalizeSql(
+      readFileSync(loginSessionBindingRehearsalFile, "utf8"),
+    );
+
+    expect(migration).toContain(
+      "alter table public.user_login_sessions add column if not exists supabase_session_id uuid",
+    );
+    expect(migration).toContain(
+      "where supabase_session_id is null and status = 'active'",
+    );
+    expect(migration).toContain(
+      "alter column supabase_session_id set not null",
+    );
+    expect(migration).toContain(
+      "create unique index if not exists user_login_sessions_supabase_session_uidx",
+    );
+    expect(migration).toContain(
+      "revoke all privileges on table public.user_login_sessions from public, anon, authenticated",
+    );
+    expect(migration).toMatch(/commit;$/);
+
+    expect(rehearsal).toContain("select plan(13)");
+    expect(rehearsal).toContain(
+      "authenticated clients cannot read or mutate the session registry directly",
+    );
+    expect(rehearsal).toContain(
+      "a supabase session cannot mint a second application session",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("makes document sequence state service-only while preserving atomic allocation", () => {
+    const migration = normalizeSql(
+      readFileSync(join(migrationsDir, documentSequenceAuthorityMigrationFile), "utf8"),
+    );
+    const rehearsal = normalizeSql(
+      readFileSync(documentSequenceAuthorityRehearsalFile, "utf8"),
+    );
+
+    expect(migration).toContain(
+      "revoke all privileges on table public.document_sequences from public, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "create or replace function public.next_document_no( target_business_id uuid, document_prefix text )",
+    );
+    expect(migration).toContain("set search_path = pg_catalog");
+    expect(migration).toContain(
+      "insert into public.document_sequences as sequence_state",
+    );
+    expect(migration).toContain(
+      "on conflict (business_id, sequence_key) do update set next_value = sequence_state.next_value + 1 returning next_value - 1 into current_value",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.next_document_no(uuid, text) from public, anon, authenticated, service_role",
+    );
+    expect(migration).toMatch(/commit;$/);
+
+    expect(rehearsal).toContain("select plan(20)");
+    expect(rehearsal).toContain(
+      "authenticated cannot reset sequence state",
+    );
+    expect(rehearsal).toContain(
+      "a burst of allocations produces no duplicate number",
+    );
+    expect(rehearsal).toContain(
+      "the allocator advances monotonically without a lost update",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("ships a transactional inventory mutation rehearsal contract", () => {
+    const rehearsal = normalizeSql(
+      readFileSync(inventoryMutationRehearsalFile, "utf8"),
+    );
+
+    expect(rehearsal).toContain(
+      "begin; create extension if not exists pgtap with schema extensions; select plan(12);",
+    );
+    expect(rehearsal).toContain(
+      "app_private.lock_pos_sale_inventory_keys(jsonb)",
+    );
+    expect(rehearsal).toContain(
+      "public.ensure_stock_movement_consistency()",
+    );
+    expect(rehearsal).toContain(
+      "an update cannot increase an outgoing movement beyond available quantity",
+    );
+    expect(rehearsal).toContain(
+      "an update cannot increase an outgoing movement beyond available stock value",
+    );
+    expect(rehearsal).toContain(
+      "moving an inbound row cannot leave its old inventory key negative",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("hardens member invites with bounded authority and atomic acceptance", () => {
+    const migration = normalizeSql(
+      readFileSync(join(migrationsDir, memberInviteAuthorityMigrationFile), "utf8"),
+    );
+
+    expect(migration).toContain(
+      "create or replace function app_private.member_invite_assignment_allowed_for_actor",
+    );
+    expect(migration).toContain(
+      "create or replace function app_private.protect_member_invite_update()",
+    );
+    expect(migration).toContain(
+      "create or replace function public.accept_pending_member_invites_for_user(payload jsonb)",
+    );
+    expect(migration).toContain(
+      "for key share; if not found or not app_private.member_has_permission_for_actor",
+    );
+    expect(migration).toContain(
+      "invite_record.invited_by = target_user_id",
+    );
+    expect(migration).toContain(
+      "on conflict (business_id, auth_user_id) do update set",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.accept_member_invite(uuid) from public, anon, authenticated, service_role;",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.accept_pending_member_invites_for_user(jsonb) to service_role;",
+    );
+    expect(migration).toContain(
+      "revoke delete, truncate, references, trigger on table public.member_invites from authenticated;",
+    );
+    expect(migration).toMatch(/commit;$/);
+  });
+
+  it("ships a transactional member-invite authority rehearsal contract", () => {
+    const rehearsal = normalizeSql(
+      readFileSync(memberInviteAuthorityRehearsalFile, "utf8"),
+    );
+
+    expect(rehearsal).toContain(
+      "begin; create extension if not exists pgtap with schema extensions; select plan(26);",
+    );
+    expect(rehearsal).toContain(
+      "a default finance administrator cannot create a self-promoting owner invite",
+    );
+    expect(rehearsal).toContain(
+      "acceptance fails after the inviter loses user-management authority",
+    );
+    expect(rehearsal).toContain(
+      "legitimate acceptance creates exactly one membership",
+    );
+    expect(rehearsal).toContain(
+      "replaying acceptance does not accept the same invite twice",
+    );
+    expect(rehearsal).toContain(
+      "direct authenticated dml cannot mark an invite accepted",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
+  });
+
+  it("hardens BPJS reads and moves writes behind an actor-bound command", () => {
+    const migration = normalizeSql(
+      readFileSync(join(migrationsDir, bpjsPolicyAuthorizationMigrationFile), "utf8"),
+    );
+
+    expect(migration).toContain(
+      "create policy \"payroll operators can read bpjs policies\" on public.bpjs_policies for select to authenticated",
+    );
+    expect(migration).toContain(
+      "app_private.member_has_permission(business_id, 'payroll:run')",
+    );
+    expect(migration).toContain(
+      "revoke all privileges on table public.bpjs_policies from public, anon, authenticated; grant select on table public.bpjs_policies to authenticated;",
+    );
+    expect(migration).toContain(
+      "create or replace function app_private.upsert_bpjs_policy_internal(payload jsonb)",
+    );
+    expect(migration).toContain(
+      "if not app_private.member_has_permission( target_business_id, 'hr:manage' )",
+    );
+    expect(migration).toContain(
+      "create or replace function public.upsert_bpjs_policy(payload jsonb)",
+    );
+    expect(migration).toContain(
+      "perform app_private.apply_request_actor( nullif(payload->>'actoruserid', '')::uuid );",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.upsert_bpjs_policy(jsonb) to service_role;",
+    );
+    expect(migration).toMatch(/commit;$/);
+  });
+
+  it("ships a transactional BPJS authorization rehearsal contract", () => {
+    const rehearsal = normalizeSql(
+      readFileSync(bpjsPolicyAuthorizationRehearsalFile, "utf8"),
+    );
+
+    expect(rehearsal).toContain(
+      "begin; create extension if not exists pgtap with schema extensions; select plan(31);",
+    );
+    expect(rehearsal).toContain(
+      "finance administrator sees no bpjs rows",
+    );
+    expect(rehearsal).toContain(
+      "custom payroll operator cannot read another tenant bpjs row",
+    );
+    expect(rehearsal).toContain(
+      "authenticated users cannot delete bpjs policies directly",
+    );
+    expect(rehearsal).toContain(
+      "hr management permission cannot cross tenant boundaries",
+    );
+    expect(rehearsal).toContain(
+      "custom hr manager can update bpjs policy through the command",
+    );
+    expect(rehearsal).toContain(
+      "the authorized bpjs change records the real actor in the audit trail",
+    );
+    expect(rehearsal).toMatch(/select \* from finish\(\); rollback;$/);
   });
 
   it("ships a transactional PostgreSQL 17 ACL rehearsal contract", () => {

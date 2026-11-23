@@ -8,7 +8,7 @@ export default async function SettingsPage() {
   const workspace = await getInitialErpWorkspace({ profile: "settings" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="settings" workspace={workspace}>
       <SettingsPremium initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

@@ -1,4 +1,4 @@
-import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
+import { isApiResponse, requireApiMembership, withDemoHeader } from "@/lib/auth/api";
 import { voidDemoDocument } from "@/lib/erp/demo-store";
 import { voidDocumentSchema } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
@@ -10,7 +10,7 @@ function json(body: unknown, status = 200) {
 }
 
 export async function POST(request: Request) {
-  const context = await requireApiPermission(request, "accounting:write");
+  const context = await requireApiMembership(request);
 
   if (isApiResponse(context)) {
     return context;
@@ -21,6 +21,24 @@ export async function POST(request: Request) {
 
   if (!parsed.success) {
     return withDemoHeader(json({ errors: parsed.error.flatten() }, 400), context);
+  }
+
+  const requiredPermission = ["stock_adjustment", "stock_transfer"].includes(
+    parsed.data.documentType,
+  )
+    ? "inventory:manage"
+    : "accounting:write";
+
+  if (!context.permissions.includes(requiredPermission)) {
+    return withDemoHeader(
+      json(
+        {
+          error: `Role ${context.role} is not allowed to perform ${requiredPermission}.`,
+        },
+        403,
+      ),
+      context,
+    );
   }
 
   if (context.demoMode) {
