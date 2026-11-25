@@ -47,6 +47,7 @@ import type {
   Employee,
   JournalEntry,
   JournalLine,
+  PayrollComponent,
   PayrollRun,
   ReportPeriod,
   StockMovement,
@@ -55,6 +56,7 @@ import type {
 } from "@/lib/domain/types";
 import { buildErpTasks, calculateErpMetrics } from "@/lib/erp/operations";
 import { buildLocationMetrics, industryTemplates as fallbackIndustryTemplates } from "@/lib/erp/horizontal";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 import { permissionsForRole, type Permission } from "@/lib/security/permissions";
 import { authUserSummariesById } from "@/lib/auth/member-invites";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
@@ -151,7 +153,7 @@ function businessFromRow(row: Row): Business {
     id: text(row, "id"),
     legalName: text(row, "legal_name"),
     displayName: text(row, "display_name"),
-    industry: text(row, "industry", "general") as Business["industry"],
+    industry: canonicalIndustryTemplateId(text(row, "industry", "general")),
     taxId: optionalText(row, "tax_id"),
     logoUrl: optionalText(row, "logo_url"),
     baseCurrency: "IDR",
@@ -389,16 +391,19 @@ function mapFeatureFlags(rows: Row[]): BusinessFeatureFlag[] {
 function mapIndustryTemplates(rows: Row[]): IndustryTemplate[] {
   if (rows.length === 0) return fallbackIndustryTemplates;
 
-  return rows.map((row) => ({
-    id: text(row, "id"),
-    industry: text(row, "industry", "general"),
-    name: text(row, "name"),
-    description: text(row, "description"),
-    enabledModules: Array.isArray(row.enabled_modules)
-      ? (row.enabled_modules as IndustryTemplate["enabledModules"])
-      : [],
-    defaultProductType: text(row, "default_product_type", "stock_item") as IndustryTemplate["defaultProductType"],
-  }));
+  const rowsByTemplate = new Map<string, Row>();
+  for (const row of rows) {
+    const sourceId = text(row, "id", text(row, "industry", "general"));
+    const templateId = canonicalIndustryTemplateId(sourceId);
+    if (sourceId === templateId || !rowsByTemplate.has(templateId)) {
+      rowsByTemplate.set(templateId, row);
+    }
+  }
+
+  return fallbackIndustryTemplates.map((fallback) => {
+    const row = rowsByTemplate.get(fallback.id);
+    return row ? { ...fallback, description: text(row, "description", fallback.description) } : fallback;
+  });
 }
 
 function mapTransactionSources(rows: Row[]): TransactionSource[] {
@@ -632,7 +637,45 @@ function mapEmployees(rows: Row[]): Employee[] {
     bankAccountName: optionalText(row, "bank_account_name"),
     bpjsHealthNo: optionalText(row, "bpjs_health_no"),
     bpjsEmploymentNo: optionalText(row, "bpjs_employment_no"),
+    bpjsParticipation: text(row, "bpjs_participation", "both") as Employee["bpjsParticipation"],
+    compensationComponents: mapEmployeeCompensationComponents(row.compensation_components),
   }));
+}
+
+function mapPayrollComponents(value: unknown): PayrollComponent[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((component) => {
+    if (!component || typeof component !== "object") return [];
+    const candidate = component as Record<string, unknown>;
+    const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    const amount = typeof candidate.amount === "number" ? candidate.amount : Number(candidate.amount);
+    const type = candidate.type;
+    const calculation = candidate.calculation === "percentage" ? "percentage" : "fixed";
+    if (!name || !Number.isFinite(amount) || amount < 0 || (type !== "earning" && type !== "deduction" && type !== "employer_contribution")) {
+      return [];
+    }
+    return [{
+      id: typeof candidate.id === "string" && candidate.id.length > 0 ? candidate.id : undefined,
+      name,
+      amount,
+      type,
+      calculation,
+    }];
+  });
+}
+
+function mapEmployeeCompensationComponents(value: unknown): NonNullable<Employee["compensationComponents"]> {
+  return mapPayrollComponents(value).flatMap((component) => {
+    if ((component.type !== "earning" && component.type !== "deduction") || !component.id) return [];
+    return [{
+      id: component.id,
+      name: component.name,
+      amount: component.amount,
+      type: component.type,
+      calculation: component.calculation ?? "fixed",
+    }];
+  });
 }
 
 function mapAttendance(rows: Row[]): Attendance[] {
@@ -656,7 +699,8 @@ function mapPayrollRuns(rows: Row[]): PayrollRun[] {
     deductions: numberValue(row, "deductions"),
     taxWithheld: numberValue(row, "tax_withheld"),
     netPay: numberValue(row, "net_pay"),
-    components: [],
+    components: mapPayrollComponents(row.components),
+    settledOnPosting: row.settled_on_posting === true,
     journalEntryId: optionalText(row, "journal_entry_id"),
   }));
 }
@@ -1036,7 +1080,9 @@ export async function loadSupabaseWorkspace(
       .eq("business_id", context.businessId)
       .order("created_at", { ascending: false });
 
-    if (profile === "document-detail" && options.documentType && options.documentId) {
+    if (profile === "hr") {
+      query = query.eq("owner_type", "employee");
+    } else if (profile === "document-detail" && options.documentType && options.documentId) {
       query = query.eq("owner_type", options.documentType).eq("owner_id", options.documentId);
     } else if (operationalLimit) {
       query = query.limit(operationalLimit);
@@ -1386,7 +1432,7 @@ export async function loadSupabaseWorkspace(
               .eq("business_id", context.businessId)
               .order("date", { ascending: false }))
       : skipRows(),
-    needs(profile, "tax", "settings", "document-detail") ? attachmentsQuery() : skipRows(),
+    needs(profile, "hr", "tax", "settings", "document-detail") ? attachmentsQuery() : skipRows(),
     needs(profile, "shell", "settings")
       ? supabase
           .from("demo_sandboxes")

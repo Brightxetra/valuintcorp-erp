@@ -1,15 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, Briefcase, Building, Calendar, Edit, Eye, FileText, Mail, MapPin, Phone, Plus, Search, Trash2, User } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, Briefcase, Building, Calendar, Camera, Edit, Eye, FileText, Mail, MapPin, Phone, Plus, Search, Trash2, User } from "lucide-react";
 import { ActionButton, EmptyState, SelectField, StatusPill, TextField } from "@/components/ui";
 import { MobileDialog } from "@/components/mobile-dialog";
 import { useErpWorkspace } from "@/components/erp-context";
 import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import type { Employee } from "@/lib/domain/types";
+import type { BpjsParticipation, CompensationComponent, Employee } from "@/lib/domain/types";
 import { getContractTypeLabel } from "@/lib/translations";
 import { money } from "@/lib/format";
+import { downloadCsvFile } from "@/lib/exports/csv";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 type TabType = "data" | "gaji" | "bpjs" | "absensi" | "riwayat";
 type EmployeeFormState = {
@@ -20,7 +22,7 @@ type EmployeeFormState = {
   contractType: Employee["contractType"];
   status: Employee["status"];
   baseSalary: string;
-  dailyRate: string;
+  bpjsParticipation: BpjsParticipation;
   joinedAt: string;
   phone: string;
   email: string;
@@ -32,6 +34,7 @@ type EmployeeFormState = {
   bankAccountName: string;
   bpjsHealthNo: string;
   bpjsEmploymentNo: string;
+  compensationComponents: CompensationComponent[];
 };
 
 interface EmployeeProfileProps {
@@ -39,6 +42,8 @@ interface EmployeeProfileProps {
   workspace: ErpWorkspace;
   onClose: () => void;
   onEdit: (employee: Employee) => void;
+  onUploadPhoto: (employee: Employee, file: File) => Promise<void>;
+  photoUploading: boolean;
 }
 
 function today() {
@@ -59,7 +64,7 @@ function employeeToForm(employee?: Employee, workspace?: ErpWorkspace): Employee
     contractType: employee?.contractType ?? "permanent",
     status: employee?.status ?? "active",
     baseSalary: String(employee?.baseSalary ?? 0),
-    dailyRate: employee?.dailyRate ? String(employee.dailyRate) : "",
+    bpjsParticipation: employee ? employee.bpjsParticipation ?? "both" : "none",
     joinedAt: employee?.joinedAt ?? today(),
     phone: employee?.phone ?? "",
     email: employee?.email ?? "",
@@ -71,6 +76,7 @@ function employeeToForm(employee?: Employee, workspace?: ErpWorkspace): Employee
     bankAccountName: employee?.bankAccountName ?? employee?.name ?? "",
     bpjsHealthNo: employee?.bpjsHealthNo ?? "",
     bpjsEmploymentNo: employee?.bpjsEmploymentNo ?? "",
+    compensationComponents: employee?.compensationComponents ?? [],
   };
 }
 
@@ -78,7 +84,8 @@ function formToPayload(form: EmployeeFormState) {
   return {
     ...form,
     baseSalary: Number(form.baseSalary || 0),
-    dailyRate: form.dailyRate === "" ? undefined : Number(form.dailyRate),
+    bpjsParticipation: form.bpjsParticipation,
+    compensationComponents: form.compensationComponents,
   };
 }
 
@@ -94,7 +101,28 @@ function InfoItem({ icon: Icon, label, value }: { icon?: React.ElementType; labe
   );
 }
 
-export function EmployeeProfileModal({ employee, workspace, onClose, onEdit }: EmployeeProfileProps) {
+function EmployeeAvatar({ employee, workspace, size = "size-14" }: { employee: Employee; workspace: ErpWorkspace; size?: string }) {
+  const { request } = useErpWorkspace(workspace);
+  const photo = workspace.attachments.find((attachment) => attachment.ownerType === "employee" && attachment.ownerId === employee.id);
+  const photoId = photo?.id;
+  const [image, setImage] = useState<{ id: string; url: string }>();
+  useEffect(() => {
+    if (!photoId) return;
+    const controller = new AbortController();
+    void request<{ url: string }>(`/api/erp/employee-photo?employeeId=${encodeURIComponent(employee.id)}`, { signal: controller.signal })
+      .then(({ url }) => { if (!controller.signal.aborted) setImage({ id: photoId, url }); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [employee.id, photoId, request]);
+  if (image && image.id === photoId) {
+    // This private Storage URL is short-lived and scoped to the authenticated HR user.
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={image.url} alt={`Foto ${employee.name}`} onError={() => setImage(undefined)} className={`${size} rounded-full object-cover`} />;
+  }
+  return <div className={`flex ${size} items-center justify-center rounded-full bg-emerald-100 text-xl font-bold text-emerald-700`}>{employee.name.charAt(0).toUpperCase()}</div>;
+}
+
+export function EmployeeProfileModal({ employee, workspace, onClose, onEdit, onUploadPhoto, photoUploading }: EmployeeProfileProps) {
   const [activeTab, setActiveTab] = useState<TabType>("data");
   const tabs = [
     { id: "data" as const, label: "Data diri" },
@@ -109,18 +137,27 @@ export function EmployeeProfileModal({ employee, workspace, onClose, onEdit }: E
       <div className="space-y-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-full bg-emerald-100 text-xl font-bold text-emerald-700">
-              {employee.name.charAt(0).toUpperCase()}
-            </div>
+            <EmployeeAvatar employee={employee} workspace={workspace} />
             <div>
               <p className="text-sm text-slate-500">{employee.employeeNo}</p>
               <p className="text-lg font-semibold text-slate-950">{employee.role}</p>
               <p className="text-sm text-slate-500">{employee.department || "Tanpa departemen"}</p>
             </div>
           </div>
-          <ActionButton variant="secondary" onClick={() => onEdit(employee)}>
-            <Edit className="size-4" /> Ubah data
-          </ActionButton>
+          <div className="flex gap-2">
+            <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <Camera className="size-4" aria-hidden />
+              {photoUploading ? "Mengunggah..." : "Foto"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={photoUploading} onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                if (file) void onUploadPhoto(employee, file);
+                event.currentTarget.value = "";
+              }} />
+            </label>
+            <ActionButton variant="secondary" onClick={() => onEdit(employee)}>
+              <Edit className="size-4" /> Ubah data
+            </ActionButton>
+          </div>
         </div>
 
         <div className="flex gap-1 overflow-x-auto border-b border-slate-200">
@@ -204,7 +241,6 @@ function GajiTab({ employee, workspace }: { employee: Employee; workspace: ErpWo
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-lg bg-emerald-50 p-4"><p className="text-xs text-emerald-600">Gaji pokok</p><p className="mt-1 text-xl font-bold text-emerald-700">{money(employee.baseSalary)}</p></div>
-        <div className="rounded-lg bg-blue-50 p-4"><p className="text-xs text-blue-600">Harian</p><p className="mt-1 text-xl font-bold text-blue-700">{employee.dailyRate ? money(employee.dailyRate) : "-"}</p></div>
         <div className="rounded-lg bg-purple-50 p-4"><p className="text-xs text-purple-600">Kontrak</p><p className="mt-1 text-xl font-bold text-purple-700">{getContractTypeLabel(employee.contractType)}</p></div>
       </div>
       {payrollRuns.length > 0 ? (
@@ -217,8 +253,16 @@ function GajiTab({ employee, workspace }: { employee: Employee; workspace: ErpWo
 }
 
 function BPJSTab({ employee }: { employee: Employee }) {
+  const participation = employee.bpjsParticipation ?? "both";
+  const participationLabel = {
+    none: "Tidak ikut",
+    health: "Kesehatan",
+    employment: "Ketenagakerjaan",
+    both: "Kesehatan dan Ketenagakerjaan",
+  }[participation];
   return (
     <div className="grid gap-4 sm:grid-cols-2">
+      <div className="rounded-lg border border-slate-200 p-4 sm:col-span-2"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">Kepesertaan</p><p className="mt-2 font-medium text-slate-950">{participationLabel}</p></div>
       <div className="rounded-lg border border-slate-200 p-4"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">BPJS Kesehatan</p><p className="mt-2 font-medium text-slate-950">{employee.bpjsHealthNo || "-"}</p></div>
       <div className="rounded-lg border border-slate-200 p-4"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">BPJS Ketenagakerjaan</p><p className="mt-2 font-medium text-slate-950">{employee.bpjsEmploymentNo || "-"}</p></div>
     </div>
@@ -263,9 +307,9 @@ function EmployeeFormDialog({ open, employee, form, setForm, onClose, onSubmit, 
           <TextField label="Departemen" value={form.department} onChange={(e) => update("department", e.target.value)} placeholder="Finance, Operasional, HR" />
           <TextField label="Jabatan" value={form.role} onChange={(e) => update("role", e.target.value)} required />
           <SelectField label="Jenis kontrak" value={form.contractType} onChange={(e) => update("contractType", e.target.value as Employee["contractType"])}>
+            {employee?.contractType === "daily" ? <option value="daily" disabled>Skema lama (Harian), pilih konversi</option> : null}
             <option value="permanent">Permanen</option>
             <option value="contract">Kontrak</option>
-            <option value="daily">Harian</option>
           </SelectField>
           <SelectField label="Status" value={form.status} onChange={(e) => update("status", e.target.value as Employee["status"])}>
             <option value="active">Aktif</option>
@@ -274,8 +318,42 @@ function EmployeeFormDialog({ open, employee, form, setForm, onClose, onSubmit, 
           </SelectField>
           <TextField label="Tanggal masuk" type="date" value={form.joinedAt} onChange={(e) => update("joinedAt", e.target.value)} required />
           <TextField label="Gaji pokok bulanan" type="number" min="0" value={form.baseSalary} onChange={(e) => update("baseSalary", e.target.value)} />
-          <TextField label="Rate harian" type="number" min="0" value={form.dailyRate} onChange={(e) => update("dailyRate", e.target.value)} />
         </div>
+
+        <section className="space-y-3 border-t border-slate-200 pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-slate-950">Komponen gaji bulanan</h3>
+              <p className="text-sm text-slate-500">Tambahkan bonus, performa, tunjangan, atau potongan tetap.</p>
+            </div>
+            <button type="button" onClick={() => update("compensationComponents", [...form.compensationComponents, { id: crypto.randomUUID(), name: "", type: "earning", calculation: "fixed", amount: 0 }])} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <Plus className="size-4" aria-hidden /> Tambah komponen
+            </button>
+          </div>
+          {form.compensationComponents.map((component, index) => (
+            <div key={component.id} className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[minmax(0,1fr)_150px_150px_160px_40px]">
+              <label className="text-sm font-medium text-slate-700">Nama
+                <input value={component.name} onChange={(event) => update("compensationComponents", form.compensationComponents.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3" placeholder="Bonus performa" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Jenis
+                <select value={component.type} onChange={(event) => update("compensationComponents", form.compensationComponents.map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value as CompensationComponent["type"] } : item))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2">
+                  <option value="earning">Pendapatan</option><option value="deduction">Potongan</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">Perhitungan
+                <select value={component.calculation} onChange={(event) => update("compensationComponents", form.compensationComponents.map((item, itemIndex) => itemIndex === index ? { ...item, calculation: event.target.value as CompensationComponent["calculation"] } : item))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2">
+                  <option value="fixed">Nominal</option><option value="percentage">Persentase gaji pokok</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">{component.calculation === "fixed" ? "Nominal rupiah" : "Persentase"}
+                <input type="number" min="0" max={component.calculation === "percentage" ? 100 : 100_000_000} value={component.amount} onChange={(event) => update("compensationComponents", form.compensationComponents.map((item, itemIndex) => itemIndex === index ? { ...item, amount: Number(event.target.value) } : item))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3" />
+              </label>
+              <button type="button" aria-label={`Hapus komponen ${component.name || index + 1}`} onClick={() => update("compensationComponents", form.compensationComponents.filter((_, itemIndex) => itemIndex !== index))} className="mt-5 flex size-10 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-700">
+                <Trash2 className="size-4" aria-hidden />
+              </button>
+            </div>
+          ))}
+        </section>
 
         <div className="grid gap-4 md:grid-cols-2">
           <TextField label="Telepon" value={form.phone} onChange={(e) => update("phone", e.target.value)} />
@@ -292,6 +370,12 @@ function EmployeeFormDialog({ open, employee, form, setForm, onClose, onSubmit, 
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
+          <SelectField label="Kepesertaan BPJS" value={form.bpjsParticipation} onChange={(e) => update("bpjsParticipation", e.target.value as BpjsParticipation)}>
+            <option value="none">Tidak ikut</option>
+            <option value="health">Kesehatan saja</option>
+            <option value="employment">Ketenagakerjaan saja</option>
+            <option value="both">Keduanya</option>
+          </SelectField>
           <TextField label="Nomor BPJS Kesehatan" value={form.bpjsHealthNo} onChange={(e) => update("bpjsHealthNo", e.target.value)} />
           <TextField label="Nomor BPJS Ketenagakerjaan" value={form.bpjsEmploymentNo} onChange={(e) => update("bpjsEmploymentNo", e.target.value)} />
         </div>
@@ -314,6 +398,7 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<EmployeeFormState>(() => employeeToForm(undefined, initialWorkspace));
   const [loading, setLoading] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const filteredEmployees = useMemo(() => workspace.employees.filter((emp) => {
     const normalized = search.toLowerCase().trim();
@@ -340,6 +425,12 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
 
   async function saveEmployee(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (form.contractType === "daily") {
+      notify.warning("Pilih skema kontrak baru", {
+        description: "Karyawan lama dengan skema harian perlu dikonversi ke permanen atau kontrak sebelum disimpan.",
+      });
+      return;
+    }
     setLoading(true);
     try {
       const body = await request<{ workspace: ErpWorkspace }>("/api/erp/master-data", {
@@ -376,6 +467,36 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
     }
   }
 
+  async function uploadEmployeePhoto(employee: Employee, file: File) {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 5_000_000) {
+      notify.warning("Foto tidak sesuai", { description: "Pilih JPG, PNG, atau WebP dengan ukuran maksimal 5 MB." });
+      return;
+    }
+    setPhotoUploading(true);
+    try {
+      const upload = await request<{ bucket: string; storagePath: string; uploadToken: string; signedUrl: string }>("/api/erp/attachments/signed-upload", {
+        method: "POST",
+        body: JSON.stringify({ ownerType: "employee", ownerId: employee.id, fileName: file.name, mimeType: file.type, sizeBytes: file.size }),
+      });
+      if (!upload.signedUrl.startsWith("/demo-upload/")) {
+        const { error } = await createBrowserSupabaseClient().storage.from(upload.bucket).uploadToSignedUrl(upload.storagePath, upload.uploadToken, file);
+        if (error) throw error;
+      }
+      const result = await request<{ workspace: ErpWorkspace }>("/api/erp/attachments", {
+        method: "POST",
+        body: JSON.stringify({ ownerType: "employee", ownerId: employee.id, fileName: file.name, storagePath: upload.storagePath, mimeType: file.type, sizeBytes: file.size }),
+      });
+      setWorkspace(result.workspace);
+      const updatedEmployee = result.workspace.employees.find((item) => item.id === employee.id);
+      setSelectedEmployee(updatedEmployee ?? null);
+      notify.success("Foto karyawan diperbarui", { description: employee.name });
+    } catch (caught) {
+      notify.error("Foto gagal diunggah", { description: caught instanceof Error ? caught.message : "Coba lagi." });
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -384,7 +505,24 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
           <p className="mt-1 text-slate-600">Kelola profil, kontak, pajak, bank, BPJS, dan status kerja karyawan.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ActionButton variant="secondary"><FileText className="size-4" /> Export Data</ActionButton>
+          <ActionButton
+            variant="secondary"
+            onClick={() => downloadCsvFile(
+              "data-karyawan.csv",
+              ["Nomor", "Nama", "Departemen", "Jabatan", "Status", "Gaji pokok bulanan", "Kepesertaan BPJS"],
+              filteredEmployees.map((employee) => [
+                employee.employeeNo,
+                employee.name,
+                employee.department ?? "",
+                employee.role,
+                employee.status,
+                employee.baseSalary,
+                employee.bpjsParticipation ?? "both",
+              ]),
+            )}
+          >
+            <FileText className="size-4" /> Export Data
+          </ActionButton>
           <ActionButton onClick={openCreate}><Plus className="size-4" /> Tambah Karyawan</ActionButton>
         </div>
       </div>
@@ -416,7 +554,7 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
             <tbody className="divide-y divide-slate-100">
               {filteredEmployees.map((employee) => (
                 <tr key={employee.id} className="hover:bg-slate-50">
-                  <td data-mobile-label="Karyawan" className="px-4 py-3"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-700">{employee.name.charAt(0).toUpperCase()}</div><div><p className="font-medium text-slate-950">{employee.name}</p><p className="text-xs text-slate-500">{employee.email || employee.phone || "Kontak belum diisi"}</p></div></div></td>
+                  <td data-mobile-label="Karyawan" className="px-4 py-3"><div className="flex items-center gap-3"><EmployeeAvatar employee={employee} workspace={workspace} size="size-10" /><div><p className="font-medium text-slate-950">{employee.name}</p><p className="text-xs text-slate-500">{employee.email || employee.phone || "Kontak belum diisi"}</p></div></div></td>
                   <td data-mobile-label="No." className="px-4 py-3 text-slate-600">{employee.employeeNo}</td>
                   <td data-mobile-label="Departemen" className="px-4 py-3 text-slate-600">{employee.department || "-"}</td>
                   <td data-mobile-label="Jabatan" className="px-4 py-3 text-slate-600">{employee.role}</td>
@@ -430,7 +568,7 @@ export function KaryawanWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
         </div>
       ) : <EmptyState title="Belum ada karyawan" description="Tambahkan karyawan pertama untuk mulai mengelola data HR." />}
 
-      {selectedEmployee ? <EmployeeProfileModal employee={selectedEmployee} workspace={workspace} onClose={() => setSelectedEmployee(null)} onEdit={openEdit} /> : null}
+      {selectedEmployee ? <EmployeeProfileModal employee={selectedEmployee} workspace={workspace} onClose={() => setSelectedEmployee(null)} onEdit={openEdit} onUploadPhoto={uploadEmployeePhoto} photoUploading={photoUploading} /> : null}
       <EmployeeFormDialog open={showForm} employee={editingEmployee} form={form} setForm={setForm} onClose={() => setShowForm(false)} onSubmit={saveEmployee} loading={loading} />
     </div>
   );

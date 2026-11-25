@@ -26,7 +26,9 @@ export async function POST(request: Request) {
 
   const requiredPermission = parsed.data.ownerType === "payroll_run"
     ? "payroll:run"
-    : "accounting:write";
+    : parsed.data.ownerType === "employee"
+      ? "hr:manage"
+      : "accounting:write";
   if (!context.permissions.includes(requiredPermission)) {
     return withDemoHeader(
       json({ error: `Akses ${requiredPermission} diperlukan untuk lampiran ini.` }, 403),
@@ -56,6 +58,7 @@ export async function POST(request: Request) {
     payment: "payments",
     payroll_run: "payroll_runs",
     fixed_asset: "fixed_assets",
+    employee: "employees",
   }[parsed.data.ownerType];
   const { data: owner, error: ownerError } = await supabase
     .from(ownerTable)
@@ -71,7 +74,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const { error } = await createServiceSupabaseClient().from("attachments").insert({
+  const service = createServiceSupabaseClient();
+  const { data: inserted, error } = await service.from("attachments").insert({
     business_id: context.businessId,
     owner_type: parsed.data.ownerType,
     owner_id: parsed.data.ownerId,
@@ -80,7 +84,7 @@ export async function POST(request: Request) {
     mime_type: parsed.data.mimeType,
     size_bytes: parsed.data.sizeBytes,
     created_by: context.userId,
-  });
+  }).select("id").single();
 
   if (error) {
     logApiError("erp.attachment.metadata.failed", error, {
@@ -90,6 +94,25 @@ export async function POST(request: Request) {
       details: { ownerType: parsed.data.ownerType, ownerId: parsed.data.ownerId },
     });
     return withDemoHeader(json({ error: error.message }, 422), context);
+  }
+
+  if (parsed.data.ownerType === "employee" && inserted?.id) {
+    const { data: previousPhotos } = await service
+      .from("attachments")
+      .select("id, storage_path")
+      .eq("business_id", context.businessId)
+      .eq("owner_type", "employee")
+      .eq("owner_id", parsed.data.ownerId)
+      .neq("id", inserted.id);
+    const previousIds = (previousPhotos ?? []).map((item) => String(item.id));
+    const previousPaths = (previousPhotos ?? []).map((item) => String(item.storage_path));
+    const { error: removeError } = previousPaths.length
+      ? await service.storage.from(process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments").remove(previousPaths)
+      : { error: null };
+
+    if (!removeError && previousIds.length) {
+      await service.from("attachments").delete().eq("business_id", context.businessId).in("id", previousIds);
+    }
   }
 
   logApiInfo("erp.attachment.metadata.created", {

@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   Boxes,
   ChevronDown,
-  ClipboardList,
   Factory,
   Layers3,
   PackagePlus,
@@ -12,7 +11,6 @@ import {
   RefreshCcw,
   Search,
   SlidersHorizontal,
-  Utensils,
 } from "lucide-react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { MobileDialog } from "@/components/mobile-dialog";
@@ -20,6 +18,7 @@ import { PageHeader, cn } from "@/components/ui";
 import type { ErpWorkspace, Product } from "@/lib/erp/types";
 import { calculateProductUnitCost, productIndustryDefaults } from "@/lib/erp/industry-workflows";
 import { notify } from "@/lib/notify";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 
 type ProductTypeFilter = "all" | "sellable" | "purchasable" | "stock";
 
@@ -43,34 +42,18 @@ function nextMonthEnd() {
 }
 
 function industryCopy(industry: string) {
-  if (industry === "food_beverage") {
+  if (canonicalIndustryTemplateId(industry) === "umkm") {
     return {
-      description: "Kelola menu, bahan baku, harga, dan struktur biaya tanpa memenuhi layar utama.",
-      structureLabel: "Resep",
-      primaryIcon: Utensils,
-    };
-  }
-
-  if (industry === "manufacturing") {
-    return {
-      description: "Kelola produk, bahan, harga, dan struktur produksi dalam tampilan yang lebih ringkas.",
-      structureLabel: "BOM",
-      primaryIcon: Factory,
-    };
-  }
-
-  if (industry === "service") {
-    return {
-      description: "Kelola paket jasa, harga, dan komponen biaya dari satu daftar yang mudah dicari.",
-      structureLabel: "Komponen biaya",
-      primaryIcon: ClipboardList,
+      description: "Kelola produk jual, bahan pilihan, jasa, dan harga dari satu daftar sederhana.",
+      structureLabel: "Resep dan komponen",
+      primaryIcon: PackagePlus,
     };
   }
 
   return {
-    description: "Kelola produk, harga, dan bahan pendukung dalam tampilan yang mudah dipakai.",
-    structureLabel: "Struktur",
-    primaryIcon: Boxes,
+    description: "Kelola bahan mentah, barang jadi, BOM, biaya produksi, dan harga jual.",
+    structureLabel: "BOM produksi",
+    primaryIcon: Factory,
   };
 }
 
@@ -103,7 +86,8 @@ function itemPreset(industryItemType: Product["industryItemType"], industry: str
     return { productType: "service", fulfillmentMethod: "non_stock", makeOrBuy: "buy", isSellable: true, isPurchasable: false, trackStock: false };
   }
   if (industryItemType === "package") {
-    return { productType: "bundle", fulfillmentMethod: industry === "food_beverage" ? "recipe_on_sale" : "non_stock", makeOrBuy: "make", isSellable: true, isPurchasable: false, trackStock: industry === "food_beverage" };
+    const isUmkm = canonicalIndustryTemplateId(industry) === "umkm";
+    return { productType: "bundle", fulfillmentMethod: isUmkm ? "recipe_on_sale" : "make_to_order", makeOrBuy: "make", isSellable: true, isPurchasable: false, trackStock: isUmkm };
   }
   return { productType: "stock_item", fulfillmentMethod: "buy_stock", makeOrBuy: "buy", isSellable: true, isPurchasable: true, trackStock: true };
 }
@@ -485,7 +469,7 @@ export function KatalogProdukWorkspace({ initialWorkspace }: { initialWorkspace:
                 </Field>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field label="Tipe">
-                    <select name="structureType" className={inputClass()} defaultValue={workspace.business.industry === "manufacturing" ? "bom" : "recipe"}>
+                    <select name="structureType" className={inputClass()} defaultValue={canonicalIndustryTemplateId(workspace.business.industry) === "general" ? "bom" : "recipe"}>
                       <option value="recipe">Resep</option>
                       <option value="bom">BOM</option>
                       <option value="bundle">Bundle</option>
@@ -587,13 +571,24 @@ export function KatalogProdukWorkspace({ initialWorkspace }: { initialWorkspace:
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Jenis produk">
               <select name="industryItemType" className={inputClass()} value={itemType} onChange={(event) => setItemType(event.target.value as Product["industryItemType"])}>
-                <option value="menu_item">Menu jual</option>
-                <option value="raw_material">Bahan baku</option>
-                <option value="finished_good">Produk jadi</option>
-                <option value="semi_finished">Setengah jadi</option>
-                <option value="retail_sku">SKU retail</option>
-                <option value="service_item">Jasa</option>
-                <option value="package">Paket/bundle</option>
+                {canonicalIndustryTemplateId(workspace.business.industry) === "umkm" ? (
+                  <>
+                    <option value="retail_sku">Produk jual</option>
+                    <option value="raw_material">Bahan baku</option>
+                    <option value="service_item">Jasa</option>
+                    <option value="package">Paket</option>
+                    <option value="menu_item">Menu dengan resep</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="raw_material">Bahan mentah</option>
+                    <option value="semi_finished">Setengah jadi</option>
+                    <option value="finished_good">Produk jadi</option>
+                    <option value="retail_sku">Produk beli-jual</option>
+                    <option value="service_item">Jasa</option>
+                    <option value="package">Paket</option>
+                  </>
+                )}
               </select>
             </Field>
             <Field label="SKU"><input name="sku" className={inputClass()} defaultValue={defaultSku} required /></Field>

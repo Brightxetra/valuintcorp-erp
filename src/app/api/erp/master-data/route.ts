@@ -19,6 +19,7 @@ import {
 } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
+import { industryForTemplate } from "@/lib/erp/industry-templates";
 
 type MasterResource = ReturnType<typeof masterResourceSchema.parse>;
 
@@ -138,7 +139,7 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       contract_type: values.contractType,
       status: values.status,
       base_salary: values.baseSalary,
-      daily_rate: values.dailyRate ?? null,
+      daily_rate: null,
       joined_at: values.joinedAt,
       phone: values.phone ?? null,
       email: values.email ?? null,
@@ -150,6 +151,8 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       bank_account_name: values.bankAccountName ?? null,
       bpjs_health_no: values.bpjsHealthNo ?? null,
       bpjs_employment_no: values.bpjsEmploymentNo ?? null,
+      bpjs_participation: values.bpjsParticipation,
+      compensation_components: values.compensationComponents ?? [],
     };
   }
 
@@ -158,7 +161,7 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       legal_name: values.legalName,
       display_name: values.displayName,
       owner_name: values.ownerName,
-      industry: values.industry,
+      industry: industryForTemplate(String(values.industry)),
       tax_id: values.taxId ?? null,
       logo_url: values.logoUrl ?? null,
       period_start_month: values.periodStartMonth,

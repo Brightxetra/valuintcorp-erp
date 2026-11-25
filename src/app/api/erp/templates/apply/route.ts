@@ -4,6 +4,7 @@ import { applyIndustryTemplateSchema } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
 import { callActorServiceRpc } from "@/lib/supabase/service-rpc";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
+import { industryForTemplate } from "@/lib/erp/industry-templates";
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   const supabase = createRequestSupabaseClient(request);
   const { error } = await callActorServiceRpc(
     "apply_industry_template",
-    { ...parsed.data, businessId: context.businessId },
+    { ...parsed.data, templateId: industryForTemplate(parsed.data.templateId), businessId: context.businessId },
     context.userId,
   );
 

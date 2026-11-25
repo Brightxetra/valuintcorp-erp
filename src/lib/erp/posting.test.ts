@@ -154,28 +154,34 @@ describe("erp posting engine", () => {
     expect(result.journals).toHaveLength(workspace.journals.length + 1);
   });
 
-  it("posts payroll and rejects unreconciled gross/net/tax", () => {
+  it("posts payroll from employee data and rejects excessive stored deductions", () => {
     const workspace = createDemoErpWorkspace();
     const result = runPayroll(workspace, {
       employeeId: "emp-1",
-      grossPay: 5_200_000,
-      netCashPaid: 4_800_000,
-      taxWithheld: 200_000,
       date: "2026-06-28",
     });
 
     expect(result.payrollRuns).toHaveLength(workspace.payrollRuns.length + 1);
     expect(result.journals[0].source).toBe("payroll");
 
-    expect(() =>
-      runPayroll(workspace, {
-        employeeId: "emp-1",
-        grossPay: 5_000_000,
-        netCashPaid: 4_900_000,
-        taxWithheld: 200_000,
-        date: "2026-06-28",
-      }),
-    ).toThrow(/gross pay/);
+    const invalidWorkspace = {
+      ...workspace,
+      employees: workspace.employees.map((employee) => employee.id === "emp-1"
+        ? {
+            ...employee,
+            compensationComponents: [{
+              id: "deduction-too-large",
+              name: "Potongan terlalu besar",
+              type: "deduction" as const,
+              calculation: "fixed" as const,
+              amount: 100_000_000,
+            }],
+          }
+        : employee),
+    };
+
+    expect(() => runPayroll(invalidWorkspace, { employeeId: "emp-1", date: "2026-06-28" }))
+      .toThrow(/potongan payroll/);
   });
   it("posts a branch POS sale into the consolidated stock and accounting ledgers", () => {
     const workspace = createDemoErpWorkspace();

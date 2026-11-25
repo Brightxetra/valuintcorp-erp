@@ -8,6 +8,7 @@ import type {
 } from "@/lib/erp/types";
 import type { StockMovement } from "@/lib/domain/types";
 import { valueInventory } from "@/lib/inventory/valuation";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 
 export function productIndustryDefaults(industry: string): {
   industryItemType: Product["industryItemType"];
@@ -16,33 +17,13 @@ export function productIndustryDefaults(industry: string): {
   productType: Product["productType"];
   unit: string;
 } {
-  if (industry === "food_beverage") {
-    return {
-      industryItemType: "menu_item",
-      fulfillmentMethod: "recipe_on_sale",
-      makeOrBuy: "make",
-      productType: "stock_item",
-      unit: "porsi",
-    };
-  }
-
-  if (industry === "manufacturing") {
+  if (canonicalIndustryTemplateId(industry) === "general") {
     return {
       industryItemType: "finished_good",
       fulfillmentMethod: "make_to_stock",
       makeOrBuy: "make",
       productType: "stock_item",
       unit: "unit",
-    };
-  }
-
-  if (industry === "service") {
-    return {
-      industryItemType: "service_item",
-      fulfillmentMethod: "non_stock",
-      makeOrBuy: "buy",
-      productType: "service",
-      unit: "paket",
     };
   }
 

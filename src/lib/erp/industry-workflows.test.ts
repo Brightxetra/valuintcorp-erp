@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Product, ProductStructure } from "@/lib/erp/types";
 import type { StockMovement } from "@/lib/domain/types";
-import { buildMrpRecommendations, calculateProductUnitCost, explodeProductStructure } from "@/lib/erp/industry-workflows";
+import { buildMrpRecommendations, calculateProductUnitCost, explodeProductStructure, productIndustryDefaults } from "@/lib/erp/industry-workflows";
 
 function product(overrides: Partial<Product> & Pick<Product, "id" | "sku" | "name" | "purchasePrice">): Product {
   return {
@@ -28,6 +28,19 @@ function product(overrides: Partial<Product> & Pick<Product, "id" | "sku" | "nam
 }
 
 describe("industry workflows", () => {
+  it("uses simple buy-and-sell defaults for UMKM and production defaults for General", () => {
+    expect(productIndustryDefaults("food_beverage")).toMatchObject({
+      industryItemType: "retail_sku",
+      fulfillmentMethod: "buy_stock",
+      makeOrBuy: "buy",
+    });
+    expect(productIndustryDefaults("general")).toMatchObject({
+      industryItemType: "finished_good",
+      fulfillmentMethod: "make_to_stock",
+      makeOrBuy: "make",
+    });
+  });
+
   it("calculates recipe unit cost with yield and waste", () => {
     const products = [
       product({ id: "menu", sku: "M-1", name: "Menu", purchasePrice: 0, fulfillmentMethod: "recipe_on_sale", makeOrBuy: "make" }),

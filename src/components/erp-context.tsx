@@ -115,6 +115,7 @@ export function ErpWorkspaceProvider({
   useEffect(() => {
     if (demoMode || activeBusinessId === workspace.business.id) return;
 
+    let cancelled = false;
     void (async () => {
       await Promise.resolve();
       setLoading(true);
@@ -122,22 +123,31 @@ export function ErpWorkspaceProvider({
 
       try {
         const result = await loadWorkspaceForBusiness(activeBusinessId, profile);
-        setWorkspace(result.workspace);
+        if (!cancelled) setWorkspace(result.workspace);
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "Workspace gagal dimuat.");
+        if (!cancelled) setError(caught instanceof Error ? caught.message : "Workspace gagal dimuat.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeBusinessId, demoMode, profile, workspace.business.id]);
 
   const request = useCallback(
-    async <T,>(endpoint: string, options: RequestInit & { businessId?: string | null } = {}) =>
-      erpApiFetch<T>(endpoint, {
+    async <T,>(endpoint: string, options: RequestInit & { businessId?: string | null } = {}) => {
+      if (!demoMode && activeBusinessId !== workspace.business.id) {
+        throw new Error("Perusahaan sedang dimuat. Coba lagi setelah perpindahan selesai.");
+      }
+
+      return erpApiFetch<T>(endpoint, {
         ...options,
         businessId: "businessId" in options ? options.businessId : activeBusinessId,
-      }),
-    [activeBusinessId],
+      });
+    },
+    [activeBusinessId, demoMode, workspace.business.id],
   );
 
   const value = useMemo<ErpContextValue>(

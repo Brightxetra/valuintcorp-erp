@@ -95,12 +95,12 @@ test("core ERP menu navigation stays responsive in demo fallback mode", async ({
   await expect(page).toHaveURL(/\/transaksi\/tagihan$/);
   await expect(page.getByText("Tagihan Supplier").first()).toBeVisible();
 
-  await page.getByRole("link", { name: "Menu & Resep" }).click();
+  await page.getByRole("link", { name: /Menu & Produk|Produk, Bahan & Produksi/ }).first().click();
   await expect(page).toHaveURL(/\/produk\/katalog$/);
   await expect(page.getByRole("heading", { name: "Katalog Produk" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Daftar produk" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Bahan & Stok" }).click();
+  await page.locator('a[href="/produk/stok"]').first().click();
   await expect(page).toHaveURL(/\/produk\/stok$/);
   await expect(page.getByText("Stok & Persediaan").first()).toBeVisible();
 });
@@ -188,13 +188,13 @@ test("header notification panel remains available", async ({ page }) => {
 test("saving a business industry uses a Goey success toast instead of an inline banner", async ({ page }) => {
   await page.goto("/settings");
   await page.getByRole("button", { name: /Profil Bisnis/ }).click();
-  await page.getByLabel("Industri").selectOption("service");
+  await page.getByLabel("Industri").selectOption("general");
   await page.getByRole("button", { name: "Simpan profil" }).click();
 
   const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Profil bisnis disimpan" });
   await expect(toast).toBeVisible();
   await expectTopCenterToast(page, toast);
-  await expect(toast).toContainText("Industri: Jasa");
+  await expect(toast).toContainText("Industri: General");
   await expect(page.getByText("business disimpan.", { exact: true })).toHaveCount(0);
 });
 
@@ -209,7 +209,7 @@ test("failed business changes show an eight-second Goey error without an inline 
 
   await page.goto("/settings");
   await page.getByRole("button", { name: /Profil Bisnis/ }).click();
-  await page.getByLabel("Industri").selectOption("service");
+  await page.getByLabel("Industri").selectOption("general");
   await page.getByRole("button", { name: "Simpan profil" }).click();
 
   const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Profil bisnis gagal disimpan" });
@@ -238,9 +238,43 @@ test("team settings use email-driven invites without exposing Supabase auth user
   await page.getByRole("button", { name: /Team & Akses/ }).click();
 
   await expect(page.getByRole("heading", { name: "Team & Akses" })).toBeVisible();
+  await page.getByRole("button", { name: "Undang anggota" }).click();
+  await expect(page.getByRole("dialog", { name: "Undang anggota" })).toBeVisible();
   await expect(page.getByLabel("Email anggota")).toBeVisible();
   await expect(page.getByText("Supabase auth user id")).toHaveCount(0);
   await expect(page.getByText("Auth User ID")).toHaveCount(0);
+});
+
+test("the price list previews a gross margin and persists the selected price", async ({ page }) => {
+  await page.goto("/produk/harga", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Update Harga", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Update Harga Produk" });
+  await dialog.getByLabel("Produk", { exact: true }).selectOption({ label: "SVC-CATERING - Jasa Catering Event" });
+  await dialog.getByLabel("Harga Baru").fill("2765000");
+  await dialog.getByRole("button", { name: "Update Harga", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByRole("row", { name: /Jasa Catering Event/ })).toContainText(/2\.765\.000/);
+  await page.getByRole("button", { name: "Update Harga", exact: true }).click();
+  await dialog.getByLabel("Produk", { exact: true }).selectOption("item-rendang");
+  await dialog.getByLabel("Target margin kotor (%)").fill("25");
+  await expect(dialog.getByRole("button", { name: /Gunakan rekomendasi/ })).toBeVisible();
+});
+
+test("account and employee exports download CSV files", async ({ page }) => {
+  await page.goto("/keuangan/akun");
+  const [accounts] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Ekspor CSV" }).click(),
+  ]);
+  expect(accounts.suggestedFilename()).toBe("daftar-akun.csv");
+
+  await page.goto("/karyawan");
+  const [employees] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export Data" }).click(),
+  ]);
+  expect(employees.suggestedFilename()).toBe("data-karyawan.csv");
 });
 
 test("settings security exposes password change controls", async ({ page }) => {
@@ -351,6 +385,14 @@ test("branch POS account menu links to settings security and reports", async ({ 
 });
 
 test("branch POS posts a demo sale into the daily recap", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.print = () => { document.documentElement.dataset.printed = "true"; };
+  });
+  await page.goto("/pos/pengaturan");
+  await page.getByLabel("Ukuran kertas").selectOption("58");
+  await page.getByLabel("Nama toko").fill("Kasir Uji");
+  await page.getByRole("button", { name: "Simpan pengaturan" }).click();
+  await expect(page.getByText("Tersimpan: 58 mm")).toBeVisible();
   await page.goto("/pos");
   await expect(page.getByText("Rendang Bowl", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Tambah Rendang Bowl" }).click();
@@ -363,6 +405,12 @@ test("branch POS posts a demo sale into the daily recap", async ({ page }) => {
   const revenueCard = page.getByText("Omzet", { exact: true }).locator("..");
   await expect(revenueCard).toContainText("Rp 45.000");
   await expect(page.getByText(/INV-2026-/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Cetak struk" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-printed", "true");
+  await page.emulateMedia({ media: "print" });
+  await expect(page.getByRole("article", { name: "Pratinjau struk" })).toContainText("Kasir Uji");
+  await expect(page.locator(".pos-workspace")).toHaveCSS("--receipt-width", "58mm");
+  await page.emulateMedia({ media: "screen" });
   const expenseForm = page.locator("#branch-expense-form");
   await expenseForm.getByLabel("Kategori").fill("Transport");
   await expenseForm.getByLabel("Nominal").fill("25000");

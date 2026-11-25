@@ -1,7 +1,7 @@
 import { createDemoErpWorkspace } from "@/lib/erp/demo-workspace";
 import type {
   CreatePaymentInput,
-  CreatePayrollRunInput,
+  CreatePayrollBatchInput,
   CreateBranchExpenseInput,
   CreatePurchaseBillInput,
   ApplyIndustryTemplateInput,
@@ -63,6 +63,7 @@ import {
 } from "@/lib/erp/horizontal";
 import { valueInventory } from "@/lib/inventory/valuation";
 import { buildMrpRecommendations, calculateProductUnitCost } from "@/lib/erp/industry-workflows";
+import { industryForTemplate } from "@/lib/erp/industry-templates";
 type DemoBranchExpense = {
   id: string;
   locationId: string;
@@ -391,10 +392,16 @@ export function runDemoMrp(input: MrpRunInput): ErpWorkspace {
   });
 }
 
-export function createDemoPayrollRun(input: CreatePayrollRunInput): ErpWorkspace {
+export function createDemoPayrollBatch(input: CreatePayrollBatchInput): ErpWorkspace {
   workspace = currentWorkspace();
-  workspace = runPayroll(workspace, input);
-  return setDemoWorkspace(workspace);
+  let nextWorkspace = workspace;
+  for (const employeeId of input.employeeIds) {
+    if (nextWorkspace.payrollRuns.some((run) => run.employeeId === employeeId && run.period === input.date.slice(0, 7))) {
+      throw new Error("Payroll karyawan ini sudah dipost untuk periode tersebut.");
+    }
+    nextWorkspace = runPayroll(nextWorkspace, { employeeId, date: input.date });
+  }
+  return setDemoWorkspace(nextWorkspace);
 }
 
 export function saveDemoFixedAsset(input: FixedAssetInput | UpdateFixedAssetInput): ErpWorkspace {
@@ -435,7 +442,7 @@ export function saveDemoMasterData(
         legalName: String(values.legalName ?? workspace.business.legalName),
         displayName: String(values.displayName ?? workspace.business.displayName),
         ownerName: String(values.ownerName ?? workspace.business.ownerName),
-        industry: String(values.industry ?? workspace.business.industry) as typeof workspace.business.industry,
+        industry: industryForTemplate(String(values.industry ?? workspace.business.industry)),
         taxId: typeof values.taxId === "string" ? values.taxId : undefined,
         logoUrl: typeof values.logoUrl === "string" && values.logoUrl.length > 0 ? values.logoUrl : workspace.business.logoUrl,
         periodStartMonth: Number(values.periodStartMonth ?? workspace.business.periodStartMonth),
@@ -585,6 +592,12 @@ export function saveDemoMasterData(
     bankAccountName: typeof values.bankAccountName === "string" ? values.bankAccountName : undefined,
     bpjsHealthNo: typeof values.bpjsHealthNo === "string" ? values.bpjsHealthNo : undefined,
     bpjsEmploymentNo: typeof values.bpjsEmploymentNo === "string" ? values.bpjsEmploymentNo : undefined,
+    bpjsParticipation: typeof values.bpjsParticipation === "string"
+      ? values.bpjsParticipation as Employee["bpjsParticipation"]
+      : "none",
+    compensationComponents: Array.isArray(values.compensationComponents)
+      ? values.compensationComponents as NonNullable<Employee["compensationComponents"]>
+      : [],
   };
 
   return refresh({
@@ -592,6 +605,18 @@ export function saveDemoMasterData(
     employees: upsertById(workspace.employees, id, employee, employee),
     activities: [activity("hr", id ? "employee updated" : "employee created", `${employee.name} disimpan.`), ...workspace.activities],
   });
+}
+
+export function updateDemoProductPrice(id: string, changes: Partial<Pick<Product, "sellingPrice" | "purchasePrice">>) {
+  workspace = currentWorkspace();
+  const product = workspace.products.find((item) => item.id === id && item.isActive !== false);
+  if (!product) return false;
+  refresh({
+    ...workspace,
+    products: workspace.products.map((item) => item.id === id ? { ...item, ...changes } : item),
+    activities: [activity("inventory", "product price updated", `Harga ${product.sku} disimpan.`), ...workspace.activities],
+  });
+  return true;
 }
 
 export function saveDemoChartOfAccount(id: string | undefined, values: Record<string, unknown>): ErpWorkspace {
@@ -657,7 +682,7 @@ export function applyDemoIndustryTemplate(input: ApplyIndustryTemplateInput): Er
     ...workspace,
     business: {
       ...workspace.business,
-      industry: input.templateId === "distributor" ? "retail" : (input.templateId as typeof workspace.business.industry),
+      industry: industryForTemplate(input.templateId),
     },
     featureFlags,
     products: workspace.products.map((product) => ({

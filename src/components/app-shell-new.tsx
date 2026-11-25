@@ -37,7 +37,9 @@ import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
 import { notify } from "@/lib/notify";
 import { getMostSpecificActiveHref, pathMatchesHref } from "@/lib/navigation/active-link";
+import { acquireBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import type { ErpWorkspace } from "@/lib/erp/types";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 import { posExperienceForPermissions, type Permission } from "@/lib/security/permissions";
 import { browserIdleSessionExpired, clearServerSession, signOutLocalBrowserSession, touchServerSessionActivity } from "@/lib/erp/client-api";
 import { getAccessiblePosBranches } from "@/lib/pos/branches";
@@ -128,50 +130,34 @@ type NavGroup = {
 };
 
 function industryLabel(item: NavItem, industry: string): NavItem {
+  const templateId = canonicalIndustryTemplateId(industry);
   if (item.href === "/produk/katalog") {
-    if (industry === "food_beverage") return { ...item, label: "Menu & Resep", icon: PackagePlus };
-    if (industry === "manufacturing") return { ...item, label: "BOM & MRP", icon: Factory };
-    if (industry === "service") return { ...item, label: "Katalog Jasa", icon: FileText };
+    if (templateId === "umkm") return { ...item, label: "Menu & Produk", icon: PackagePlus };
+    return { ...item, label: "Produk, Bahan & Produksi", icon: Factory };
   }
 
-  if (item.href === "/produk/stok" && industry === "food_beverage") {
+  if (item.href === "/produk/stok" && templateId === "umkm") {
     return { ...item, label: "Bahan & Stok" };
   }
 
   return item;
 }
 
-function isPrimaryForIndustry(href: string, industry: string) {
-  if (industry === "manufacturing") return href !== "/pos";
-  if (industry === "service") return !["/pos", "/produk/stok", "/produk/harga"].includes(href);
-  return true;
-}
-
 function navigationForWorkspace(workspace: ErpWorkspace): NavGroup[] {
-  const canSeeAllModules = workspace.user.role === "owner" || workspace.user.role === "system_admin";
   const hasPermission = (item: NavItem) => workspace.permissions.includes(item.permission);
-  const primaryGroups = navGroups
+  return navGroups
     .map((group) => ({
       ...group,
       items: group.items
-        .filter((item) => hasPermission(item) && isPrimaryForIndustry(item.href, workspace.business.industry))
+        .filter(hasPermission)
         .map((item) => industryLabel(item, workspace.business.industry)),
     }))
     .filter((group) => group.items.length > 0);
-
-  if (!canSeeAllModules) return primaryGroups;
-
-  const secondaryItems = navGroups
-    .flatMap((group) => group.items)
-    .filter((item) => hasPermission(item) && !isPrimaryForIndustry(item.href, workspace.business.industry))
-    .map((item) => industryLabel(item, workspace.business.industry));
-
-  return secondaryItems.length > 0 ? [...primaryGroups, { label: "Semua Modul", items: secondaryItems }] : primaryGroups;
 }
 
 function mobileNavigationForWorkspace(workspace: ErpWorkspace): NavItem[] {
   return mobileNav
-    .filter((item) => workspace.permissions.includes(item.permission) && isPrimaryForIndustry(item.href, workspace.business.industry))
+    .filter((item) => workspace.permissions.includes(item.permission))
     .map((item) => industryLabel(item, workspace.business.industry));
 }
 
@@ -648,7 +634,7 @@ function NavLinks({ workspace, onNavigate }: {
 
 export function AppShell({ children, workspace }: { children: React.ReactNode; workspace: ErpWorkspace }) {
   return (
-    <ErpWorkspaceProvider initialWorkspace={workspace}>
+    <ErpWorkspaceProvider key={workspace.business.id} initialWorkspace={workspace}>
       <AppShellChrome>{children}</AppShellChrome>
     </ErpWorkspaceProvider>
   );
@@ -662,7 +648,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const { workspace, businesses, activeBusinessId, setActiveBusinessId, demoMode, demoAccount, runtimeMode } = useErpWorkspace();
+  const { workspace, demoMode, demoAccount, runtimeMode } = useErpWorkspace();
 
   const business = workspace.business;
   const period = workspace.period;
@@ -752,11 +738,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!sidebarOpen) return undefined;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return acquireBodyScrollLock();
   }, [sidebarOpen]);
 
   useEffect(() => {
@@ -1093,21 +1075,10 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
 
             {/* User & Business - Desktop */}
             <div className="hidden items-center gap-2 md:flex">
-              {businesses.length > 1 && (
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-                  <Building2 className="size-4 text-slate-500" aria-hidden />
-                  <select
-                    aria-label="Pilih bisnis"
-                    value={activeBusinessId}
-                    onChange={(e) => setActiveBusinessId(e.target.value)}
-                    className="bg-transparent text-sm outline-none"
-                  >
-                    {businesses.map((b) => (
-                      <option key={b.id} value={b.id}>{b.displayName}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <Link href="/perusahaan" className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">
+                <Building2 className="size-4 shrink-0 text-slate-500" aria-hidden />
+                <span className="max-w-48 truncate">{business.displayName}</span>
+              </Link>
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
                 <div className={cn("flex size-2 rounded-full", period.locked ? "bg-red-500" : "bg-emerald-500")} aria-hidden />
                 <span className="text-sm text-slate-600">{period.label}</span>
@@ -1142,6 +1113,9 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                   </div>
 
                   <div className="mt-2 space-y-1">
+                    <Link href="/perusahaan" onClick={() => setAccountMenuOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                      <Building2 className="size-4" aria-hidden /> Perusahaan Saya
+                    </Link>
                     {pathname.startsWith("/pos") && workspace.permissions.includes("pos:read") ? (
                       <>
                         <Link
@@ -1269,7 +1243,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center gap-1 px-2 py-3 text-[11px] font-medium transition-colors",
+                  "flex min-w-0 flex-col items-center gap-1 px-1 py-3 text-[11px] font-medium transition-colors",
                   active ? "text-slate-950" : "text-slate-500"
                 )}
               >

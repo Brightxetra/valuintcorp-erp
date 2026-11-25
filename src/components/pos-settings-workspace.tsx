@@ -2,13 +2,60 @@
 
 import Link from "next/link";
 import { CheckCircle2, Store } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { cn } from "@/components/ui";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { getAccessiblePosBranches } from "@/lib/pos/branches";
-import { readStoredPosLocationId, writeStoredPosLocationId } from "@/lib/pos/preferences";
+import { defaultPosReceiptSettings, readStoredPosLocationId, readStoredPosReceiptSettings, writeStoredPosLocationId, writeStoredPosReceiptSettings, type PosReceiptSettings } from "@/lib/pos/preferences";
 import { notify } from "@/lib/notify";
+
+function ReceiptSettingsForm({
+  settings,
+  savedSettings,
+  setSettings,
+  onSave,
+  ready,
+}: {
+  settings: PosReceiptSettings;
+  savedSettings: PosReceiptSettings;
+  setSettings: React.Dispatch<React.SetStateAction<PosReceiptSettings>>;
+  onSave: (event: React.FormEvent<HTMLFormElement>) => void;
+  ready: boolean;
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Struk thermal</p>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Pengaturan cetak kasir</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-500">Pengaturan ini berlaku di browser kasir yang digunakan.</p>
+      </div>
+      <form onSubmit={onSave} className="mt-4">
+       <fieldset disabled={!ready} className="grid gap-4 md:grid-cols-2">
+        <label className="text-sm font-medium text-slate-700">Ukuran kertas
+          <select value={settings.paperWidth} onChange={(event) => setSettings((current) => ({ ...current, paperWidth: event.target.value as PosReceiptSettings["paperWidth"] }))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3">
+            <option value="58">58 mm</option>
+            <option value="80">80 mm</option>
+          </select>
+        </label>
+        <label className="text-sm font-medium text-slate-700">Nama toko
+          <input value={settings.storeName} onChange={(event) => setSettings((current) => ({ ...current, storeName: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3" />
+        </label>
+        <label className="text-sm font-medium text-slate-700 md:col-span-2">Alamat
+          <input value={settings.storeAddress} onChange={(event) => setSettings((current) => ({ ...current, storeAddress: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3" />
+        </label>
+        <label className="text-sm font-medium text-slate-700 md:col-span-2">Footer struk
+          <input value={settings.footer} onChange={(event) => setSettings((current) => ({ ...current, footer: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3" />
+        </label>
+        <div className="flex items-center justify-between gap-3 md:col-span-2">
+          <p className="text-xs text-slate-500">Tersimpan: {savedSettings.paperWidth} mm</p>
+          <button type="submit" className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">Simpan pengaturan</button>
+        </div>
+       </fieldset>
+      </form>
+    </section>
+  );
+}
 
 export function PosSettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
   const { workspace } = useErpWorkspace(initialWorkspace);
@@ -17,6 +64,19 @@ export function PosSettingsWorkspace({ initialWorkspace }: { initialWorkspace: E
     const storedId = readStoredPosLocationId();
     return branches.some((branch) => branch.id === storedId) ? storedId : branches[0]?.id ?? "";
   });
+  const [receiptSettings, setReceiptSettings] = useState(defaultPosReceiptSettings);
+  const [savedReceiptSettings, setSavedReceiptSettings] = useState(defaultPosReceiptSettings);
+  const [loadedBusinessId, setLoadedBusinessId] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const settings = readStoredPosReceiptSettings(workspace.business.id);
+      setReceiptSettings(settings);
+      setSavedReceiptSettings(settings);
+      setLoadedBusinessId(workspace.business.id);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [workspace.business.id]);
 
   function selectBranch(locationId: string) {
     const branch = branches.find((item) => item.id === locationId);
@@ -27,21 +87,32 @@ export function PosSettingsWorkspace({ initialWorkspace }: { initialWorkspace: E
     notify.success("Cabang POS dipilih", { description: branch.name });
   }
 
+  function saveReceiptSettings(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    writeStoredPosReceiptSettings(workspace.business.id, receiptSettings);
+    setSavedReceiptSettings(receiptSettings);
+    notify.success("Pengaturan struk disimpan", { description: `Kertas thermal ${receiptSettings.paperWidth} mm.` });
+  }
+
   if (branches.length === 0) {
     return (
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-start gap-4">
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-            <Store className="size-6" aria-hidden />
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-950">Cabang POS belum tersedia</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Tambahkan cabang atau hubungkan cabang ke gudang dari pengaturan bisnis utama.
-            </p>
+      <div className="space-y-4">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+              <Store className="size-6" aria-hidden />
+            </span>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-950">Cabang POS belum tersedia</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Tambahkan cabang atau hubungkan cabang ke gudang dari pengaturan bisnis utama.
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <ReceiptSettingsForm settings={receiptSettings} savedSettings={savedReceiptSettings} setSettings={setReceiptSettings} onSave={saveReceiptSettings} ready={loadedBusinessId === workspace.business.id} />
+      </div>
     );
   }
 
@@ -105,6 +176,8 @@ export function PosSettingsWorkspace({ initialWorkspace }: { initialWorkspace: E
           );
         })}
       </section>
+
+      <ReceiptSettingsForm settings={receiptSettings} savedSettings={savedReceiptSettings} setSettings={setReceiptSettings} onSave={saveReceiptSettings} ready={loadedBusinessId === workspace.business.id} />
     </div>
   );
 }

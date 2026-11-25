@@ -330,6 +330,8 @@ export function buildPayrollJournal(params: {
   salaryPayable?: Money;
   taxWithheld?: Money;
   otherDeductionsPayable?: Money;
+  employeeBpjsContribution?: Money;
+  employerBpjsContribution?: Money;
   businessId?: string;
   accounts?: ChartOfAccount[];
 }): JournalEntry {
@@ -337,15 +339,21 @@ export function buildPayrollJournal(params: {
   const salaryPayable = params.salaryPayable ?? 0;
   const taxWithheld = params.taxWithheld ?? 0;
   const otherDeductionsPayable = params.otherDeductionsPayable ?? 0;
-  const creditTotal = params.netCashPaid + salaryPayable + taxWithheld + otherDeductionsPayable;
+  const employeeBpjsContribution = params.employeeBpjsContribution ?? 0;
+  const employerBpjsContribution = params.employerBpjsContribution ?? 0;
+  const creditTotal = params.netCashPaid + salaryPayable + taxWithheld + otherDeductionsPayable + employeeBpjsContribution;
 
-  if (creditTotal !== params.grossPay) {
+  if (Math.round(creditTotal * 100) !== Math.round(params.grossPay * 100)) {
     throw new Error("Payroll credits must equal gross payroll cost.");
   }
 
   const lines = [
     makeLine(accounts, accountCodes.payrollExpense, "debit", params.grossPay, "Beban gaji"),
   ];
+
+  if (employerBpjsContribution > 0) {
+    lines.push(makeLine(accounts, accountCodes.bpjsExpense, "debit", employerBpjsContribution, "Beban BPJS perusahaan"));
+  }
 
   if (params.netCashPaid > 0) {
     lines.push(makeLine(accounts, accountCodes.cash, "credit", params.netCashPaid, "Gaji dibayar"));
@@ -363,6 +371,11 @@ export function buildPayrollJournal(params: {
     lines.push(
       makeLine(accounts, accountCodes.accountsPayable, "credit", otherDeductionsPayable, "Potongan lain"),
     );
+  }
+
+  const totalBpjsPayable = employeeBpjsContribution + employerBpjsContribution;
+  if (totalBpjsPayable > 0) {
+    lines.push(makeLine(accounts, accountCodes.bpjsPayable, "credit", totalBpjsPayable, "Utang BPJS"));
   }
 
   return createJournalEntry({

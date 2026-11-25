@@ -11,6 +11,7 @@ import { normalBalanceForType } from "@/lib/domain/types";
 import { money } from "@/lib/format";
 import { getAccountTypeLabel } from "@/lib/translations";
 import { notify } from "@/lib/notify";
+import { downloadCsvFile } from "@/lib/exports/csv";
 
 type AccountFormState = {
   code: string;
@@ -177,6 +178,7 @@ export function AkunWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   }
 
   function openEdit(account: ChartOfAccount) {
+    setSelectedAccount(null);
     setEditingAccount(account);
     setForm(accountToForm(account));
     setShowForm(true);
@@ -222,7 +224,14 @@ export function AkunWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div><h1 className="text-2xl font-bold text-slate-950">Daftar Akun (COA)</h1><p className="mt-1 text-slate-600">Kelola chart of accounts dari Supabase dan lihat saldo dari jurnal posted.</p></div>
-        <div className="flex flex-wrap gap-2"><ActionButton variant="secondary"><Download className="size-4" /> Export</ActionButton><ActionButton onClick={openCreate}><Plus className="size-4" /> Tambah Akun Baru</ActionButton></div>
+        <div className="flex flex-wrap gap-2">
+          <ActionButton variant="secondary" disabled={filteredAccounts.length === 0} onClick={() => downloadCsvFile(
+            "daftar-akun.csv",
+            ["Kode", "Nama", "Tipe", "Saldo normal", "Kategori", "Status", "Saldo"],
+            filteredAccounts.map((account) => [account.code, account.name, getAccountTypeLabel(account.type), account.normalBalance, account.category, account.isActive ? "Aktif" : "Nonaktif", account.balance]),
+          )}><Download className="size-4" /> Ekspor CSV</ActionButton>
+          <ActionButton onClick={openCreate}><Plus className="size-4" /> Tambah Akun Baru</ActionButton>
+        </div>
       </div>
 
       <SummaryByType accounts={accounts.filter((account) => account.isActive)} />
@@ -256,11 +265,12 @@ export function AkunWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
         ) : <EmptyState title="Belum ada akun" description="Akun akan muncul setelah chart of accounts dimuat dari Supabase." />}
       </Panel>
 
-      {selectedAccount ? <AccountDetail account={selectedAccount} onEdit={openEdit} onArchive={(account) => void archiveAccount(account)} /> : null}
-
       <div className="rounded-lg bg-blue-50 p-4"><div className="flex items-start gap-3"><ScrollText className="mt-0.5 size-5 shrink-0 text-blue-600" /><div><p className="font-medium text-blue-800">Tentang Chart of Accounts</p><p className="mt-1 text-sm text-blue-700">COA tersimpan di tabel <code>chart_of_accounts</code>. Akun custom bisa ditambah, diubah, dan dinonaktifkan; akun sistem dikunci karena dipakai jurnal otomatis.</p></div></div></div>
 
       <AccountFormDialog open={showForm} account={editingAccount} form={form} setForm={setForm} onClose={() => setShowForm(false)} onSubmit={saveAccount} loading={loading} />
+      <MobileDialog isOpen={Boolean(selectedAccount)} onClose={() => setSelectedAccount(null)} title="Detail akun" maxWidth="max-w-2xl">
+        {selectedAccount ? <AccountDetail account={selectedAccount} onEdit={openEdit} onArchive={(account) => void archiveAccount(account)} /> : null}
+      </MobileDialog>
     </div>
   );
 }

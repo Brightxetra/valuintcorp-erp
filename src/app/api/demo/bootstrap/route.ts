@@ -4,6 +4,7 @@ import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runti
 import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 
 const bootstrapSchema = z.object({
   templateId: z.string().min(2).optional(),
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
     return json({ runtimeMode: "production", demoAccount: false, businessId: null });
   }
 
-  const templateId = parsed.data.templateId ?? String(account.template_id ?? "food_beverage");
+  const templateId = canonicalIndustryTemplateId(parsed.data.templateId ?? String(account.template_id ?? "food_beverage"));
   const { data: businessId, error } = await service.rpc("bootstrap_demo_sandbox", {
     target_auth_user_id: userData.user.id,
     target_email: userEmail,

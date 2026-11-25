@@ -14,7 +14,6 @@ import {
   ImageIcon,
   Laptop,
   MapPin,
-  Package,
   Power,
   Plus,
   RefreshCw,
@@ -38,6 +37,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { permissionCatalog } from "@/lib/security/permissions";
 import { clearServerSession, signOutLocalBrowserSession, syncServerSession } from "@/lib/erp/client-api";
 import { notify } from "@/lib/notify";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 
 type SettingsCategory =
   | "business"
@@ -45,7 +45,6 @@ type SettingsCategory =
   | "team"
   | "customers"
   | "suppliers"
-  | "products"
   | "warehouses"
   | "locations"
   | "onboarding"
@@ -55,10 +54,7 @@ type SettingsCategory =
 type SettingsTab = "overview" | "business" | "team" | "data" | "security" | "integrations";
 
 const industryLabels: Record<string, string> = {
-  food_beverage: "F&B ringan",
-  retail: "Retail",
-  service: "Jasa",
-  online_seller: "Online seller",
+  umkm: "UMKM",
   general: "General",
 };
 
@@ -91,14 +87,13 @@ interface SettingsPanelProps {
   pending: boolean;
   saveBusiness: (formData: FormData) => void;
   saveTax: (formData: FormData) => void;
-  saveMember: (formData: FormData) => void;
+  saveMember: (formData: FormData) => Promise<boolean>;
   deleteMember: (memberId: string) => Promise<void>;
   cancelInvite: (inviteId: string) => Promise<void>;
   resendInvite: (inviteId: string) => Promise<void>;
   saveLocation: (formData: FormData) => void;
   saveWarehouse: (formData: FormData) => void;
   saveMaster: (resource: string, values: Record<string, unknown>, id?: string) => Promise<void>;
-  archiveMaster: (resource: string, id: string) => Promise<void>;
   updateMasterStatus: (resource: string, ids: string[], isActive: boolean) => Promise<void>;
   applyTemplate: (formData: FormData) => void;
   createBusinessFromSettings: (formData: FormData) => void;
@@ -243,12 +238,8 @@ function BusinessProfilePanel({
           <TextField name="ownerName" label="Pemilik" defaultValue={workspace.business.ownerName} required />
           <TextField name="taxId" label="NPWP" defaultValue={workspace.business.taxId ?? ""} />
           <input type="hidden" name="logoUrl" value={workspace.business.logoUrl ?? ""} />
-          <SelectField name="industry" label="Industri" defaultValue={workspace.business.industry}>
-            <option value="retail">Retail</option>
-            <option value="food_beverage">F&B</option>
-            <option value="service">Jasa</option>
-            <option value="online_seller">Online seller</option>
-            <option value="manufacturing">Manufacturing</option>
+          <SelectField name="industry" label="Industri" defaultValue={canonicalIndustryTemplateId(workspace.business.industry)}>
+            <option value="umkm">UMKM</option>
             <option value="general">General</option>
           </SelectField>
           <TextField name="periodStartMonth" label="Bulan awal periode" type="number" min={1} max={12} defaultValue={workspace.business.periodStartMonth} required />
@@ -310,15 +301,36 @@ function memberSecondaryLabel(member: NonNullable<ErpWorkspace["members"]>[numbe
 
 function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvite, resendInvite }: SettingsPanelProps) {
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [accessScope, setAccessScope] = useState("role");
+  const [role, setRole] = useState("staff");
   const members = workspace.members ?? [];
   const editingMember = members.find((member) => member.id === editingMemberId);
   const pendingInvites = workspace.memberInvites.filter((invite) => invite.status === "pending");
+  const query = search.trim().toLowerCase();
+  const visibleMembers = members.filter((member) => memberDisplayName(member, workspace).toLowerCase().includes(query) || member.role.includes(query));
+  const visibleInvites = pendingInvites.filter((invite) => invite.email.toLowerCase().includes(query));
+  const branches = workspace.locations.filter((location) => (location.isActive || editingMember?.locationIds.includes(location.id)) && ["branch", "outlet", "store"].includes(location.type));
+  const closeEditor = useCallback(() => {
+    if (!pending) setEditorOpen(false);
+  }, [pending]);
+
+  function openEditor(member?: NonNullable<ErpWorkspace["members"]>[number]) {
+    setEditingMemberId(member?.id ?? null);
+    setAccessScope(member?.accessScope ?? "role");
+    setRole(member?.role ?? "staff");
+    setEditorOpen(true);
+  }
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-950">Team & Akses</h2>
-        <p className="mt-1 text-sm text-slate-500">Atur menu dan cabang untuk anggota aktif, atau buat invite baru dengan akses yang sudah ditentukan.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-950">Team & Akses</h2>
+          <p className="text-sm text-slate-500">{workspace.business.displayName}</p>
+        </div>
+        <ActionButton type="button" disabled={pending} onClick={() => openEditor()}><Plus className="size-4" /> Undang anggota</ActionButton>
       </div>
 
       <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -332,8 +344,15 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
         <StatusPill tone="emerald">{workspace.user.role}</StatusPill>
       </div>
 
-      <form key={editingMember?.id ?? "new-member"} action={saveMember} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
-        <h3 className="sm:col-span-2 text-sm font-semibold text-slate-900">{editingMember ? "Ubah akses anggota" : "Invite anggota baru"}</h3>
+      <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3">
+        <Search className="size-4 shrink-0 text-slate-500" aria-hidden />
+        <input className="min-w-0 flex-1 py-2.5 text-sm outline-none" type="search" aria-label="Cari anggota atau undangan" placeholder="Cari anggota atau undangan" value={search} onChange={(event) => setSearch(event.target.value)} />
+      </label>
+
+      <Modal isOpen={editorOpen} onClose={closeEditor} maxWidth="max-w-2xl" title={editingMember ? "Ubah akses anggota" : "Undang anggota"}>
+      <form key={editingMember?.id ?? "new-member"} action={async (formData) => {
+        if (await saveMember(formData)) setEditorOpen(false);
+      }} className="grid gap-4 sm:grid-cols-2">
         {editingMember ? (
           <div className="sm:col-span-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
             <input type="hidden" name="memberId" value={editingMember.id} />
@@ -346,35 +365,41 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
             <p className="mt-1 text-xs text-slate-500">Jika email sudah terdaftar di Supabase, anggota langsung ditambahkan. Jika belum, sistem mengirim email invite otomatis.</p>
           </div>
         )}
-        <SelectField name="role" label="Role" defaultValue={editingMember?.role ?? "staff"}>
+        <SelectField name="role" label="Peran" value={role} onChange={(event) => {
+          setRole(event.target.value);
+          if (event.target.value === "owner" || event.target.value === "system_admin") setAccessScope("role");
+        }}>
           <option value="staff">Staff</option>
           <option value="finance_admin">Finance/Admin</option>
           <option value="hr">HR</option>
           <option value="external_advisor">External advisor</option>
           <option value="owner">Owner</option>
+          {editingMember?.role === "system_admin" && <option value="system_admin">System admin</option>}
         </SelectField>
-        <SelectField name="accessScope" label="Mode akses" defaultValue={editingMember?.accessScope ?? "role"}>
-          <option value="custom">Akses spesifik</option>
-          <option value="role">Ikuti role bawaan</option>
+        <SelectField name="accessScope" label="Mode akses" value={accessScope} onChange={(event) => setAccessScope(event.target.value)}>
+          <option value="role">Ikuti peran</option>
+          {role !== "owner" && role !== "system_admin" && <option value="custom">Izin pilihan</option>}
         </SelectField>
-        <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
-          <p className="text-sm font-semibold text-slate-800">Menu yang diizinkan</p>
-          <p className="mt-1 text-xs text-slate-500">Pilih akses spesifik untuk karyawan cabang, HR, atau finance. Owner selalu memakai akses penuh.</p>
+        <fieldset hidden={accessScope !== "custom"} disabled={accessScope !== "custom"} className="sm:col-span-2">
+          <legend className="text-sm font-semibold text-slate-800">Izin anggota</legend>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {permissionCatalog.map((entry) => <label key={entry.permission} className="flex gap-2 rounded-lg border border-slate-100 p-2 text-sm"><input name="permissions" value={entry.permission} type="checkbox" defaultChecked={editingMember?.accessScope === "custom" && editingMember.accessPermissions.includes(entry.permission)} className="mt-0.5 size-4" /><span><strong className="block text-slate-800">{entry.label}</strong><span className="text-xs text-slate-500">{entry.description}</span></span></label>)}
           </div>
-        </div>
-        <label className="sm:col-span-2 text-sm font-medium text-slate-700">Cabang yang ditugaskan<select name="locationIds" multiple defaultValue={editingMember?.locationIds ?? []} className="mt-1 min-h-28 w-full rounded-xl border border-slate-300 bg-white p-2 text-sm">{workspace.locations.filter((location) => ["branch", "outlet", "store"].includes(location.type) && location.isActive).map((location) => <option key={location.id} value={location.id}>{location.name} ({location.code})</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-500">Gunakan Ctrl/Cmd untuk memilih beberapa cabang. Akses POS spesifik harus memiliki minimal satu cabang.</span></label>
-        <div className="flex items-end gap-2">
-          <ActionButton disabled={pending}>{editingMember ? "Simpan akses anggota" : "Kirim invite"}</ActionButton>
-          {editingMember ? <button type="button" onClick={() => setEditingMemberId(null)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Batal</button> : null}
+        </fieldset>
+        <fieldset className="sm:col-span-2">
+          <legend className="text-sm font-semibold text-slate-800">Cabang yang ditugaskan</legend>
+          {branches.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2">{branches.map((location) => <label className="flex items-center gap-2 text-sm" key={location.id}><input type="checkbox" name="locationIds" value={location.id} defaultChecked={editingMember?.locationIds.includes(location.id)} /> {location.name} ({location.code}){!location.isActive && " · Nonaktif"}</label>)}</div> : <p className="mt-1 text-sm text-slate-500">Belum ada cabang aktif.</p>}
+        </fieldset>
+        <div className="flex items-center justify-end gap-2 sm:col-span-2">
+          <ActionButton type="button" variant="secondary" disabled={pending} onClick={closeEditor}>Batal</ActionButton>
+          <ActionButton disabled={pending}>{editingMember ? "Simpan akses" : "Kirim undangan"}</ActionButton>
         </div>
       </form>
+      </Modal>
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-700">Anggota aktif</h3>
-        <p className="mt-1 text-xs text-slate-500">Pilih anggota untuk mengubah role, menu, dan cabang tanpa perlu menyalin ID.</p>
+        <h3 className="text-sm font-semibold text-slate-700">Anggota aktif ({members.length})</h3>
         <div className="mt-3 space-y-2">
-          {members.map((member) => (
+          {visibleMembers.map((member) => (
             <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 p-3 text-sm">
               <div className="min-w-0">
                 <p className="truncate font-medium text-slate-900">{memberDisplayName(member, workspace)}</p>
@@ -382,7 +407,7 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
               </div>
               <div className="flex items-center gap-2">
                 <StatusPill tone={member.accessScope === "custom" ? "cyan" : "gray"}>{member.role}</StatusPill>
-                <button type="button" aria-label={`Ubah akses ${memberDisplayName(member, workspace)}`} onClick={() => setEditingMemberId(member.id)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Ubah akses</button>
+                <button type="button" aria-label={`Ubah akses ${memberDisplayName(member, workspace)}`} disabled={pending} onClick={() => openEditor(member)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Ubah akses</button>
                 {member.authUserId !== workspace.user.id && member.role !== "owner" ? (
                   <button
                     type="button"
@@ -400,14 +425,14 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
               </div>
             </div>
           ))}
-          {members.length === 0 ? <p className="text-sm text-slate-500">Belum ada anggota aktif selain data fallback yang sedang dipakai.</p> : null}
+          {visibleMembers.length === 0 ? <p className="text-sm text-slate-500">{query ? "Anggota tidak ditemukan." : "Belum ada anggota aktif."}</p> : null}
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-700">Pending invites</h3>
+        <h3 className="text-sm font-semibold text-slate-700">Undangan tertunda ({pendingInvites.length})</h3>
         <div className="mt-3 space-y-2">
-          {pendingInvites.map((invite) => (
+          {visibleInvites.map((invite) => (
             <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 p-3 text-sm">
               <div className="min-w-0">
                 <p className="truncate font-medium text-slate-900">{invite.email}</p>
@@ -440,8 +465,8 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
               </div>
             </div>
           ))}
-          {pendingInvites.length === 0 ? (
-            <p className="text-sm text-slate-500">Belum ada invite pending.</p>
+          {visibleInvites.length === 0 ? (
+            <p className="text-sm text-slate-500">{query ? "Undangan tidak ditemukan." : "Belum ada undangan tertunda."}</p>
           ) : null}
         </div>
       </div>
@@ -978,144 +1003,23 @@ function MasterDirectoryPanel({
   );
 }
 
-function ProductForm({ workspace, pending, saveMaster }: Pick<SettingsPanelProps, "workspace" | "pending" | "saveMaster">) {
-  const [defaultSku] = useState(() => `SKU-${Date.now().toString().slice(-5)}`);
-
-  return (
-    <form
-      action={(formData) => {
-        const productType = String(formData.get("productType"));
-        void saveMaster("product", {
-          sku: String(formData.get("sku")),
-          name: String(formData.get("name")),
-          productType,
-          category: String(formData.get("category")),
-          unit: String(formData.get("unit")),
-          trackStock: productType === "stock_item",
-          defaultWarehouseId: String(formData.get("defaultWarehouseId")),
-          sellingPrice: Number(formData.get("sellingPrice")),
-          purchasePrice: Number(formData.get("purchasePrice")),
-          reorderPoint: Number(formData.get("reorderPoint")),
-          isSellable: true,
-          isPurchasable: true,
-          isActive: true,
-        });
-      }}
-      className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3"
-    >
-      <TextField name="sku" label="SKU" defaultValue={defaultSku} required />
-      <TextField name="name" label="Nama produk" placeholder="Nama produk/jasa" required />
-      <SelectField name="productType" label="Tipe">
-        <option value="stock_item">Stock item</option>
-        <option value="non_stock_item">Non-stock item</option>
-        <option value="service">Service</option>
-        <option value="bundle">Bundle</option>
-      </SelectField>
-      <TextField name="category" label="Kategori" defaultValue="Umum" />
-      <TextField name="unit" label="Satuan" defaultValue="pcs" />
-      <SelectField name="defaultWarehouseId" label="Gudang default">
-        {workspace.warehouses.map((warehouse) => (
-          <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
-        ))}
-      </SelectField>
-      <TextField name="sellingPrice" label="Harga jual" type="number" defaultValue={0} />
-      <TextField name="purchasePrice" label="Harga beli" type="number" defaultValue={0} />
-      <TextField name="reorderPoint" label="Reorder point" type="number" defaultValue={0} />
-      <div className="flex items-end">
-        <ActionButton disabled={pending}>Simpan produk</ActionButton>
-      </div>
-    </form>
-  );
-}
-
 function MasterDataPanel({
   workspace,
   pending,
   saveMaster,
-  archiveMaster,
   updateMasterStatus,
   type,
-}: Pick<SettingsPanelProps, "workspace" | "pending" | "saveMaster" | "archiveMaster" | "updateMasterStatus"> & {
-  type: "customers" | "suppliers" | "products" | "warehouses";
+}: Pick<SettingsPanelProps, "workspace" | "pending" | "saveMaster" | "updateMasterStatus"> & {
+  type: "customers" | "suppliers" | "warehouses";
 }) {
-  if (type !== "products") {
-    return (
-      <MasterDirectoryPanel
-        workspace={workspace}
-        pending={pending}
-        saveMaster={saveMaster}
-        updateMasterStatus={updateMasterStatus}
-        type={type}
-      />
-    );
-  }
-
-  const config = {
-    products: {
-      title: "Products",
-      icon: Package,
-      rows: workspace.products.map((item) => ({
-        id: item.id,
-        cells: [item.sku, item.name, item.category, item.productType],
-        active: item.isActive !== false,
-      })),
-      columns: ["SKU", "Nama", "Kategori", "Tipe"],
-      resource: "product",
-    },
-  }.products;
-  const Icon = config.icon;
-
   return (
-    <section className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="rounded-xl bg-slate-100 p-3">
-          <Icon className="size-6 text-slate-600" aria-hidden />
-        </div>
-        <div>
-          <h2 className="text-xl font-semibold text-slate-950">{config.title}</h2>
-          <p className="mt-0.5 text-sm text-slate-500">{config.rows.length} item aktif/nonaktif.</p>
-        </div>
-      </div>
-
-      <ProductForm workspace={workspace} pending={pending} saveMaster={saveMaster} />
-
-      <div className="overflow-hidden rounded-xl border border-slate-200">
-        <table className="mobile-card-table w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr>
-              {config.columns.map((column) => (
-                <th key={column} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{column}</th>
-              ))}
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {config.rows.map((row) => (
-              <tr key={row.id} className="hover:bg-slate-50">
-                {row.cells.map((cell, index) => (
-                  <td key={`${row.id}-${index}`} data-mobile-label={config.columns[index]} className="px-4 py-3">{cell}</td>
-                ))}
-                <td data-mobile-label="Status" className="px-4 py-3">
-                  <StatusPill tone={row.active ? "emerald" : "gray"}>{row.active ? "active" : "inactive"}</StatusPill>
-                </td>
-                <td data-mobile-label="Aksi" className="px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => void archiveMaster(config.resource, row.id)}
-                    disabled={pending || !row.active}
-                    className="text-sm font-medium text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Nonaktifkan
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {config.rows.length === 0 ? <div className="py-12 text-center text-sm text-slate-500">Belum ada data.</div> : null}
-      </div>
-    </section>
+    <MasterDirectoryPanel
+      workspace={workspace}
+      pending={pending}
+      saveMaster={saveMaster}
+      updateMasterStatus={updateMasterStatus}
+      type={type}
+    />
   );
 }
 
@@ -1376,11 +1280,8 @@ function OnboardingSettingsPanel({
           <h3 className="text-sm font-semibold text-slate-950">Apply template ke bisnis aktif</h3>
           <p className="mt-1 text-sm text-slate-500">Template mengatur modul aktif, lokasi awal, dan perilaku produk default.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <SelectField name="templateId" label="Template industri" defaultValue={workspace.business.industry}>
-              <option value="food_beverage">F&B ringan</option>
-              <option value="retail">Retail</option>
-              <option value="service">Jasa</option>
-              <option value="online_seller">Online seller</option>
+            <SelectField name="templateId" label="Template industri" defaultValue={canonicalIndustryTemplateId(workspace.business.industry)}>
+              <option value="umkm">UMKM</option>
               <option value="general">General</option>
             </SelectField>
             <ActionButton disabled={pending}>Apply template</ActionButton>
@@ -1396,10 +1297,7 @@ function OnboardingSettingsPanel({
             <TextField name="ownerName" label="Nama owner" defaultValue={defaultOwner} required />
             <TextField name="taxId" label="NPWP" />
             <SelectField name="industry" label="Template industri" defaultValue="general">
-              <option value="food_beverage">F&B ringan</option>
-              <option value="retail">Retail</option>
-              <option value="service">Jasa</option>
-              <option value="online_seller">Online seller</option>
+              <option value="umkm">UMKM</option>
               <option value="general">General</option>
             </SelectField>
             <div className="flex items-end">
@@ -1454,7 +1352,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     { id: "team", tab: "team", title: "Team & Akses", description: "Invite member dan role akses", icon: Users, count: (workspace.members?.length ?? 0) + workspace.memberInvites.length },
     { id: "customers", tab: "data", title: "Customers", description: "Master data pelanggan", icon: CreditCard, count: workspace.customers.length },
     { id: "suppliers", tab: "data", title: "Suppliers", description: "Master data supplier", icon: ShoppingBag, count: workspace.suppliers.length },
-    { id: "products", tab: "data", title: "Products", description: "SKU, harga, stok", icon: Package, count: workspace.products.length },
     { id: "warehouses", tab: "data", title: "Warehouses", description: "Gudang dan lokasi stok", icon: Warehouse, count: workspace.warehouses.length },
     { id: "locations", tab: "data", title: "Lokasi/Cabang", description: "Branch, outlet, store", icon: MapPin, count: workspace.locations.length },
     { id: "onboarding", tab: "business", title: "Setup & Onboarding", description: "Apply template atau buat bisnis baru", icon: Settings },
@@ -1506,19 +1403,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
       notify.success(`${resourceLabel(resource)} disimpan`, { description });
     } catch (caught) {
       notify.error(`${resourceLabel(resource)} gagal disimpan`, { description: caught instanceof Error ? caught.message : "Coba lagi." });
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function archiveMaster(resource: string, id: string) {
-    setPending(true);
-
-    try {
-      await postObject("/api/erp/master-data", { resource, id }, "DELETE");
-      notify.info(`${resourceLabel(resource)} dinonaktifkan`);
-    } catch (caught) {
-      notify.error(`${resourceLabel(resource)} gagal dinonaktifkan`, { description: caught instanceof Error ? caught.message : "Coba lagi." });
     } finally {
       setPending(false);
     }
@@ -1607,7 +1491,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
           displayName: workspace.business.displayName,
           legalName: workspace.business.legalName,
           ownerName: workspace.business.ownerName,
-          industry: workspace.business.industry,
+          industry: canonicalIndustryTemplateId(workspace.business.industry),
           taxId: workspace.business.taxId ?? "",
           logoUrl,
           periodStartMonth: workspace.business.periodStartMonth,
@@ -1649,8 +1533,10 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
             ? "Email sudah terdaftar, jadi anggota langsung ditambahkan."
             : "Role, menu, dan cabang anggota telah diperbarui.",
       });
+      return true;
     } catch (caught) {
       notify.error("Akses anggota gagal disimpan", { description: caught instanceof Error ? caught.message : "Coba lagi." });
+      return false;
     } finally {
       setPending(false);
     }
@@ -1788,7 +1674,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     saveLocation,
     saveWarehouse,
     saveMaster,
-    archiveMaster,
     updateMasterStatus,
     applyTemplate,
     createBusinessFromSettings,
@@ -1818,7 +1703,6 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     if (selectedCategory === "team") return canManageUsers ? <MembersPanel {...panelProps} /> : <p className="text-sm text-slate-600">Anda tidak memiliki akses untuk mengatur anggota.</p>;
     if (selectedCategory === "customers") return <MasterDataPanel {...panelProps} type="customers" />;
     if (selectedCategory === "suppliers") return <MasterDataPanel {...panelProps} type="suppliers" />;
-    if (selectedCategory === "products") return <MasterDataPanel {...panelProps} type="products" />;
     if (selectedCategory === "warehouses") return <MasterDataPanel {...panelProps} type="warehouses" />;
     if (selectedCategory === "locations") return <LocationsPanel {...panelProps} />;
     if (selectedCategory === "onboarding") return <OnboardingSettingsPanel {...panelProps} />;

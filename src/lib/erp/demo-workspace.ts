@@ -834,7 +834,7 @@ export function createDemoErpWorkspace(): ErpWorkspace {
     taxProfile: demoTaxProfile,
     accounts: systemAccounts.map((account) => ({ ...account, businessId: demoBusiness.id })),
     locations,
-    featureFlags: featureFlagsForTemplate(demoBusiness.id, "food_beverage"),
+    featureFlags: featureFlagsForTemplate(demoBusiness.id, "umkm"),
     industryTemplates,
     transactionSources,
     memberInvites: [],

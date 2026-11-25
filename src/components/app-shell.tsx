@@ -28,6 +28,8 @@ import { FeedbackToast } from "@/components/feedback-toast";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { can, type Permission } from "@/lib/security/permissions";
+import { acquireBodyScrollLock } from "@/lib/ui/body-scroll-lock";
+import { canonicalIndustryLabel } from "@/lib/erp/industry-templates";
 
 const navGroups = [
   {
@@ -203,11 +205,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!open) return undefined;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return acquireBodyScrollLock();
   }, [open]);
 
   return (
@@ -330,7 +328,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
             <div className="mb-4 rounded-lg bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Bisnis aktif</p>
               <p className="mt-2 text-sm font-semibold text-slate-950">{business.displayName}</p>
-              <p className="mt-1 text-xs text-slate-500">{business.ownerName} - {business.industry}</p>
+                <p className="mt-1 text-xs text-slate-500">{business.ownerName} - {canonicalIndustryLabel(business.industry)}</p>
               <p className="mt-2 text-xs text-slate-500">Role: {user.role}</p>
               {demoMode ? <p className="mt-2 text-xs font-medium text-amber-700">Demo fallback aktif</p> : null}
               {loading ? <p className="mt-2 text-xs text-slate-500">Memuat workspace production...</p> : null}

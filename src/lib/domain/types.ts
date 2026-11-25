@@ -12,12 +12,13 @@ export const businessRoles = [
 export type BusinessRole = (typeof businessRoles)[number];
 
 export type BusinessIndustry =
+  | "umkm"
+  | "general"
   | "service"
   | "retail"
   | "food_beverage"
   | "online_seller"
-  | "manufacturing"
-  | "general";
+  | "manufacturing";
 
 export interface Business {
   id: string;
@@ -163,6 +164,14 @@ export interface StockMovement {
 
 export type EmployeeStatus = "active" | "inactive" | "contract";
 export type ContractType = "permanent" | "contract" | "daily";
+export type BpjsParticipation = "none" | "health" | "employment" | "both";
+export interface CompensationComponent {
+  id: string;
+  name: string;
+  type: "earning" | "deduction";
+  calculation: "fixed" | "percentage";
+  amount: Money;
+}
 
 export interface Employee {
   id: string;
@@ -186,6 +195,8 @@ export interface Employee {
   bankAccountName?: string;
   bpjsHealthNo?: string;
   bpjsEmploymentNo?: string;
+  bpjsParticipation?: BpjsParticipation;
+  compensationComponents?: CompensationComponent[];
 }
 
 export interface Attendance {
@@ -208,9 +219,11 @@ export interface LeaveRequest {
 }
 
 export interface PayrollComponent {
+  id?: string;
   name: string;
   amount: Money;
-  type: "earning" | "deduction";
+  type: "earning" | "deduction" | "employer_contribution";
+  calculation?: "fixed" | "percentage";
 }
 
 export interface PayrollRun {
@@ -223,6 +236,7 @@ export interface PayrollRun {
   taxWithheld: Money;
   netPay: Money;
   components: PayrollComponent[];
+  settledOnPosting?: boolean;
   journalEntryId?: string;
 }
 

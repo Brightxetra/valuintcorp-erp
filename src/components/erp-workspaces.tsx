@@ -41,6 +41,7 @@ import type { ErpDocumentStatus, ErpWorkspace, PaymentDirection } from "@/lib/er
 import { outstandingPurchase, outstandingSales } from "@/lib/erp/operations";
 import { destinationAfterLogin, sanitizeLoginNextPath } from "@/lib/erp/login-routing";
 import { valueInventory } from "@/lib/inventory/valuation";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 import { money, percent } from "@/lib/format";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
@@ -1170,9 +1171,6 @@ export function HrWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorks
     try {
       const body = await postJson(request, "/api/erp/payroll-runs", {
         employeeId: String(formData.get("employeeId")),
-        grossPay: Number(formData.get("grossPay")),
-        netCashPaid: Number(formData.get("netCashPaid")),
-        taxWithheld: Number(formData.get("taxWithheld")),
         date: String(formData.get("date")),
       });
       if (body.workspace) setWorkspace(body.workspace);
@@ -1199,7 +1197,6 @@ export function HrWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorks
           contractType: String(formData.get("contractType")),
           status: String(formData.get("status")),
           baseSalary: Number(formData.get("baseSalary")),
-          dailyRate: Number(formData.get("dailyRate")),
           joinedAt: String(formData.get("joinedAt")),
         },
       });
@@ -1226,10 +1223,8 @@ export function HrWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorks
             <SelectField name="employeeId" label="Karyawan">
               {workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
             </SelectField>
-            <TextField name="date" label="Tanggal payroll" type="date" defaultValue="2026-06-28" />
-            <TextField name="grossPay" label="Gross pay" type="number" defaultValue={5_200_000} />
-            <TextField name="netCashPaid" label="Net cash paid" type="number" defaultValue={4_800_000} />
-            <TextField name="taxWithheld" label="PPh dipotong" type="number" defaultValue={200_000} />
+            <TextField name="date" label="Tanggal payroll" type="date" defaultValue={workspace.period.endDate} />
+            <p className="self-end text-sm text-slate-500">Gaji, komponen, BPJS, dan jurnal dihitung dari data tersimpan di server.</p>
           </form>
         </Panel>
         <Panel title="Attendance summary">
@@ -1248,7 +1243,6 @@ export function HrWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorks
           <SelectField name="contractType" label="Kontrak">
             <option value="permanent">Permanent</option>
             <option value="contract">Contract</option>
-            <option value="daily">Daily</option>
           </SelectField>
           <SelectField name="status" label="Status">
             <option value="active">Active</option>
@@ -1256,15 +1250,14 @@ export function HrWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorks
             <option value="inactive">Inactive</option>
           </SelectField>
           <TextField name="joinedAt" label="Tanggal masuk" type="date" defaultValue="2026-06-01" />
-          <TextField name="baseSalary" label="Base salary" type="number" defaultValue={3_500_000} />
-          <TextField name="dailyRate" label="Daily rate" type="number" defaultValue={150_000} />
+          <TextField name="baseSalary" label="Gaji pokok bulanan" type="number" defaultValue={3_500_000} />
           <div className="flex items-end">
             <ActionButton disabled={pending}>Simpan karyawan</ActionButton>
           </div>
         </form>
       </Panel>
       <Panel title="Karyawan">
-        <DataTable columns={["No", "Nama", "Jabatan", "Kontrak", "Status", "Base salary"]}>
+        <DataTable columns={["No", "Nama", "Jabatan", "Kontrak", "Status", "Gaji"]}>
           {workspace.employees.map((employee) => (
             <tr key={employee.id}>
               <td className="px-4 py-3 text-slate-500">{employee.employeeNo}</td>
@@ -1272,7 +1265,11 @@ export function HrWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorks
               <td className="px-4 py-3">{employee.role}</td>
               <td className="px-4 py-3">{employee.contractType}</td>
               <td className="px-4 py-3"><StatusPill tone="emerald">{employee.status}</StatusPill></td>
-              <td className="px-4 py-3 text-right">{money(employee.baseSalary || employee.dailyRate || 0)}</td>
+              <td className="px-4 py-3 text-right">
+                {employee.contractType === "daily"
+                  ? `${money(employee.dailyRate ?? employee.baseSalary)} / hari (data lama)`
+                  : money(employee.baseSalary)}
+              </td>
             </tr>
           ))}
         </DataTable>
@@ -1626,12 +1623,8 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
             <TextField name="legalName" label="Nama legal" defaultValue={workspace.business.legalName} />
             <TextField name="ownerName" label="Pemilik" defaultValue={workspace.business.ownerName} />
             <TextField name="taxId" label="NPWP" defaultValue={workspace.business.taxId ?? ""} />
-            <SelectField name="industry" label="Industri" defaultValue={workspace.business.industry}>
-              <option value="retail">Retail</option>
-              <option value="food_beverage">F&B</option>
-              <option value="service">Jasa</option>
-              <option value="online_seller">Online seller</option>
-              <option value="manufacturing">Manufacturing</option>
+            <SelectField name="industry" label="Industri" defaultValue={canonicalIndustryTemplateId(workspace.business.industry)}>
+              <option value="umkm">UMKM</option>
               <option value="general">General</option>
             </SelectField>
             <TextField name="periodStartMonth" label="Bulan awal periode" type="number" defaultValue={workspace.business.periodStartMonth} />
@@ -1735,9 +1728,9 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
         </Panel>
       </div>
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
-        <Panel title="Template dan modul bisnis" description="Template mengaktifkan modul sesuai jenis UMKM: jasa, retail, F&B, online seller, distributor, atau general.">
+        <Panel title="Template dan modul bisnis" description="UMKM menyediakan alur sederhana. General membuka alur lengkap termasuk bahan, BOM, dan produksi.">
           <form action={applyTemplate} className="grid gap-3">
-            <SelectField name="templateId" label="Template industri" defaultValue={workspace.business.industry}>
+            <SelectField name="templateId" label="Template industri" defaultValue={canonicalIndustryTemplateId(workspace.business.industry)}>
               {workspace.industryTemplates.map((template) => (
                 <option key={template.id} value={template.id}>{template.name}</option>
               ))}
@@ -1925,10 +1918,7 @@ export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: 
             <TextField name="ownerName" label="Nama owner" defaultValue="Ayu Lestari" required />
             <TextField name="taxId" label="NPWP" />
             <SelectField name="industry" label="Template industri">
-              <option value="food_beverage">F&B ringan</option>
-              <option value="retail">Retail</option>
-              <option value="service">Jasa</option>
-              <option value="online_seller">Online seller</option>
+              <option value="umkm">UMKM</option>
               <option value="general">General</option>
             </SelectField>
             <div className="flex items-end">

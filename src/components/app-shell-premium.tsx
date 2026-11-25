@@ -29,6 +29,7 @@ import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { can, type Permission } from "@/lib/security/permissions";
+import { acquireBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 // ============================================================================
 // NAVIGATION CONFIGURATION
@@ -596,11 +597,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!sidebarOpen) return undefined;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return acquireBodyScrollLock();
   }, [sidebarOpen]);
 
   return (

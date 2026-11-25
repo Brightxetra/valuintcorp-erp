@@ -7,6 +7,7 @@ import {
   Minus,
   PackageSearch,
   Plus,
+  Printer,
   QrCode,
   ReceiptText,
   RefreshCw,
@@ -23,10 +24,20 @@ import { money } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { getAccessiblePosBranches } from "@/lib/pos/branches";
-import { posLocationStorageKey, readStoredPosLocationId } from "@/lib/pos/preferences";
+import { defaultPosReceiptSettings, posLocationStorageKey, readStoredPosLocationId, readStoredPosReceiptSettings } from "@/lib/pos/preferences";
 import type { PosProduct as Product, PosSnapshot as Snapshot } from "@/lib/pos/types";
 
 type PaymentMethod = "cash" | "qris";
+type PosReceipt = {
+  saleId: string;
+  date: string;
+  locationName: string;
+  paymentMethod: PaymentMethod;
+  items: Array<{ name: string; quantity: number; unitPrice: number }>;
+  total: number;
+  received: number;
+  change: number;
+};
 
 const paymentOptions: Array<{
   value: PaymentMethod;
@@ -120,6 +131,8 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   const [productQuery, setProductQuery] = useState("");
   const [receivedAmount, setReceivedAmount] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<PosReceipt | null>(null);
+  const [receiptSettings, setReceiptSettings] = useState(defaultPosReceiptSettings);
   const selectedLocationId = branches.some((branch) => branch.id === locationId) ? locationId : branches[0]?.id ?? "";
 
   useEffect(() => {
@@ -233,6 +246,15 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   async function submitSale() {
     if (!selectedLocationId || cartItems.length === 0) return;
     const saleDate = today();
+    const receiptItems = cartItems.map(({ product, quantity }) => ({
+      name: product.name,
+      quantity,
+      unitPrice: product.sellingPrice,
+    }));
+    const receiptTotal = cartTotal;
+    const receiptReceived = paymentMethod === "cash" ? receivedValue : receiptTotal;
+    const receiptChange = paymentMethod === "cash" ? changeDue : 0;
+    const locationName = branches.find((branch) => branch.id === selectedLocationId)?.name ?? "Kasir";
     setLoading(true);
     try {
       const result = await request<{ saleId: string }>("/api/erp/pos", {
@@ -246,6 +268,17 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
             quantity,
           })),
         }),
+      });
+      setReceiptSettings(readStoredPosReceiptSettings(workspace.business.id));
+      setLastReceipt({
+        saleId: result.saleId,
+        date: saleDate,
+        locationName,
+        paymentMethod,
+        items: receiptItems,
+        total: receiptTotal,
+        received: receiptReceived,
+        change: receiptChange,
       });
       notify.success("Penjualan POS diposting", {
         description:
@@ -312,7 +345,47 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
   const recap = snapshot?.recap;
 
   return (
-    <div className="space-y-4">
+    <div className="pos-workspace space-y-4" style={{ "--receipt-width": `${receiptSettings.paperWidth}mm` } as React.CSSProperties}>
+      {lastReceipt && <style>{`@page { margin: 0; }`}</style>}
+      {lastReceipt ? (
+        <section className="no-print rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-emerald-950">Transaksi berhasil</h2>
+              <p className="text-sm text-emerald-800">{lastReceipt.saleId} · {money(lastReceipt.total)}</p>
+            </div>
+            <button type="button" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-800 px-3 text-sm font-semibold text-white hover:bg-emerald-900">
+              <Printer className="size-4" aria-hidden /> Cetak struk
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {lastReceipt ? (
+        <article className="pos-thermal-receipt" aria-label="Pratinjau struk">
+          <header className="receipt-header">
+            <strong>{receiptSettings.storeName || lastReceipt.locationName}</strong>
+            {receiptSettings.storeAddress ? <span>{receiptSettings.storeAddress}</span> : null}
+            <span>{lastReceipt.locationName}</span>
+            <span>{new Date(`${lastReceipt.date}T00:00:00`).toLocaleDateString("id-ID")}</span>
+            <span>No. {lastReceipt.saleId}</span>
+          </header>
+          <div className="receipt-items">
+            {lastReceipt.items.map((item, index) => (
+              <div className="receipt-item" key={`${item.name}-${index}`}>
+                <span>{item.name}</span>
+                <span>{item.quantity} x {money(item.unitPrice)}</span>
+                <strong>{money(item.quantity * item.unitPrice)}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="receipt-totals">
+            <div><span>Total</span><strong>{money(lastReceipt.total)}</strong></div>
+            <div><span>Bayar ({lastReceipt.paymentMethod === "cash" ? "Tunai" : "QRIS"})</span><span>{money(lastReceipt.received)}</span></div>
+            {lastReceipt.paymentMethod === "cash" ? <div><span>Kembalian</span><span>{money(lastReceipt.change)}</span></div> : null}
+          </div>
+          <footer>{receiptSettings.footer}</footer>
+        </article>
+      ) : null}
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold tracking-tight text-slate-950">Penjualan kasir</h1>

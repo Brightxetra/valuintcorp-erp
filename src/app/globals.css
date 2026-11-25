@@ -5,7 +5,7 @@
   --foreground: #020617;
   --erp-mobile-nav-base-height: 4.5rem;
   --erp-mobile-nav-height: calc(var(--erp-mobile-nav-base-height) + env(safe-area-inset-bottom));
-  --erp-mobile-content-clearance: calc(var(--erp-mobile-nav-height) + 1.5rem);
+  --erp-mobile-content-clearance: calc(var(--erp-mobile-nav-height) + 2.5rem);
   --erp-header-height: 4.0625rem;
   --erp-toast-top-offset: calc(env(safe-area-inset-top) + var(--erp-header-height) + 1rem);
   --erp-toast-max-inline-size: calc(100vw - 2rem);
@@ -172,7 +172,85 @@ a {
   }
 }
 
+.pos-thermal-receipt {
+  display: none;
+}
+
 @media print {
+  :where(body:has(.pos-thermal-receipt)) * {
+    visibility: hidden !important;
+  }
+
+  .pos-thermal-receipt,
+  .pos-thermal-receipt * {
+    visibility: visible !important;
+  }
+
+  .pos-thermal-receipt {
+    display: block !important;
+    position: fixed !important;
+    inset: 0 auto auto 0 !important;
+    width: var(--receipt-width) !important;
+    max-width: var(--receipt-width) !important;
+    padding: 3mm !important;
+    color: #000 !important;
+    background: #fff !important;
+    font-family: ui-monospace, monospace !important;
+    font-size: 10pt !important;
+  }
+
+  .pos-thermal-receipt .receipt-header,
+  .pos-thermal-receipt footer {
+    display: grid;
+    gap: 1.5mm;
+    text-align: center;
+  }
+
+  .pos-thermal-receipt .receipt-header {
+    padding-bottom: 3mm;
+    border-bottom: 1px dashed #000;
+  }
+
+  .pos-thermal-receipt .receipt-items {
+    padding: 2mm 0;
+    border-bottom: 1px dashed #000;
+  }
+
+  .pos-thermal-receipt .receipt-item {
+    display: grid;
+    gap: 1mm;
+    padding: 1.5mm 0;
+  }
+
+  .pos-thermal-receipt .receipt-item strong {
+    text-align: right;
+  }
+
+  .pos-thermal-receipt .receipt-totals {
+    display: grid;
+    gap: 1.5mm;
+    padding: 2mm 0;
+  }
+
+  .pos-thermal-receipt .receipt-totals div {
+    display: flex;
+    justify-content: space-between;
+    gap: 2mm;
+  }
+
+  .pos-thermal-receipt footer {
+    padding-top: 2mm;
+    border-top: 1px dashed #000;
+  }
+
+  .pos-workspace:has(.pos-thermal-receipt) > :not(.pos-thermal-receipt) {
+    display: none !important;
+  }
+
+  .pos-workspace:has(.pos-thermal-receipt) .pos-thermal-receipt {
+    display: block !important;
+  }
+
   .no-print,
   .screen-only {
     display: none !important;
@@ -180,7 +258,7 @@ a {
 
   /* Hide sidebar and header when printing */
   aside,
-  header {
+  header:not(.receipt-header) {
     display: none !important;
   }
 

@@ -15,6 +15,7 @@ import { verifySupabaseAccessToken } from "@/lib/auth/verified-session";
 import { permissionsForMember } from "@/lib/security/permissions";
 import type { WorkspaceLoadContext } from "@/lib/erp/workspace-repository";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 
 interface MembershipRow {
   business_id?: string;
@@ -58,7 +59,7 @@ function businessOptionFromMembership(row: MembershipRow): ServerBusinessOption 
     id: String(row.business_id ?? rawBusiness?.id ?? ""),
     displayName: String(rawBusiness?.display_name ?? "Bisnis"),
     legalName: String(rawBusiness?.legal_name ?? "Bisnis"),
-    industry: (rawBusiness?.industry ?? "general") as BusinessIndustry,
+    industry: canonicalIndustryTemplateId(rawBusiness?.industry ?? "general"),
     role: (row.role ?? "staff") as BusinessRole,
   };
 }

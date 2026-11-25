@@ -9,10 +9,12 @@ import type { BpjsPolicy, ErpWorkspace } from "@/lib/erp/types";
 import { money } from "@/lib/format";
 import { calculateBpjsContribution, defaultBpjsPolicyForBusiness, percentToRate, rateToPercent, type BpjsCalculation as BaseBpjsCalculation } from "@/lib/hr/bpjs";
 import { notify } from "@/lib/notify";
+import { downloadCsvFile } from "@/lib/exports/csv";
 
 interface BPJSCalculation extends BaseBpjsCalculation {
   employeeId: string;
   employeeName: string;
+  participation: "none" | "health" | "employment" | "both";
 }
 
 interface SummaryCardProps {
@@ -115,10 +117,11 @@ function CalculationTable({ calculations, policy }: { calculations: BPJSCalculat
   return (
     <div className="overflow-x-auto" role="region" aria-label="Perhitungan BPJS. Geser horizontal untuk melihat seluruh kolom." tabIndex={0}>
       <p className="mb-2 text-xs text-slate-500 sm:hidden">Geser tabel untuk melihat seluruh komponen iuran.</p>
-      <table className="w-full min-w-[760px] text-sm">
+      <table className="w-full min-w-[880px] text-sm">
         <thead className="bg-slate-50 text-xs">
           <tr>
             <th className="px-4 py-3 text-left font-semibold text-slate-500">Karyawan</th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-500">Kepesertaan</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-500">Gaji bruto</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-500">Kesehatan<br/>({rateToPercent(policy.healthEmployeeRate)}% + {rateToPercent(policy.healthEmployerRate)}%)</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-500">JHT<br/>({rateToPercent(policy.jhtEmployeeRate)}% + {rateToPercent(policy.jhtEmployerRate)}%)</th>
@@ -132,6 +135,7 @@ function CalculationTable({ calculations, policy }: { calculations: BPJSCalculat
           {calculations.map((calc) => (
             <tr key={calc.employeeId} className="hover:bg-slate-50">
               <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="flex size-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">{calc.employeeName.charAt(0)}</div><span className="font-medium">{calc.employeeName}</span></div></td>
+              <td className="px-4 py-3">{{ none: "Tidak ikut", health: "Kesehatan", employment: "Ketenagakerjaan", both: "Keduanya" }[calc.participation]}</td>
               <td className="px-4 py-3 text-right font-mono">{money(calc.grossSalary)}</td>
               <td className="px-4 py-3 text-right text-xs text-slate-500"><div>{money(calc.kesehatanEmployee)}</div><div className="text-emerald-600">+{money(calc.kesehatanEmployer)}</div></td>
               <td className="px-4 py-3 text-right text-xs text-slate-500"><div>{money(calc.jhtEmployee)}</div><div className="text-emerald-600">+{money(calc.jhtEmployer)}</div></td>
@@ -145,6 +149,7 @@ function CalculationTable({ calculations, policy }: { calculations: BPJSCalculat
         <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-semibold">
           <tr>
             <td className="px-4 py-3">TOTAL</td>
+            <td className="px-4 py-3"></td>
             <td className="px-4 py-3 text-right">{money(calculations.reduce((sum, c) => sum + c.grossSalary, 0))}</td>
             <td className="px-4 py-3 text-right">{money(calculations.reduce((sum, c) => sum + c.kesehatanEmployee + c.kesehatanEmployer, 0))}</td>
             <td className="px-4 py-3 text-right">{money(calculations.reduce((sum, c) => sum + c.jhtEmployee + c.jhtEmployer, 0))}</td>
@@ -205,7 +210,8 @@ export function BPJSWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   const calculations: BPJSCalculation[] = activeEmployees.map((emp) => ({
     employeeId: emp.id,
     employeeName: emp.name,
-    ...calculateBpjsContribution(emp.baseSalary, policy),
+    participation: emp.bpjsParticipation ?? "both",
+    ...calculateBpjsContribution(emp.baseSalary, policy, emp.bpjsParticipation ?? "both"),
   }));
 
   const totalKaryawan = calculations.reduce((sum, c) => sum + c.totalEmployee, 0);
@@ -221,13 +227,34 @@ export function BPJSWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
           <p className="mt-1 text-slate-600">Hitung iuran berdasarkan konfigurasi tarif dan cap yang bisa diubah per bisnis.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ActionButton variant="secondary"><Download className="size-4" /> Export Laporan</ActionButton>
+          <ActionButton
+            variant="secondary"
+            onClick={() => downloadCsvFile(
+              "laporan-bpjs.csv",
+              ["Karyawan", "Kepesertaan", "Gaji bruto", "Kesehatan karyawan", "Kesehatan perusahaan", "JHT karyawan", "JHT perusahaan", "JPN karyawan", "JPN perusahaan", "JKK", "JKM", "Total karyawan", "Total perusahaan"],
+              calculations.map((calc) => [
+                calc.employeeName,
+                calc.participation,
+                calc.grossSalary,
+                calc.kesehatanEmployee,
+                calc.kesehatanEmployer,
+                calc.jhtEmployee,
+                calc.jhtEmployer,
+                calc.jpnEmployee,
+                calc.jpnEmployer,
+                calc.jkk,
+                calc.jkm,
+                calc.totalEmployee,
+                calc.totalEmployer,
+              ]),
+            )}
+          ><Download className="size-4" /> Export Laporan</ActionButton>
           <ActionButton variant="secondary" onClick={() => setShowPolicy((value) => !value)}><Settings className="size-4" /> {showPolicy ? "Tutup konfigurasi" : "Konfigurasi tarif"}</ActionButton>
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <SummaryCard title="Karyawan tertanggung" value={String(calculations.length)} subtitle="Status aktif" icon={Users} tone="emerald" />
+        <SummaryCard title="Karyawan tertanggung" value={String(calculations.filter((calc) => calc.participation !== "none").length)} subtitle="Status aktif" icon={Users} tone="emerald" />
         <SummaryCard title="Iuran karyawan" value={money(totalKaryawan)} subtitle="Potongan dari gaji" icon={HeartPulse} tone="blue" />
         <SummaryCard title="Iuran perusahaan" value={money(totalPerusahaan)} subtitle="Ditanggung perusahaan" icon={HeartPulse} tone="purple" />
         <SummaryCard title="Total semua" value={money(totalSemua)} subtitle="Iuran bulanan" icon={Calculator} tone="emerald" />

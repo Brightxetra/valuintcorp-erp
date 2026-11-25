@@ -56,6 +56,8 @@ import {
   calculateProductUnitCost,
   explodeProductStructure,
 } from "@/lib/erp/industry-workflows";
+import { defaultBpjsPolicyForBusiness } from "@/lib/hr/bpjs";
+import { calculateEmployeePayroll } from "@/lib/hr/payroll";
 
 type PostingOptions = {
   actorName?: string;
@@ -464,11 +466,10 @@ export function postPayment(
     throw new Error("Bill tidak ditemukan.");
   }
 
-  if (
-    input.documentType === "payroll_run" &&
-    !workspace.payrollRuns.some((payroll) => payroll.id === input.documentId)
-  ) {
-    throw new Error("Payroll run tidak ditemukan.");
+  if (input.documentType === "payroll_run") {
+    const payroll = workspace.payrollRuns.find((run) => run.id === input.documentId);
+    if (!payroll) throw new Error("Payroll run tidak ditemukan.");
+    if (payroll.settledOnPosting) throw new Error("Pembayaran gaji sudah dicatat saat payroll dipost.");
   }
 
   const journal = buildPaymentJournal(payment);
@@ -591,30 +592,38 @@ export function runPayroll(
 
   assertBusinessId(employee.businessId, workspace.business.id, "Karyawan");
 
-  const salaryPayable = input.grossPay - input.netCashPaid - input.taxWithheld;
-
-  if (salaryPayable < 0) {
-    throw new Error("Net cash paid dan pajak tidak boleh melebihi gross pay.");
+  const calculation = calculateEmployeePayroll(
+    employee,
+    workspace.bpjsPolicy ?? defaultBpjsPolicyForBusiness(workspace.business.id),
+  );
+  if (employee.contractType === "daily") {
+    throw new Error("Ubah kontrak harian lama ke gaji bulanan sebelum memproses payroll.");
+  }
+  if (calculation.grossPay <= 0) {
+    throw new Error("Gaji kotor harus lebih dari nol.");
   }
 
   const journal = buildPayrollJournal({
     businessId: workspace.business.id,
     date: input.date,
-    grossPay: input.grossPay,
-    netCashPaid: input.netCashPaid,
-    taxWithheld: input.taxWithheld,
-    salaryPayable,
+    grossPay: calculation.grossPay,
+    netCashPaid: calculation.netPay,
+    taxWithheld: calculation.taxWithheld,
+    otherDeductionsPayable: calculation.deductions - calculation.bpjs.totalEmployee,
+    employeeBpjsContribution: calculation.bpjs.totalEmployee,
+    employerBpjsContribution: calculation.bpjs.totalEmployer,
   });
   const payroll: PayrollRun = {
     id: generatedId("payroll"),
     businessId: workspace.business.id,
     period: input.date.slice(0, 7),
     employeeId: employee.id,
-    grossPay: input.grossPay,
-    deductions: 0,
-    taxWithheld: input.taxWithheld,
-    netPay: input.netCashPaid,
-    components: [{ name: "Gaji pokok", amount: input.grossPay, type: "earning" }],
+    grossPay: calculation.grossPay,
+    deductions: calculation.deductions,
+    taxWithheld: calculation.taxWithheld,
+    netPay: calculation.netPay,
+    components: calculation.components,
+    settledOnPosting: true,
     journalEntryId: journal.id,
   };
 
@@ -627,7 +636,7 @@ export function runPayroll(
         workspace,
         "hr",
         "payroll run",
-        `Payroll ${employee.name} dipost, jurnal gaji dibuat, dan saldo utang gaji diperbarui.`,
+        `Pembayaran gaji ${employee.name} dicatat dan jurnal gaji dibuat.`,
         options,
       ),
       ...workspace.activities,

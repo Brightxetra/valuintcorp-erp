@@ -21,7 +21,7 @@ export const demoBusiness: Business = {
   id: "demo-business",
   legalName: "CV Rasa Rapi Nusantara",
   displayName: "Rasa Rapi Kitchen",
-  industry: "food_beverage",
+  industry: "umkm",
   taxId: "09.123.456.7-001.000",
   baseCurrency: "IDR",
   periodStartMonth: 1,

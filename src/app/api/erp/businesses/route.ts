@@ -1,15 +1,15 @@
 import { z } from "zod";
 import { isApiResponse, requireAuthenticatedUser, withDemoHeader } from "@/lib/auth/api";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
-import { callActorServiceRpc } from "@/lib/supabase/service-rpc";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
+import { canonicalIndustryTemplateId, industryForTemplate } from "@/lib/erp/industry-templates";
 
 const createBusinessSchema = z.object({
   legalName: z.string().min(2),
   displayName: z.string().min(2),
-  industry: z.enum(["service", "retail", "food_beverage", "online_seller", "manufacturing", "general"]),
+  industry: z.enum(["umkm", "general"]),
   ownerName: z.string().min(2),
   taxId: z.string().optional(),
 });
@@ -34,7 +34,7 @@ function businessFromMembership(row: Record<string, unknown>) {
     id: String(row.business_id ?? businessRow.id ?? ""),
     displayName: String(businessRow.display_name ?? "Bisnis"),
     legalName: String(businessRow.legal_name ?? "Bisnis"),
-    industry: (businessRow.industry ?? "general") as BusinessIndustry,
+    industry: canonicalIndustryTemplateId(businessRow.industry ?? "general"),
     role: String(row.role ?? "staff") as BusinessRole,
   };
 }
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
             id: workspace.business.id,
             displayName: workspace.business.displayName,
             legalName: workspace.business.legalName,
-            industry: workspace.business.industry,
+            industry: canonicalIndustryTemplateId(workspace.business.industry),
             role: workspace.user.role,
           },
         ],
@@ -125,10 +125,11 @@ export async function POST(request: Request) {
   }
 
   const service = createServiceSupabaseClient();
+  const industry = industryForTemplate(parsed.data.industry);
   const { data, error } = await service.rpc("create_business_with_owner_for_actor", {
     legal_name: parsed.data.legalName,
     display_name: parsed.data.displayName,
-    industry: parsed.data.industry,
+    industry,
     owner_name: parsed.data.ownerName,
     tax_id: parsed.data.taxId || null,
     actor_user_id: user.userId,
@@ -136,18 +137,6 @@ export async function POST(request: Request) {
 
   if (error) {
     return json({ error: error.message }, 422);
-  }
-
-  if (typeof data === "string") {
-    const { error: templateError } = await callActorServiceRpc(
-      "apply_industry_template",
-      { businessId: data, templateId: parsed.data.industry },
-      user.userId,
-    );
-
-    if (templateError) {
-      return json({ businessId: data, error: templateError.message }, 422);
-    }
   }
 
   return json({ businessId: data }, 201);

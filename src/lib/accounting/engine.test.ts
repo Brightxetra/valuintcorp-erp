@@ -75,6 +75,21 @@ describe("accounting engine", () => {
     expect(sumCredits(entry.lines)).toBe(5000000);
   });
 
+  it("posts employer BPJS as a separate expense and payable", () => {
+    const entry = buildPayrollJournal({
+      date: "2026-06-30",
+      grossPay: 5_000_000,
+      netCashPaid: 4_800_000,
+      otherDeductionsPayable: 200_000,
+      employerBpjsContribution: 450_000,
+    });
+
+    expect(sumDebits(entry.lines)).toBe(5_450_000);
+    expect(sumCredits(entry.lines)).toBe(5_450_000);
+    expect(entry.lines.find((line) => line.accountCode === accountCodes.bpjsExpense)?.debit).toBe(450_000);
+    expect(entry.lines.find((line) => line.accountCode === accountCodes.bpjsPayable)?.credit).toBe(450_000);
+  });
+
   it("reverses entries by swapping debit and credit", () => {
     const expense = buildExpenseJournal({
       date: "2026-06-08",

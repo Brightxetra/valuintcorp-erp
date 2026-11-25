@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { FeedbackToast } from "@/components/feedback-toast";
 import { MobileDialog as Modal } from "@/components/mobile-dialog";
@@ -13,9 +13,9 @@ import {
   Tag,
   Percent,
   Edit,
-  Copy,
 } from "lucide-react";
-import type { ErpWorkspace } from "@/lib/erp/types";
+import type { ErpWorkspace, Product } from "@/lib/erp/types";
+import { calculateProductUnitCost } from "@/lib/erp/industry-workflows";
 
 // ============================================================================
 // TYPES
@@ -45,10 +45,10 @@ function FormField({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className="mb-1.5 block text-sm font-medium text-gray-700">{label}</label>
+    <label className="block">
+      <span className="mb-1.5 block text-sm font-medium text-gray-700">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }
 
@@ -57,7 +57,7 @@ function FormField({
 // ============================================================================
 
 export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { workspace } = useErpWorkspace(initialWorkspace);
+  const { workspace, request, setWorkspace } = useErpWorkspace(initialWorkspace);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -66,6 +66,11 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const unitCosts = useMemo(() => new Map(workspace.products.map((product) => [
+    product.id,
+    calculateProductUnitCost(product, workspace.products, workspace.productStructures),
+  ])), [workspace.products, workspace.productStructures]);
+  const [targetMargin, setTargetMargin] = useState("");
 
   // Get unique categories
   const categories = [...new Set(workspace.products.map((p) => p.category).filter(Boolean))];
@@ -90,7 +95,7 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
   const totalProduk = filteredProducts.length;
   const avgMargin = filteredProducts.length > 0
     ? filteredProducts.reduce((sum, p) => {
-        const margin = p.sellingPrice > 0 ? ((p.sellingPrice - p.purchasePrice) / p.sellingPrice) * 100 : 0;
+        const margin = p.sellingPrice > 0 ? ((p.sellingPrice - (unitCosts.get(p.id) ?? 0)) / p.sellingPrice) * 100 : 0;
         return sum + margin;
       }, 0) / filteredProducts.length
     : 0;
@@ -99,13 +104,10 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
   const [newPrice, setNewPrice] = useState({
     productId: "",
     price: 0,
-    type: "selling" as "selling" | "purchase" | "special",
-    validFrom: "",
-    validTo: "",
-    notes: "",
+    type: "selling" as "selling" | "purchase",
   });
 
-  function handlePriceChange(field: string, value: string | number) {
+  function handlePriceChange<K extends keyof typeof newPrice>(field: K, value: (typeof newPrice)[K]) {
     setNewPrice((prev) => ({ ...prev, [field]: value }));
   }
 
@@ -115,8 +117,14 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
     setSuccess(null);
 
     try {
-      // In production, this would call an API
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const { productId, changes } = await request<{ productId: string; changes: Partial<Pick<Product, "sellingPrice" | "purchasePrice">> }>("/api/erp/product-prices", {
+        method: "PATCH",
+        body: JSON.stringify(newPrice),
+      });
+      setWorkspace({
+        ...workspace,
+        products: workspace.products.map((product) => product.id === productId ? { ...product, ...changes } : product),
+      });
       setSuccess("Harga berhasil diperbarui!");
       setShowNewModal(false);
     } catch (err) {
@@ -127,13 +135,18 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
   }
 
   const selectedProduct = showDetailModal ? workspace.products.find((p) => p.id === showDetailModal) : null;
+  const inputUnitCost = unitCosts.get(newPrice.productId) ?? 0;
+  const marginRate = Number(targetMargin) / 100;
+  const suggestedPrice = inputUnitCost > 0 && targetMargin !== "" && marginRate >= 0 && marginRate < 1
+    ? Math.ceil(inputUnitCost / (1 - marginRate))
+    : null;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
         title="Daftar Harga"
-        description="Kelola harga jual, harga beli, dan harga khusus untuk setiap produk"
+        description="Harga jual, harga beli, dan estimasi HPP per produk."
         action={
           <button
             onClick={() => setShowNewModal(true)}
@@ -176,7 +189,7 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
             <div>
               <p className="text-sm text-gray-500">Harga Jual Tertinggi</p>
               <p className="mt-2 text-2xl font-bold text-emerald-600">
-                {formatCurrency(Math.max(...workspace.products.map((p) => p.sellingPrice)))}
+                {formatCurrency(workspace.products.reduce((highest, product) => Math.max(highest, product.sellingPrice), 0))}
               </p>
             </div>
             <div className="rounded-xl bg-emerald-50 p-3 text-emerald-600">
@@ -246,7 +259,7 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
                 <th className="px-4 py-3">Produk</th>
                 <th className="px-4 py-3">Kategori</th>
                 <th className="px-4 py-3 text-right">Harga Jual</th>
-                <th className="px-4 py-3 text-right">Harga Beli</th>
+                <th className="px-4 py-3 text-right">HPP Estimasi</th>
                 <th className="px-4 py-3 text-right">Margin</th>
                 <th className="px-4 py-3 text-center">Status</th>
                 <th className="px-4 py-3 text-center">Aksi</th>
@@ -264,8 +277,9 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
                 </tr>
               ) : (
                 filteredProducts.map((product) => {
+                  const unitCost = unitCosts.get(product.id) ?? 0;
                   const margin = product.sellingPrice > 0
-                    ? ((product.sellingPrice - product.purchasePrice) / product.sellingPrice) * 100
+                    ? ((product.sellingPrice - unitCost) / product.sellingPrice) * 100
                     : 0;
 
                   return (
@@ -285,8 +299,8 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
                       <td data-mobile-label="Harga jual" className="px-4 py-3 text-right font-semibold text-emerald-600">
                         {formatCurrency(product.sellingPrice)}
                       </td>
-                      <td data-mobile-label="Harga beli" className="px-4 py-3 text-right text-gray-600">
-                        {formatCurrency(product.purchasePrice)}
+                      <td data-mobile-label="HPP estimasi" className="px-4 py-3 text-right text-gray-600">
+                        {formatCurrency(unitCost)}
                       </td>
                       <td data-mobile-label="Margin" className={`px-4 py-3 text-right font-semibold ${margin >= 20 ? "text-emerald-600" : margin >= 10 ? "text-amber-600" : "text-red-600"}`}>
                         {margin.toFixed(1)}%
@@ -307,13 +321,12 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
                       <td data-mobile-label="Aksi" className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
+                            type="button"
+                            aria-label={`Detail harga ${product.name}`}
                             onClick={() => setShowDetailModal(product.id)}
                             className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
                           >
                             <Edit className="size-4" />
-                          </button>
-                          <button className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100">
-                            <Copy className="size-4" />
                           </button>
                         </div>
                       </td>
@@ -335,18 +348,18 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
         <div className="space-y-4">
           <FormField label="Produk">
             <select
+              aria-label="Produk"
               value={newPrice.productId}
               onChange={(e) => {
                 const product = workspace.products.find((p) => p.id === e.target.value);
                 handlePriceChange("productId", e.target.value);
-                if (product) {
-                  handlePriceChange("price", product.sellingPrice);
-                }
+                setTargetMargin("");
+                handlePriceChange("price", product ? (newPrice.type === "selling" ? product.sellingPrice : product.purchasePrice) : 0);
               }}
               className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             >
               <option value="">Pilih Produk</option>
-              {workspace.products.map((product) => (
+              {workspace.products.filter((product) => product.isActive !== false).map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.sku} - {product.name}
                 </option>
@@ -358,17 +371,23 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
             <FormField label="Tipe Harga">
               <select
                 value={newPrice.type}
-                onChange={(e) => handlePriceChange("type", e.target.value)}
+                onChange={(e) => {
+                  const type = e.target.value === "purchase" ? "purchase" : "selling";
+                  const product = workspace.products.find((item) => item.id === newPrice.productId);
+                  setNewPrice({ ...newPrice, type, price: (type === "selling" ? product?.sellingPrice : product?.purchasePrice) ?? 0 });
+                }}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               >
                 <option value="selling">Harga Jual</option>
                 <option value="purchase">Harga Beli</option>
-                <option value="special">Harga Khusus</option>
               </select>
             </FormField>
             <FormField label="Harga Baru">
               <input
+                aria-label="Harga Baru"
                 type="number"
+                min={0}
+                step={1}
                 value={newPrice.price}
                 onChange={(e) => handlePriceChange("price", parseInt(e.target.value) || 0)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-lg font-semibold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
@@ -376,34 +395,20 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
             </FormField>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Berlaku Dari (opsional)">
-              <input
-                type="date"
-                value={newPrice.validFrom}
-                onChange={(e) => handlePriceChange("validFrom", e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-              />
-            </FormField>
-            <FormField label="Berlaku Sampai (opsional)">
-              <input
-                type="date"
-                value={newPrice.validTo}
-                onChange={(e) => handlePriceChange("validTo", e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-              />
-            </FormField>
-          </div>
-
-          <FormField label="Catatan (opsional)">
-            <textarea
-              value={newPrice.notes}
-              onChange={(e) => handlePriceChange("notes", e.target.value)}
-              rows={2}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-              placeholder="Contoh: Promo akhir bulan"
-            />
-          </FormField>
+          {newPrice.type === "selling" && newPrice.productId && (
+            <div className="space-y-3 border-t border-gray-200 pt-3">
+              <p className="text-sm text-gray-700">HPP estimasi {formatCurrency(inputUnitCost)}</p>
+              <label className="block text-sm font-medium">
+                Target margin kotor (%)
+                <input type="number" min={0} max={99.99} step={0.01} value={targetMargin} onChange={(event) => setTargetMargin(event.target.value)} className="mt-1 block w-full rounded-lg border border-gray-200 px-3 py-2" />
+              </label>
+              {suggestedPrice !== null && (
+                <button type="button" className="text-sm font-semibold text-emerald-700" onClick={() => handlePriceChange("price", suggestedPrice)}>
+                  Gunakan rekomendasi {formatCurrency(suggestedPrice)}
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-3 pt-4">
             <button
@@ -414,7 +419,7 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
             </button>
             <button
               onClick={handleUpdatePrice}
-              disabled={loading || !newPrice.productId || newPrice.price <= 0}
+              disabled={loading || !newPrice.productId || !Number.isSafeInteger(newPrice.price) || newPrice.price < 0}
               className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               {loading ? "Memproses..." : "Update Harga"}
@@ -486,9 +491,6 @@ export function HargaWorkspace({ initialWorkspace }: { initialWorkspace: ErpWork
                     productId: selectedProduct.id,
                     price: selectedProduct.sellingPrice,
                     type: "selling",
-                    validFrom: "",
-                    validTo: "",
-                    notes: "",
                   });
                   setShowDetailModal(null);
                   setShowNewModal(true);

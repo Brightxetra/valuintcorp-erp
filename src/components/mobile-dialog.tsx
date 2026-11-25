@@ -2,6 +2,7 @@
 
 import { useEffect, useId } from "react";
 import { X } from "lucide-react";
+import { acquireBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 
 export function MobileDialog({
   isOpen,
@@ -21,16 +22,15 @@ export function MobileDialog({
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    const previousOverflow = document.body.style.overflow;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
 
-    document.body.style.overflow = "hidden";
+    const releaseScrollLock = acquireBodyScrollLock();
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      releaseScrollLock();
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [isOpen, onClose]);

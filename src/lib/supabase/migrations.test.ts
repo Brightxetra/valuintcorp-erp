@@ -200,6 +200,11 @@ describe("Supabase migration contract", () => {
       sensitiveReadBoundariesMigrationFile,
       loginSessionBindingMigrationFile,
       documentSequenceAuthorityMigrationFile,
+      "20261125034613_canonical_industry_templates.sql",
+      "20261125042012_employee_bpjs_participation.sql",
+      "20261125044421_employee_photo_and_compensation.sql",
+      "20261125050031_payroll_calculation_authority.sql",
+      "20261125065030_company_reporting.sql",
     ]);
   });
 
@@ -212,6 +217,28 @@ describe("Supabase migration contract", () => {
     expect(migration).toContain("create or replace function public.ensure_attachment_owner_business");
     expect(migration).toContain("insert into storage.buckets");
     expect(migration).toContain("public.has_business_role(((storage.foldername(name))[1])::uuid");
+  });
+
+  it("keeps legacy industry aliases while introducing canonical templates", () => {
+    const migration = readFileSync(
+      join(migrationsDir, "20261125034613_canonical_industry_templates.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("where id not in ('umkm', 'general')");
+    expect(migration).not.toContain("delete from public.industry_templates");
+    expect(migration).toContain("'tpl-manufacturing', 'tpl-food-beverage-recipe'");
+  });
+
+  it("preserves current BPJS behavior for existing employee rows", () => {
+    const migration = readFileSync(
+      join(migrationsDir, "20261125042012_employee_bpjs_participation.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("bpjs_participation text not null default 'both'");
+    expect(migration).toContain("check (bpjs_participation in ('none', 'health', 'employment', 'both'))");
+    expect(migration).not.toContain("update public.employees");
   });
 
   it("includes demo sandbox accounts, reset RPCs, and service-role grants", () => {
@@ -1327,7 +1354,7 @@ describe("Supabase migration contract", () => {
       "utf8",
     );
 
-    expect(route).toContain('callActorServiceRpc(\n    "post_stock_receipt"');
+    expect(route).toMatch(/callActorServiceRpc\(\s*"post_stock_receipt"/);
     expect(route).toContain('request.headers.get("idempotency-key")');
     expect(route).not.toContain('.from("products")');
     expect(route).not.toContain('.from("warehouses")');

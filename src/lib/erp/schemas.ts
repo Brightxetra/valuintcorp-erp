@@ -2,6 +2,11 @@ import { z } from "zod";
 import { canonicalizeStockReceiptAmounts } from "@/lib/erp/stock-receipt-decimal";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tanggal harus YYYY-MM-DD.");
+const calendarDate = isoDate.refine((value) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}, "Tanggal tidak valid.");
 const positiveMoney = z.coerce.number().int().positive();
 const positiveQuantity = z.coerce.number().positive();
 const nonNegativeMoney = z.coerce.number().int().nonnegative();
@@ -176,18 +181,23 @@ export const createStockReceiptSchema = z
     }
   });
 
-export const createPayrollRunSchema = z
-  .object({
-    employeeId: z.string().min(1),
-    grossPay: positiveMoney,
-    netCashPaid: z.coerce.number().int().nonnegative(),
-    taxWithheld: z.coerce.number().int().nonnegative(),
-    date: isoDate,
-  })
-  .refine((value) => value.netCashPaid + value.taxWithheld <= value.grossPay, {
-    message: "Net cash paid dan pajak tidak boleh melebihi gross pay.",
-    path: ["netCashPaid"],
-  });
+export const createPayrollRunSchema = z.object({
+  employeeId: z.string().min(1),
+  date: calendarDate,
+});
+
+export const createPayrollBatchSchema = z.object({
+  employeeIds: z.array(z.string().min(1)).min(1).max(100),
+  date: calendarDate,
+}).superRefine((value, context) => {
+  if (new Set(value.employeeIds).size !== value.employeeIds.length) {
+    context.addIssue({
+      code: "custom",
+      message: "Karyawan payroll tidak boleh dipilih dua kali.",
+      path: ["employeeIds"],
+    });
+  }
+});
 
 export const masterResourceSchema = z.enum([
   "customer",
@@ -315,10 +325,9 @@ export const employeeSchema = z.object({
   name: z.string().min(2),
   department: optionalText,
   role: z.string().min(2),
-  contractType: z.enum(["permanent", "contract", "daily"]),
+  contractType: z.enum(["permanent", "contract"]),
   status: z.enum(["active", "inactive", "contract"]).default("active"),
   baseSalary: nonNegativeMoney.default(0),
-  dailyRate: nonNegativeMoney.optional(),
   joinedAt: isoDate,
   phone: optionalText,
   email: optionalText,
@@ -330,6 +339,17 @@ export const employeeSchema = z.object({
   bankAccountName: optionalText,
   bpjsHealthNo: optionalText,
   bpjsEmploymentNo: optionalText,
+  bpjsParticipation: z.enum(["none", "health", "employment", "both"]).default("both"),
+  compensationComponents: z.array(z.object({
+    id: z.string().min(1),
+    name: z.string().trim().min(1).max(80),
+    type: z.enum(["earning", "deduction"]),
+    calculation: z.enum(["fixed", "percentage"]),
+    amount: z.coerce.number().nonnegative().max(100_000_000),
+  }).refine((component) => component.calculation !== "percentage" || component.amount <= 100, {
+    message: "Persentase komponen tidak boleh lebih dari 100%.",
+    path: ["amount"],
+  })).default([]),
 });
 
 export const chartOfAccountSchema = z.object({
@@ -361,7 +381,7 @@ export const businessUpdateSchema = z.object({
   legalName: z.string().min(2),
   displayName: z.string().min(2),
   ownerName: z.string().min(2),
-  industry: z.enum(["service", "retail", "food_beverage", "online_seller", "manufacturing", "general"]),
+  industry: z.enum(["umkm", "general"]),
   taxId: optionalText,
   logoUrl: optionalText,
   periodStartMonth: z.coerce.number().int().min(1).max(12).default(1),
@@ -412,7 +432,7 @@ export const importBatchSchema = z.object({
 });
 
 export const applyIndustryTemplateSchema = z.object({
-  templateId: z.string().min(2),
+  templateId: z.enum(["umkm", "general"]),
   modules: z
     .array(z.enum(["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "hr", "payroll", "tax", "imports", "locations"]))
     .optional(),
@@ -468,7 +488,7 @@ export const summaryActionSchema = z.object({
 });
 
 export const attachmentSchema = z.object({
-  ownerType: z.enum(["sales_invoice", "purchase_bill", "payment", "payroll_run", "fixed_asset"]),
+  ownerType: z.enum(["sales_invoice", "purchase_bill", "payment", "payroll_run", "fixed_asset", "employee"]),
   ownerId: z.string().min(1),
   fileName: z.string().min(1),
   storagePath: z.string().min(1),
@@ -477,7 +497,7 @@ export const attachmentSchema = z.object({
 });
 
 export const signedAttachmentUploadSchema = z.object({
-  ownerType: z.enum(["sales_invoice", "purchase_bill", "payment", "payroll_run", "fixed_asset"]),
+  ownerType: z.enum(["sales_invoice", "purchase_bill", "payment", "payroll_run", "fixed_asset", "employee"]),
   ownerId: z.string().min(1),
   fileName: z.string().min(1),
   mimeType: z.string().min(1),
@@ -535,6 +555,7 @@ export type CreateBranchExpenseInput = z.infer<typeof createBranchExpenseSchema>
 export type CreateStockAdjustmentInput = z.infer<typeof createStockAdjustmentSchema>;
 export type CreateStockReceiptInput = z.infer<typeof createStockReceiptSchema>;
 export type CreatePayrollRunInput = z.infer<typeof createPayrollRunSchema>;
+export type CreatePayrollBatchInput = z.infer<typeof createPayrollBatchSchema>;
 export type CreateStockTransferInput = z.infer<typeof createStockTransferSchema>;
 export type ProductStructureInput = z.infer<typeof productStructureSchema>;
 export type DemandForecastInput = z.infer<typeof demandForecastSchema>;

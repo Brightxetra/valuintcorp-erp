@@ -36,6 +36,10 @@ describe("horizontal ERP scale layer", () => {
       expect.arrayContaining(["dashboard", "sales", "inventory", "imports", "locations", "tax"]),
     );
     expect(enabledModulesForTemplate("service")).not.toContain("inventory");
+    expect(enabledModulesForTemplate("umkm")).not.toContain("imports");
+    expect(enabledModulesForTemplate("general")).toEqual(
+      expect.arrayContaining(["inventory", "imports", "locations"]),
+    );
   });
 
   it("marks duplicate raw transactions by idempotency key", () => {

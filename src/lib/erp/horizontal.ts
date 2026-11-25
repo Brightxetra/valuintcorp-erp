@@ -17,84 +17,43 @@ import type {
   SummaryStatus,
   TransactionSourceType,
 } from "@/lib/erp/types";
+import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 
 export const industryTemplates: IndustryTemplate[] = [
   {
+    id: "umkm",
+    industry: "umkm",
+    name: "UMKM",
+    description: "Alur sederhana untuk penjualan, pembelian, stok, kas, dan laporan usaha.",
+    enabledModules: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "tax"],
+    defaultProductType: "stock_item",
+  },
+  {
     id: "general",
     industry: "general",
-    name: "General UMKM",
-    description: "Template horizontal untuk usaha yang belum membutuhkan konfigurasi industri spesifik.",
-    enabledModules: ["dashboard", "sales", "purchases", "accounting", "reports", "tax"],
-    defaultProductType: "non_stock_item",
-  },
-  {
-    id: "service",
-    industry: "service",
-    name: "Jasa",
-    description: "Cocok untuk konsultan, agensi, salon, bengkel jasa, dan bisnis berbasis pekerjaan.",
-    enabledModules: ["dashboard", "sales", "purchases", "accounting", "reports", "hr", "payroll", "tax"],
-    defaultProductType: "service",
-  },
-  {
-    id: "retail",
-    industry: "retail",
-    name: "Retail",
-    description: "Retail offline dengan SKU, stok, cabang, invoice, settlement, dan laporan stok.",
-    enabledModules: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "imports", "locations", "tax"],
-    defaultProductType: "stock_item",
-  },
-  {
-    id: "food_beverage",
-    industry: "food_beverage",
-    name: "F&B resep dan HPP",
-    description: "F&B multi-outlet dengan menu, bahan baku, resep, HPP otomatis, POS, stok, payroll, dan pajak.",
-    enabledModules: [
-      "dashboard",
-      "sales",
-      "purchases",
-      "inventory",
-      "accounting",
-      "reports",
-      "hr",
-      "payroll",
-      "imports",
-      "locations",
-      "tax",
-    ],
-    defaultProductType: "stock_item",
-  },
-  {
-    id: "manufacturing",
-    industry: "manufacturing",
-    name: "Manufaktur",
-    description: "Manufaktur UMKM dengan BOM, kebutuhan material, order produksi, pembelian, stok, dan laporan.",
-    enabledModules: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "imports", "locations", "tax"],
-    defaultProductType: "stock_item",
-  },
-  {
-    id: "online_seller",
-    industry: "online_seller",
-    name: "Online Seller",
-    description: "Seller marketplace/social commerce dengan import transaksi, settlement, dan rekonsiliasi channel.",
-    enabledModules: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "imports", "locations", "tax"],
-    defaultProductType: "stock_item",
-  },
-  {
-    id: "distributor",
-    industry: "retail",
-    name: "Distributor Kecil",
-    description: "Distributor ringan dengan multi-gudang, invoice B2B, AR/AP, dan stok per lokasi.",
-    enabledModules: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "locations", "tax"],
+    name: "General",
+    description: "Fitur lengkap untuk bahan mentah, barang jadi, BOM, produksi, costing, multi-cabang, dan konsolidasi.",
+    enabledModules: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "hr", "payroll", "imports", "locations", "tax"],
     defaultProductType: "stock_item",
   },
 ];
 
+const legacyModules: Record<string, ErpModule[]> = {
+  service: ["dashboard", "sales", "purchases", "accounting", "reports", "hr", "payroll", "tax"],
+  retail: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "imports", "locations", "tax"],
+  food_beverage: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "hr", "payroll", "imports", "locations", "tax"],
+  online_seller: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "imports", "locations", "tax"],
+  manufacturing: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "imports", "locations", "tax"],
+  distributor: ["dashboard", "sales", "purchases", "inventory", "accounting", "reports", "locations", "tax"],
+};
+
 export function enabledModulesForTemplate(templateId: string): ErpModule[] {
-  return (industryTemplates.find((template) => template.id === templateId) ?? industryTemplates[0]).enabledModules;
+  return legacyModules[templateId] ?? industryTemplates.find((template) => template.id === canonicalIndustryTemplateId(templateId))?.enabledModules ?? industryTemplates[0].enabledModules;
 }
 
 export function defaultProductTypeForTemplate(templateId: string): ProductType {
-  return (industryTemplates.find((template) => template.id === templateId) ?? industryTemplates[0]).defaultProductType;
+  if (templateId === "service") return "service";
+  return industryTemplates.find((template) => template.id === canonicalIndustryTemplateId(templateId))?.defaultProductType ?? industryTemplates[0].defaultProductType;
 }
 
 export function featureFlagsForTemplate(businessId: string, templateId: string): BusinessFeatureFlag[] {

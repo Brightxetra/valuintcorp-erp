@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Calculator,
@@ -17,8 +17,13 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
-import type { ErpWorkspace } from "@/lib/erp/types";
+import type { BpjsPolicy, ErpWorkspace } from "@/lib/erp/types";
+import type { Employee, PayrollComponent } from "@/lib/domain/types";
 import { money } from "@/lib/format";
+import { defaultBpjsPolicyForBusiness } from "@/lib/hr/bpjs";
+import { calculateEmployeePayroll } from "@/lib/hr/payroll";
+import { notify } from "@/lib/notify";
+import { downloadCsvFile } from "@/lib/exports/csv";
 
 // ============================================
 // KOMPONEN KARTU RINGKASAN GAJI
@@ -58,38 +63,53 @@ function PayrollSummaryCard({ title, value, subtitle, icon: Icon, tone = "emeral
 // KOMPONEN DETAIL GAJI KARYAWAN
 // ============================================
 interface EmployeePayrollDetailProps {
-  employeeName: string;
-  employeeRole: string;
-  baseSalary: number;
+  preview: PayrollPreview;
   onRemove: () => void;
 }
 
+type PayrollPreview = {
+  employee: Employee;
+  components: PayrollComponent[];
+  grossPay: number;
+  deductions: number;
+  bpjsEmployee: number;
+  bpjsEmployer: number;
+  netPay: number;
+};
+
+function periodEndDate(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${period}-${String(day).padStart(2, "0")}`;
+}
+
+function payrollPreview(employee: Employee, policy: BpjsPolicy): PayrollPreview {
+  const calculation = calculateEmployeePayroll(employee, policy);
+  return {
+    employee,
+    components: calculation.components,
+    grossPay: calculation.grossPay,
+    deductions: calculation.deductions,
+    bpjsEmployee: calculation.bpjs.totalEmployee,
+    bpjsEmployer: calculation.bpjs.totalEmployer,
+    netPay: calculation.netPay,
+  };
+}
+
 function EmployeePayrollDetail({
-  employeeName,
-  employeeRole,
-  baseSalary,
+  preview,
   onRemove,
 }: EmployeePayrollDetailProps) {
-  // Simulasi perhitungan
-  const tunjanganTransport = 300_000;
-  const tunjanganMakan = 200_000;
-  const totalGaji = baseSalary + tunjanganTransport + tunjanganMakan;
-  const bpjsKaryawan = Math.min(totalGaji * 0.01, 120_000);
-  const bpjsPerusahaan = Math.min(totalGaji * 0.04, 120_000);
-  const jhtKaryawan = Math.min(totalGaji * 0.037, 1_466_800);
-  const jhtPerusahaan = Math.min(totalGaji * 0.037, 1_466_800);
-  const pph21 = Math.max(totalGaji * 0.05 - 500_000, 0);
-
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-700">
-            {employeeName.charAt(0)}
+            {preview.employee.name.charAt(0)}
           </div>
           <div>
-            <p className="font-medium text-slate-950">{employeeName}</p>
-            <p className="text-sm text-slate-500">{employeeRole}</p>
+            <p className="font-medium text-slate-950">{preview.employee.name}</p>
+            <p className="text-sm text-slate-500">{preview.employee.role}</p>
           </div>
         </div>
         <button
@@ -109,20 +129,13 @@ function EmployeePayrollDetail({
           </h4>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-slate-600">Gaji Pokok</span>
-              <span className="font-medium">{money(baseSalary)}</span>
+              <span className="text-slate-600">Gaji pokok</span>
+              <span className="font-medium">{money(preview.employee.baseSalary)}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-600">Tunjangan Transport</span>
-              <span className="font-medium">{money(tunjanganTransport)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-600">Tunjangan Makan</span>
-              <span className="font-medium">{money(tunjanganMakan)}</span>
-            </div>
+            {preview.components.filter((component) => component.type === "earning" && component.name !== "Gaji pokok").map((component) => <div className="flex justify-between text-sm" key={component.id ?? component.name}><span className="text-slate-600">{component.name}</span><span className="font-medium">{money(component.amount)}</span></div>)}
             <div className="flex justify-between border-t border-slate-200 pt-2 font-semibold text-slate-950">
               <span>Total Pendapatan</span>
-              <span className="text-emerald-700">{money(totalGaji)}</span>
+              <span className="text-emerald-700">{money(preview.grossPay)}</span>
             </div>
           </div>
         </div>
@@ -134,20 +147,13 @@ function EmployeePayrollDetail({
           </h4>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-slate-600">BPJS Kesehatan (1%)</span>
-              <span className="font-medium text-red-600">-{money(bpjsKaryawan)}</span>
+              <span className="text-slate-600">Komponen potongan</span>
+              <span className="font-medium text-red-600">-{money(preview.deductions - preview.bpjsEmployee)}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-600">JHT Karyawan (3.7%)</span>
-              <span className="font-medium text-red-600">-{money(jhtKaryawan)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-600">PPh 21 (5%)</span>
-              <span className="font-medium text-red-600">-{money(pph21)}</span>
-            </div>
+            <div className="flex justify-between text-sm"><span className="text-slate-600">BPJS karyawan</span><span className="font-medium text-red-600">-{money(preview.bpjsEmployee)}</span></div>
             <div className="flex justify-between border-t border-slate-200 pt-2 font-semibold text-slate-950">
               <span>Total Potongan</span>
-              <span className="text-red-600">-{money(bpjsKaryawan + jhtKaryawan + pph21)}</span>
+              <span className="text-red-600">-{money(preview.deductions)}</span>
             </div>
           </div>
         </div>
@@ -158,7 +164,7 @@ function EmployeePayrollDetail({
         <div className="flex items-center justify-between">
           <span className="text-lg font-semibold text-emerald-800">GAJI BERSIH</span>
           <span className="text-2xl font-bold text-emerald-700">
-            {money(totalGaji - bpjsKaryawan - jhtKaryawan - pph21)}
+            {money(preview.netPay)}
           </span>
         </div>
       </div>
@@ -166,7 +172,7 @@ function EmployeePayrollDetail({
       {/* IURAN BPJS PERUSAHAAN */}
       <div className="mt-4 rounded-lg bg-blue-50 p-3">
         <p className="text-sm font-medium text-blue-800">
-          ℹ️ Iuran BPJS yang ditanggung perusahaan: {money(bpjsPerusahaan + jhtPerusahaan)}/bulan
+          Iuran BPJS yang ditanggung perusahaan: {money(preview.bpjsEmployer)}/bulan
         </p>
       </div>
     </div>
@@ -177,12 +183,27 @@ function EmployeePayrollDetail({
 // WORKSPACE UTAMA
 // ============================================
 export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { workspace } = useErpWorkspace(initialWorkspace);
+  const { workspace, request, setWorkspace } = useErpWorkspace(initialWorkspace);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState("Juni 2026");
+  const [selectedPeriod, setSelectedPeriod] = useState(initialWorkspace.period.startDate.slice(0, 7));
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [policy, setPolicy] = useState<BpjsPolicy>();
+  const [policyError, setPolicyError] = useState("");
 
-  const activeEmployees = workspace.employees.filter((e) => e.status === "active");
+  useEffect(() => {
+    let active = true;
+    void request<{ policy: BpjsPolicy }>("/api/erp/bpjs-policy")
+      .then((body) => { if (active) setPolicy(body.policy); })
+      .catch(() => { if (active) setPolicyError(workspace.business.id); });
+    return () => { active = false; };
+  }, [request, workspace.business.id]);
+
+  const activeEmployees = workspace.employees.filter((employee) =>
+    employee.status !== "inactive" && employee.contractType !== "daily",
+  );
+  const currentPolicy = policy?.businessId === workspace.business.id ? policy : workspace.bpjsPolicy;
+  const postedRuns = workspace.payrollRuns.filter((run) => run.period === selectedPeriod);
 
   function toggleEmployee(id: string) {
     setSelectedEmployees((prev) =>
@@ -199,13 +220,41 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   }
 
   // Hitung total
-  const totalGajiKotor = selectedEmployees.reduce((sum, id) => {
-    const emp = workspace.employees.find((e) => e.id === id);
-    return sum + (emp?.baseSalary ?? 0) * 1.1; // +10% tunjangan
-  }, 0);
+  const selected = activeEmployees.filter((employee) => selectedEmployees.includes(employee.id));
+  const previewErrors: string[] = [];
+  const previews = selected.flatMap((employee) => {
+    try {
+      return [payrollPreview(employee, currentPolicy ?? defaultBpjsPolicyForBusiness(workspace.business.id))];
+    } catch (error) {
+      previewErrors.push(`${employee.name} · ${error instanceof Error ? error.message : "Gaji gagal dihitung."}`);
+      return [];
+    }
+  });
+  const canPost = Boolean(currentPolicy && selectedPeriod && previews.length && previewErrors.length === 0 && previews.length <= 100);
+  const totalGajiKotor = previews.reduce((sum, preview) => sum + preview.grossPay, 0);
+  const totalPotongan = previews.reduce((sum, preview) => sum + preview.deductions, 0);
+  const totalGajiBersih = previews.reduce((sum, preview) => sum + preview.netPay, 0);
 
-  const totalBpjsKaryawan = totalGajiKotor * 0.047; // 1% kesehatan + 3.7% JHT
-  const totalGajiBersih = totalGajiKotor - totalBpjsKaryawan * 0.6; // estimasi
+  async function postSelectedPayroll() {
+    if (!canPost) return;
+    setPosting(true);
+    try {
+      const body = await request<{ workspace: ErpWorkspace }>("/api/erp/payroll-runs", {
+        method: "POST",
+        body: JSON.stringify({
+          employeeIds: previews.map((preview) => preview.employee.id),
+          date: periodEndDate(selectedPeriod),
+        }),
+      });
+      if (body.workspace) setWorkspace(body.workspace);
+      setSelectedEmployees([]);
+      notify.success("Payroll berhasil diposting", { description: `${previews.length} karyawan diproses.` });
+    } catch (caught) {
+      notify.error("Payroll gagal diposting", { description: caught instanceof Error ? caught.message : "Coba lagi." });
+    } finally {
+      setPosting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -221,11 +270,12 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
           <p className="mt-1 text-slate-600">Hitung dan catat gaji bulanan karyawan beserta BPJS</p>
         </div>
         <div className="flex gap-2">
-          <ActionButton variant="secondary">
-            <Download className="size-4" /> Export Slip
-          </ActionButton>
-          <ActionButton>
-            <Calculator className="size-4" /> Hitung Gaji
+          <ActionButton variant="secondary" disabled={!postedRuns.length} onClick={() => downloadCsvFile(
+            `gaji-${selectedPeriod}.csv`,
+            ["Periode", "Karyawan", "Gaji bruto", "Potongan", "PPh", "Gaji bersih"],
+            postedRuns.map((run) => [run.period, workspace.employees.find((employee) => employee.id === run.employeeId)?.name ?? "Karyawan", run.grossPay, run.deductions, run.taxWithheld, run.netPay]),
+          )}>
+            <Download className="size-4" /> Ekspor Gaji CSV
           </ActionButton>
         </div>
       </div>
@@ -256,7 +306,7 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
         <PayrollSummaryCard
           title="Estimasi Gaji Bersih"
           value={money(totalGajiBersih)}
-          subtitle="Setelah pajak & BPJS"
+          subtitle="Setelah komponen dan BPJS"
           icon={Check}
           tone="emerald"
         />
@@ -270,15 +320,13 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
         <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
             <Calendar className="size-4 text-slate-400" />
-            <select
+            <input aria-label="Periode gaji"
+              type="month"
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
+              required
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="Mei 2026">Mei 2026</option>
-              <option value="Juni 2026">Juni 2026</option>
-              <option value="Juli 2026">Juli 2026</option>
-            </select>
+            />
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -357,15 +405,13 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
           {showBreakdown ? (
             <div className="space-y-4">
               {selectedEmployees.map((id) => {
-                const employee = workspace.employees.find((e) => e.id === id);
-                if (!employee) return null;
+                const preview = previews.find((item) => item.employee.id === id);
+                if (!preview) return null;
 
                 return (
                   <EmployeePayrollDetail
                     key={id}
-                    employeeName={employee.name}
-                    employeeRole={employee.role}
-                    baseSalary={employee.baseSalary}
+                    preview={preview}
                     onRemove={() => toggleEmployee(id)}
                   />
                 );
@@ -379,8 +425,8 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
                   <p className="text-xl font-bold text-slate-950">{money(totalGajiKotor)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-slate-600">Total Potongan (BPJS + PPh)</p>
-                  <p className="text-xl font-bold text-red-600">-{money(totalBpjsKaryawan)}</p>
+                  <p className="text-sm text-slate-600">Total potongan komponen + BPJS</p>
+                  <p className="text-xl font-bold text-red-600">-{money(totalPotongan)}</p>
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-sm text-slate-600">Total Gaji Bersih (Estimasi)</p>
@@ -391,13 +437,13 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
           )}
 
           <div className="mt-4 flex justify-end gap-3">
-            <ActionButton variant="secondary">
-              Simpan sebagai Draft
-            </ActionButton>
-            <ActionButton>
-              <Check className="size-4" /> Simpan & Catat Jurnal
+            <ActionButton disabled={posting || !canPost} onClick={() => void postSelectedPayroll()}>
+              <Check className="size-4" /> {posting ? "Memproses..." : "Catat Pembayaran Gaji"}
             </ActionButton>
           </div>
+          {policyError === workspace.business.id && !currentPolicy && <p role="alert">Tarif BPJS gagal dimuat. Muat ulang halaman untuk melanjutkan.</p>}
+          {previewErrors.map((error) => <p className="text-sm text-red-700" key={error} role="alert">{error}</p>)}
+          {previews.length > 100 && <p role="alert">Pilih maksimal 100 karyawan per proses.</p>}
         </Panel>
       )}
 
@@ -442,9 +488,9 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
             <p className="font-medium text-blue-800">Cara Kerja Perhitungan Gaji</p>
             <ul className="mt-2 space-y-1 text-sm text-blue-700">
               <li>• Gaji pokok + tunjangan transport & makan = Total Gaji Kotor</li>
-              <li>• Potongan: BPJS Kesehatan (1% karyawan), JHT (3.7% karyawan), PPh 21</li>
+              <li>• Potongan: komponen karyawan dan BPJS sesuai kepesertaan serta policy bisnis</li>
               <li>• Gaji Bersih = Total Gaji Kotor - Total Potongan</li>
-              <li>• Iuran BPJS perusahaan (4% kesehatan + 3.7% JHT) dihitung terpisah</li>
+              <li>• Iuran BPJS perusahaan dihitung terpisah sesuai policy bisnis</li>
               <li>• Setelah disimpan, otomatis membuat jurnal di akun keuangan</li>
             </ul>
           </div>

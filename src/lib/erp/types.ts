@@ -529,7 +529,7 @@ export interface LocationMetric {
 export interface Attachment {
   id: string;
   businessId: string;
-  ownerType: "sales_invoice" | "purchase_bill" | "payment" | "payroll_run" | "fixed_asset";
+  ownerType: "sales_invoice" | "purchase_bill" | "payment" | "payroll_run" | "fixed_asset" | "employee";
   ownerId: string;
   fileName: string;
   storagePath: string;

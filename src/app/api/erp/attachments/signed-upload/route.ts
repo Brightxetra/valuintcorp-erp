@@ -22,6 +22,7 @@ function tableForOwner(ownerType: string) {
     payment: "payments",
     payroll_run: "payroll_runs",
     fixed_asset: "fixed_assets",
+    employee: "employees",
   }[ownerType];
 }
 
@@ -37,9 +38,18 @@ export async function POST(request: Request) {
     return withDemoHeader(json({ errors: parsed.error.flatten() }, 400), context);
   }
 
+  if (parsed.data.ownerType === "employee" && (
+    !["image/jpeg", "image/png", "image/webp"].includes(parsed.data.mimeType)
+    || parsed.data.sizeBytes > 5_000_000
+  )) {
+    return withDemoHeader(json({ error: "Foto harus JPG, PNG, atau WebP dan maksimal 5 MB." }, 400), context);
+  }
+
   const requiredPermission = parsed.data.ownerType === "payroll_run"
     ? "payroll:run"
-    : "accounting:write";
+    : parsed.data.ownerType === "employee"
+      ? "hr:manage"
+      : "accounting:write";
   if (!context.permissions.includes(requiredPermission)) {
     return withDemoHeader(
       json({ error: `Akses ${requiredPermission} diperlukan untuk upload lampiran ini.` }, 403),

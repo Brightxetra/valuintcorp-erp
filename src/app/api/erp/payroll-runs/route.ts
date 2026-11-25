@@ -1,6 +1,6 @@
 import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
-import { createDemoPayrollRun } from "@/lib/erp/demo-store";
-import { createPayrollRunSchema } from "@/lib/erp/schemas";
+import { createDemoPayrollBatch } from "@/lib/erp/demo-store";
+import { createPayrollBatchSchema, createPayrollRunSchema } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
 import { callActorServiceRpc } from "@/lib/supabase/service-rpc";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
@@ -17,7 +17,13 @@ export async function POST(request: Request) {
   }
 
   const payload = await request.json().catch(() => null);
-  const parsed = createPayrollRunSchema.safeParse(payload);
+  const parsedBatch = createPayrollBatchSchema.safeParse(payload);
+  const parsedSingle = createPayrollRunSchema.safeParse(payload);
+  const parsed = parsedBatch.success
+    ? parsedBatch
+    : parsedSingle.success
+      ? { success: true as const, data: { employeeIds: [parsedSingle.data.employeeId], date: parsedSingle.data.date } }
+      : parsedBatch;
 
   if (!parsed.success) {
     return withDemoHeader(json({ errors: parsed.error.flatten() }, 400), context);
@@ -25,7 +31,7 @@ export async function POST(request: Request) {
 
   if (context.demoMode) {
     try {
-      return withDemoHeader(json({ workspace: createDemoPayrollRun(parsed.data) }, 201), context);
+      return withDemoHeader(json({ workspace: createDemoPayrollBatch(parsed.data) }, 201), context);
     } catch (error) {
       return withDemoHeader(
         json({ error: error instanceof Error ? error.message : "Payroll run gagal dibuat." }, 422),
@@ -36,7 +42,7 @@ export async function POST(request: Request) {
 
   const supabase = createRequestSupabaseClient(request);
   const { error } = await callActorServiceRpc(
-    "run_payroll",
+    "run_payroll_batch",
     { ...parsed.data, businessId: context.businessId },
     context.userId,
   );
