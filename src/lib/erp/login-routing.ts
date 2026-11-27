@@ -1,5 +1,7 @@
 const fallbackAuthenticatedPath = "/dashboard";
 const onboardingPath = "/onboarding";
+const loginRoutingOrigin = "https://navigation.valuintcorp.invalid";
+const ambiguousNavigationPattern = /[\\\u0000-\u001f\u007f]|%(?:2f|5c)/i;
 
 function isSamePathOrChild(path: string, parentPath: string) {
   return path === parentPath || path.startsWith(`${parentPath}?`) || path.startsWith(`${parentPath}/`);
@@ -10,12 +12,36 @@ export function sanitizeLoginNextPath(
   fallbackPath = fallbackAuthenticatedPath,
 ) {
   if (!nextPath) return fallbackPath;
-  if (!nextPath.startsWith("/") || nextPath.startsWith("//")) return fallbackPath;
-  if (nextPath === "/login" || nextPath.startsWith("/login?") || nextPath.startsWith("/login/")) {
+  if (
+    !nextPath.startsWith("/") ||
+    nextPath.startsWith("//") ||
+    ambiguousNavigationPattern.test(nextPath)
+  ) {
     return fallbackPath;
   }
 
-  return nextPath;
+  try {
+    const destination = new URL(nextPath, loginRoutingOrigin);
+
+    if (
+      destination.origin !== loginRoutingOrigin ||
+      destination.username ||
+      destination.password
+    ) {
+      return fallbackPath;
+    }
+
+    if (
+      destination.pathname === "/login" ||
+      destination.pathname.startsWith("/login/")
+    ) {
+      return fallbackPath;
+    }
+
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return fallbackPath;
+  }
 }
 
 export function destinationAfterLogin(

@@ -8,7 +8,7 @@ export default async function AsetTetapPage() {
   const workspace = await getInitialErpWorkspace({ profile: "assets" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="assets" workspace={workspace}>
       <AsetTetapWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

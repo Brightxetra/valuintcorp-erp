@@ -9,6 +9,21 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
+function periodLockErrorResponse(error: { code?: string }) {
+  if (error.code?.toUpperCase() === "55P03") {
+    return json(
+      {
+        error: "Periode sedang digunakan oleh proses posting. Coba lagi beberapa saat.",
+        code: "PERIOD_LOCK_BUSY",
+        retryable: true,
+      },
+      409,
+    );
+  }
+
+  return json({ error: "Status periode gagal diperbarui." }, 422);
+}
+
 export async function POST(request: Request) {
   const context = await requireApiPermission(request, "accounting:write");
 
@@ -35,7 +50,7 @@ export async function POST(request: Request) {
   );
 
   if (error) {
-    return withDemoHeader(json({ error: error.message }, 422), context);
+    return withDemoHeader(periodLockErrorResponse(error), context);
   }
 
   return withDemoHeader(json({ workspace: await loadSupabaseWorkspace(supabase, context) }), context);

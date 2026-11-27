@@ -5,25 +5,9 @@ import { createDemoErpWorkspace } from "@/lib/erp/demo-workspace";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
 import { refreshErpWorkspace } from "@/lib/erp/operations";
 import type { ErpWorkspace } from "@/lib/erp/types";
-import { isPosOnlyPermissionSet, permissionsForRole, type Permission } from "@/lib/security/permissions";
+import { isPosOnlyPermissionSet, permissionsForRole } from "@/lib/security/permissions";
 import { loadSupabaseWorkspace, type WorkspaceLoadOptions } from "@/lib/erp/workspace-repository";
-
-
-function requiredPermissionForProfile(profile: WorkspaceLoadOptions["profile"]): Permission | null {
-  switch (profile) {
-    case "dashboard": case "settings": case "full": return "business:read";
-    case "sales": case "purchases": case "cash": return "accounting:write";
-    case "inventory": case "pricing": return "inventory:manage";
-    case "accounting": case "assets": case "document-detail": return "accounting:read";
-    case "reports": return "reports:export";
-    case "tax": return "tax:prepare";
-    case "hr": return "hr:manage";
-    case "pos": return "pos:read";
-    case "payroll": return "payroll:run";
-    case "onboarding": return "business:update";
-    default: return null;
-  }
-}
+import { requiredPermissionForWorkspaceProfile } from "@/lib/erp/workspace-profiles";
 
 function createOnboardingWorkspace(user: NonNullable<Awaited<ReturnType<typeof getServerAuthenticatedUser>>>): ErpWorkspace {
   const base = createDemoErpWorkspace();
@@ -90,7 +74,7 @@ export async function getInitialErpWorkspace(
   const accessToken = await getServerAccessToken();
 
   if (context && accessToken) {
-    const requiredPermission = requiredPermissionForProfile(options.profile);
+    const requiredPermission = requiredPermissionForWorkspaceProfile(options.profile ?? "full");
     const permissions = context.permissions ?? permissionsForRole(context.role);
     if (requiredPermission && !permissions.includes(requiredPermission)) {
       if (isPosOnlyPermissionSet(permissions)) {

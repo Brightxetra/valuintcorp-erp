@@ -9,7 +9,7 @@ import {
   serverSessionIdCookie,
   serverSessionRememberCookie,
 } from "@/lib/auth/runtime";
-import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
+import type { PublicWorkspaceLoadProfile } from "@/lib/erp/workspace-profiles";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { hasSupabasePublicConfig } from "@/lib/supabase/config";
@@ -44,6 +44,39 @@ export interface SessionSyncTokens {
 export interface SessionSyncOptions {
   rememberMe?: boolean;
   freshLogin?: boolean;
+}
+
+export class ErpApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ErpApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export function isDefinitiveErpApiError(error: unknown) {
+  return (
+    error instanceof ErpApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    ![408, 425, 429].includes(error.status)
+  );
+}
+
+export function hasErpApiErrorCode(
+  error: unknown,
+  codes: readonly string[],
+) {
+  if (!(error instanceof ErpApiError) || !error.body || typeof error.body !== "object") {
+    return false;
+  }
+
+  const code = "code" in error.body ? error.body.code : undefined;
+  return typeof code === "string" && codes.includes(code);
 }
 
 export function isSupabaseBrowserEnabled() {
@@ -181,7 +214,6 @@ export async function syncServerSession(
     refreshToken?: string;
     businessId?: string;
     rememberMe?: boolean;
-    freshLogin?: boolean;
   } = {
     accessToken,
   };
@@ -195,7 +227,6 @@ export async function syncServerSession(
   }
 
   payload.rememberMe = rememberMe;
-  payload.freshLogin = freshLogin;
 
   try {
     const response = await fetch("/api/auth/session", {
@@ -315,7 +346,7 @@ export async function erpApiFetch<T>(
           ? "Validasi form gagal. Periksa field yang wajib diisi."
           : "Aksi gagal diproses.";
 
-    throw new Error(message);
+    throw new ErpApiError(message, response.status, body);
   }
 
   return body as T;
@@ -365,8 +396,10 @@ export async function loadBusinessOptions() {
   return erpApiFetch<{ businesses: BusinessOption[]; defaultBusinessId: string | null }>("/api/erp/businesses");
 }
 
-export async function loadWorkspaceForBusiness(businessId: string, profile: WorkspaceLoadProfile = "full") {
+export async function loadWorkspaceForBusiness(businessId: string, profile: PublicWorkspaceLoadProfile) {
   await syncServerSession(businessId);
-  const query = profile === "full" ? "" : `?profile=${encodeURIComponent(profile)}`;
-  return erpApiFetch<{ workspace: ErpWorkspace }>(`/api/erp/workspace${query}`, { businessId });
+  return erpApiFetch<{ workspace: ErpWorkspace }>(
+    `/api/erp/workspace?profile=${encodeURIComponent(profile)}`,
+    { businessId },
+  );
 }

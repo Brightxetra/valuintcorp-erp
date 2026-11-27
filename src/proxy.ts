@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth/runtime";
 import { validateRequestSession } from "@/lib/auth/session-guard";
 import { accessTokenCookieMaxAge, shouldRefreshAccessToken } from "@/lib/auth/token";
+import { verifySupabaseAccessToken } from "@/lib/auth/verified-session";
 import {
   nowSeconds,
   rememberCookieValue,
@@ -94,6 +95,9 @@ async function refreshServerSession(refreshToken: string, rememberMe: boolean, r
     return null;
   }
 
+  const verifiedSession = await verifySupabaseAccessToken(session.access_token);
+  if (!verifiedSession) return null;
+
   const response = NextResponse.next();
   const maxAge = sessionCookieMaxAge(rememberMe);
   response.cookies.set(
@@ -115,7 +119,20 @@ async function refreshServerSession(refreshToken: string, rememberMe: boolean, r
 
   touchActivityCookie(response, rememberMe);
 
-  return response;
+  return { response, identity: verifiedSession.identity };
+}
+
+async function validateAccessTokenSession(
+  request: NextRequest,
+  accessToken: string,
+): Promise<{ rememberMe: boolean } | null> {
+  const verifiedSession = await verifySupabaseAccessToken(accessToken);
+  if (!verifiedSession) return null;
+
+  const guard = await validateRequestSession(request, verifiedSession.identity);
+  if (!guard.ok) return null;
+
+  return { rememberMe: guard.rememberMe };
 }
 
 export async function proxy(request: NextRequest) {
@@ -125,26 +142,30 @@ export async function proxy(request: NextRequest) {
 
   const accessToken = request.cookies.get(serverAccessTokenCookie)?.value;
   const refreshToken = request.cookies.get(serverRefreshTokenCookie)?.value;
+  const rememberMe = request.cookies.get(serverSessionRememberCookie)?.value === "1";
 
   if (accessToken || refreshToken) {
-    const guard = await validateRequestSession(request);
-
-    if (!guard.ok) {
-      return loginRedirect(request, guard.reason);
-    }
-
     if (accessToken && !shouldRefreshAccessToken(accessToken)) {
-      return touchRequestSessionCookies(NextResponse.next(), request, guard.rememberMe);
+      const validated = await validateAccessTokenSession(request, accessToken);
+      if (!validated) return loginRedirect(request, "session-revoked");
+      return touchRequestSessionCookies(NextResponse.next(), request, validated.rememberMe);
     }
 
     if (refreshToken) {
-      const refreshed = await refreshServerSession(refreshToken, guard.rememberMe, request);
+      const refreshed = await refreshServerSession(refreshToken, rememberMe, request);
 
-      if (refreshed) return refreshed;
+      if (refreshed) {
+        const guard = await validateRequestSession(request, refreshed.identity);
+        if (!guard.ok) return loginRedirect(request, guard.reason);
+        return refreshed.response;
+      }
     }
 
     if (accessToken) {
-      return touchRequestSessionCookies(NextResponse.next(), request, guard.rememberMe);
+      const validated = await validateAccessTokenSession(request, accessToken);
+      if (validated) {
+        return touchRequestSessionCookies(NextResponse.next(), request, validated.rememberMe);
+      }
     }
   }
 

@@ -8,7 +8,7 @@ export default async function DashboardPage() {
   const workspace = await getInitialErpWorkspace({ profile: "dashboard" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="dashboard" workspace={workspace}>
       <DashboardWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

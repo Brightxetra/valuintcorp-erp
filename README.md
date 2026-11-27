@@ -30,6 +30,7 @@ npm run benchmark:raw -- 100000
 - Production workspace provider with server-side session bootstrap, active business context, bearer-token API calls, route guard through `src/proxy.ts`, and explicit demo fallback.
 - Master-data CRUD for customers, suppliers, products, warehouses, employees, business profile, tax profile, email-based pending member invites, and direct member upsert when a Supabase auth user id already exists.
 - Workflow APIs for stock transfers, period lock, document void/reversal, CSV raw import preview/commit/validate/summarize/post/rollback, paginated raw transaction detail, reconciliation report, signed attachment upload, and attachment metadata.
+- Manual stock receipts use an actor-bound service RPC with a per-draft UUID idempotency key, atomic movement/activity writes, and database-level tenant, permission, period, product, warehouse, and numeric validation.
 - Accounting engine with balanced journals, opening balance, sales, expenses, inventory, payroll, reversal, and period lock guards.
 - SAK EMKM-style report builders and Coretax preparation package.
 - XLSX/PDF export endpoint at `/api/exports/financials`.
@@ -78,6 +79,11 @@ supabase/migrations/026_fix_document_sequence_key_ambiguity.sql
 supabase/migrations/027_prevent_negative_inventory_stock.sql
 supabase/migrations/20260705004700_auth_security_events_and_counterparty_tax_ids.sql
 supabase/migrations/20260719072824_harden_public_api_privileges.sql
+supabase/migrations/20260719081805_stock_receipt_service_rpc.sql
+supabase/migrations/20260722033028_stock_receipt_operation_key_unique_index.sql
+supabase/migrations/20260722033031_activate_stock_receipt_service_rpc.sql
+supabase/migrations/20260723071330_harden_inventory_mutation_locking.sql
+supabase/migrations/20260723071331_validate_stock_movement_operation_identity.sql
 ```
 
 Required env vars for Supabase-backed API authorization:

@@ -1,10 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
 import { permissionsForMember, permissionsForRole, type Permission } from "@/lib/security/permissions";
 import type { BusinessRole } from "@/lib/domain/types";
 import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
 import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { validateRequestSession } from "@/lib/auth/session-guard";
-import { requireSupabasePublicConfig } from "@/lib/supabase/config";
+import { verifySupabaseAuthorization } from "@/lib/auth/verified-session";
 
 export interface ApiContext {
   businessId: string;
@@ -23,6 +22,9 @@ export interface AuthenticatedUserContext {
   userId: string;
   userEmail?: string;
   userName?: string;
+  rememberMe: boolean;
+  sessionToken: string | null;
+  supabaseSessionId: string | null;
 }
 
 const demoContext: ApiContext = {
@@ -64,25 +66,16 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function createAuthorizedSupabaseClient(authorization: string) {
-  const { url, anonKey } = requireSupabasePublicConfig("Supabase API client");
-
-  return createClient(url, anonKey, {
-    auth: { persistSession: false },
-    global: { headers: { Authorization: authorization } },
-  });
-}
-
-export async function requireApiPermission(
+async function requireApiContext(
   request: Request,
-  permission: Permission,
+  permission: Permission | null,
 ): Promise<ApiContext | Response> {
   const businessId = request.headers.get("x-business-id");
 
   if (shouldUseDemoFallback()) {
     const role = roleFromHeader(request);
 
-    if (!permissionsForRole(role).includes(permission)) {
+    if (permission && !permissionsForRole(role).includes(permission)) {
       return jsonNoStore(
         { error: `Role ${role} is not allowed to perform ${permission}.` },
         { status: 403 },
@@ -96,34 +89,32 @@ export async function requireApiPermission(
     return authenticationConfigurationUnavailableResponse();
   }
 
-  const sessionGuard = await validateRequestSession(request);
-
-  if (!sessionGuard.ok) {
-    return sessionGuard.response;
-  }
-
-  if (!businessId) {
-    return jsonNoStore({ error: "x-business-id header is required." }, { status: 400 });
-  }
-
   const authorization = request.headers.get("authorization");
 
   if (!authorization) {
     return jsonNoStore({ error: "Authorization bearer token is required." }, { status: 401 });
   }
 
-  const supabase = createAuthorizedSupabaseClient(authorization);
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-
-  if (userError || !userData.user) {
+  const verifiedSession = await verifySupabaseAuthorization(authorization);
+  if (!verifiedSession) {
     return jsonNoStore({ error: "Invalid or expired Supabase token." }, { status: 401 });
   }
+
+  const sessionGuard = await validateRequestSession(request, verifiedSession.identity);
+  if (!sessionGuard.ok) return sessionGuard.response;
+
+  if (!businessId) {
+    return jsonNoStore({ error: "x-business-id header is required." }, { status: 400 });
+  }
+
+  const supabase = verifiedSession.client;
+  const user = verifiedSession.user;
 
   const { data: membership, error: membershipError } = await supabase
     .from("business_members")
     .select("role, access_scope, access_permissions, location_ids")
     .eq("business_id", businessId)
-    .eq("auth_user_id", userData.user.id)
+    .eq("auth_user_id", user.id)
     .maybeSingle();
 
   if (membershipError) {
@@ -143,7 +134,7 @@ export async function requireApiPermission(
     stringArray(membership.access_permissions),
   );
   const assignedLocationIds = stringArray(membership.location_ids);
-  if (!permissions.includes(permission)) {
+  if (permission && !permissions.includes(permission)) {
     return jsonNoStore(
 
       { error: `Role ${role} is not allowed to perform ${permission}.` },
@@ -158,13 +149,24 @@ export async function requireApiPermission(
     assignedLocationIds,
     accessScope,
     role,
-    userId: userData.user.id,
-    userEmail: userData.user.email ?? undefined,
+    userId: user.id,
+    userEmail: user.email ?? undefined,
     userName:
-      typeof userData.user.user_metadata?.name === "string"
-        ? userData.user.user_metadata.name
-        : userData.user.email ?? undefined,
+      typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name
+        : user.email ?? undefined,
   };
+}
+
+export function requireApiMembership(request: Request): Promise<ApiContext | Response> {
+  return requireApiContext(request, null);
+}
+
+export function requireApiPermission(
+  request: Request,
+  permission: Permission,
+): Promise<ApiContext | Response> {
+  return requireApiContext(request, permission);
 }
 
 export function isApiResponse(value: ApiContext | AuthenticatedUserContext | Response): value is Response {
@@ -180,17 +182,14 @@ export async function requireAuthenticatedUser(
       userId: demoContext.userId,
       userEmail: "demo@valuintcorp.test",
       userName: "Demo Owner",
+      rememberMe: false,
+      sessionToken: null,
+      supabaseSessionId: null,
     };
   }
 
   if (!isSupabaseEnvConfigured()) {
     return authenticationConfigurationUnavailableResponse();
-  }
-
-  const sessionGuard = await validateRequestSession(request);
-
-  if (!sessionGuard.ok) {
-    return sessionGuard.response;
   }
 
   const authorization = request.headers.get("authorization");
@@ -199,21 +198,27 @@ export async function requireAuthenticatedUser(
     return jsonNoStore({ error: "Authorization bearer token is required." }, { status: 401 });
   }
 
-  const supabase = createAuthorizedSupabaseClient(authorization);
-  const { data, error } = await supabase.auth.getUser();
-
-  if (error || !data.user) {
+  const verifiedSession = await verifySupabaseAuthorization(authorization);
+  if (!verifiedSession) {
     return jsonNoStore({ error: "Invalid or expired Supabase token." }, { status: 401 });
   }
 
+  const sessionGuard = await validateRequestSession(request, verifiedSession.identity);
+  if (!sessionGuard.ok) return sessionGuard.response;
+
+  const user = verifiedSession.user;
+
   return {
     demoMode: false,
-    userId: data.user.id,
-    userEmail: data.user.email ?? undefined,
+    userId: user.id,
+    userEmail: user.email ?? undefined,
     userName:
-      typeof data.user.user_metadata?.name === "string"
-        ? data.user.user_metadata.name
-        : data.user.email ?? undefined,
+      typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name
+        : user.email ?? undefined,
+    rememberMe: sessionGuard.rememberMe,
+    sessionToken: sessionGuard.sessionToken,
+    supabaseSessionId: sessionGuard.supabaseSessionId,
   };
 }
 

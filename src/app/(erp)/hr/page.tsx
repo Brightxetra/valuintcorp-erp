@@ -8,7 +8,7 @@ export default async function HrPage() {
   const workspace = await getInitialErpWorkspace({ profile: "hr" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="hr" workspace={workspace}>
       <HrWorkspaceV2 initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

@@ -54,7 +54,7 @@ select is(
     select count(*)
     from pg_class relation
     join pg_namespace namespace on namespace.oid = relation.relnamespace
-    cross join lateral aclexplode(coalesce(relation.relacl, '{}'::aclitem[])) acl
+    cross join lateral aclexplode(relation.relacl) acl
     where namespace.nspname = 'public'
       and relation.relkind in ('r', 'p')
       and acl.grantee = 0
@@ -262,7 +262,7 @@ select is(
   (
     select count(*)
     from pg_class relation
-    cross join lateral aclexplode(coalesce(relation.relacl, '{}'::aclitem[])) acl
+    cross join lateral aclexplode(relation.relacl) acl
     where relation.oid = 'public.acl_default_table_probe_20260719'::regclass
       and acl.grantee = 0
   ),
@@ -294,7 +294,7 @@ select is(
   (
     select count(*)
     from pg_class relation
-    cross join lateral aclexplode(coalesce(relation.relacl, '{}'::aclitem[])) acl
+    cross join lateral aclexplode(relation.relacl) acl
     where relation.oid = 'public.acl_default_sequence_probe_20260719'::regclass
       and acl.grantee = 0
   ),

@@ -190,6 +190,12 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
 
   const changeQuantity = (product: Product, delta: number) => {
     const next = Math.max(0, (cart[product.id] ?? 0) + delta);
+    if (delta > 0 && product.sellingPrice <= 0) {
+      notify.warning("Harga jual belum ditetapkan", {
+        description: `${product.name} belum bisa dijual melalui POS. Atur harga jual produk lebih dahulu.`,
+      });
+      return;
+    }
     if (delta > 0 && product.availableQuantity !== null && product.availableQuantity <= 0) {
       notify.warning("Stok habis", {
         description: `${product.name} tidak bisa dijual sampai stok diisi ulang.`,
@@ -238,7 +244,6 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
           items: cartItems.map(({ product, quantity }) => ({
             productId: product.id,
             quantity,
-            unitPrice: product.sellingPrice,
           })),
         }),
       });

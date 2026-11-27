@@ -8,7 +8,7 @@ export default async function InvoicePenjualanPage() {
   const workspace = await getInitialErpWorkspace({ profile: "sales" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="sales" workspace={workspace}>
       <TransaksiWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

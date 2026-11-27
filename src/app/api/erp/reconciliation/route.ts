@@ -1,7 +1,7 @@
 import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
 import type { DailyTransactionSummary, ErpWorkspace, RawTransaction, SettlementRecord } from "@/lib/erp/types";
-import { createRequestSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -105,8 +105,9 @@ export async function GET(request: Request) {
     return withDemoHeader(json({ rows: buildReconciliation(getDemoErpStore(), params) }), context);
   }
 
-  const { data, error } = await createRequestSupabaseClient(request).rpc("reconciliation_rollup", {
+  const { data, error } = await createServiceSupabaseClient().rpc("reconciliation_rollup", {
     target_business_id: context.businessId,
+    actor_user_id: context.userId,
     target_location_id: params.locationId ?? null,
     target_source: params.source ?? null,
     target_date_from: params.dateFrom ?? null,

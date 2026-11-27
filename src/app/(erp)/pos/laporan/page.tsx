@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export default async function PosLaporanPage() {
   const workspace = await getInitialErpWorkspace({ profile: "pos" });
-  return <WorkspacePageProvider workspace={workspace}><PosReportsWorkspace initialWorkspace={workspace} /></WorkspacePageProvider>;
+  return <WorkspacePageProvider profile="pos" workspace={workspace}><PosReportsWorkspace initialWorkspace={workspace} /></WorkspacePageProvider>;
 }

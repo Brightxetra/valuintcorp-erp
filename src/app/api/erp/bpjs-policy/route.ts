@@ -2,6 +2,7 @@
 import { bpjsPolicySchema } from "@/lib/erp/schemas";
 import type { BpjsPolicy } from "@/lib/erp/types";
 import { defaultBpjsPolicyForBusiness } from "@/lib/hr/bpjs";
+import { callActorServiceRpc } from "@/lib/supabase/service-rpc";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -51,23 +52,10 @@ function isMissingPolicyTable(error: { code?: string; message?: string } | null)
   return error?.code === "42P01" || /bpjs_policies/i.test(error?.message ?? "");
 }
 
-function toDb(policy: BpjsPolicy) {
-  return {
-    business_id: policy.businessId,
-    effective_date: policy.effectiveDate,
-    gross_salary_multiplier: policy.grossSalaryMultiplier,
-    health_employee_rate: policy.healthEmployeeRate,
-    health_employer_rate: policy.healthEmployerRate,
-    health_salary_cap: policy.healthSalaryCap,
-    jht_employee_rate: policy.jhtEmployeeRate,
-    jht_employer_rate: policy.jhtEmployerRate,
-    jht_salary_cap: policy.jhtSalaryCap,
-    jpn_employee_rate: policy.jpnEmployeeRate,
-    jpn_employer_rate: policy.jpnEmployerRate,
-    jpn_salary_cap: policy.jpnSalaryCap,
-    jkk_employer_rate: policy.jkkEmployerRate,
-    jkm_employer_rate: policy.jkmEmployerRate,
-  };
+function isMissingPolicyCommand(error: { code?: string; message?: string } | null) {
+  return error?.code === "42883"
+    || error?.code === "PGRST202"
+    || /upsert_bpjs_policy/i.test(error?.message ?? "");
 }
 
 export async function GET(request: Request) {
@@ -90,7 +78,7 @@ export async function GET(request: Request) {
   }
 
   if (error) {
-    return withDemoHeader(json({ error: error.message }, 422), context);
+    return withDemoHeader(json({ error: "Konfigurasi BPJS gagal dimuat." }, 422), context);
   }
 
   return withDemoHeader(json({ policy: data ? policyFromRow(data as Row, context.businessId) : defaultBpjsPolicyForBusiness(context.businessId) }), context);
@@ -116,19 +104,44 @@ export async function POST(request: Request) {
     return withDemoHeader(json({ policy }), context);
   }
 
-  const supabase = createRequestSupabaseClient(request);
-  const { data, error } = await supabase
-    .from("bpjs_policies")
-    .upsert(toDb(policy), { onConflict: "business_id" })
-    .select("*")
-    .single();
+  let rpcResult: Awaited<ReturnType<typeof callActorServiceRpc>>;
 
-  if (isMissingPolicyTable(error)) {
-    return withDemoHeader(json({ error: "Tabel konfigurasi BPJS belum tersedia. Jalankan migration 022_employee_profiles_and_bpjs_policy.sql di Supabase." }, 422), context);
+  try {
+    rpcResult = await callActorServiceRpc(
+      "upsert_bpjs_policy",
+      { ...parsed.data, businessId: context.businessId },
+      context.userId,
+    );
+  } catch {
+    return withDemoHeader(
+      json(
+        {
+          error: "Layanan konfigurasi BPJS sementara tidak tersedia.",
+          code: "BPJS_POLICY_UNAVAILABLE",
+        },
+        503,
+      ),
+      context,
+    );
+  }
+
+  const { data, error } = rpcResult;
+
+  if (isMissingPolicyCommand(error)) {
+    return withDemoHeader(json({ error: "Upgrade keamanan konfigurasi BPJS belum diterapkan." }, 422), context);
   }
 
   if (error) {
-    return withDemoHeader(json({ error: error.message }, 422), context);
+    return withDemoHeader(json({ error: "Konfigurasi BPJS gagal disimpan." }, 422), context);
+  }
+
+  if (
+    !data
+    || typeof data !== "object"
+    || Array.isArray(data)
+    || textValue(data as Row, "business_id") !== context.businessId
+  ) {
+    return withDemoHeader(json({ error: "Konfigurasi BPJS gagal disimpan." }, 422), context);
   }
 
   return withDemoHeader(json({ policy: policyFromRow(data as Row, context.businessId) }), context);

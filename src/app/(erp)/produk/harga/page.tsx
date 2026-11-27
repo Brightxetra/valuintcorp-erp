@@ -8,7 +8,7 @@ export default async function DaftarHargaPage() {
   const workspace = await getInitialErpWorkspace({ profile: "pricing" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="pricing" workspace={workspace}>
       <HargaWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

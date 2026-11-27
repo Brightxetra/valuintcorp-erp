@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useErpWorkspace } from "@/components/erp-context";
 import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { PageHeader } from "@/components/ui";
@@ -15,6 +15,27 @@ import {
   Filter,
 } from "lucide-react";
 import type { ErpWorkspace } from "@/lib/erp/types";
+import {
+  clearPersistedStockReceiptDraftIdentity,
+  confirmStockReceiptResponse,
+  getStockReceiptPendingCommand,
+  hasPendingStockReceipt,
+  markStockReceiptAmbiguous,
+  persistStockReceiptDraftIdentity,
+  releaseStockReceiptAfterDefinitiveFailure,
+  restoreStockReceiptDraftIdentity,
+  shouldReleaseStockReceiptAfterFailure,
+  type StockReceiptDraftIdentity,
+  type StockReceiptPendingStorage,
+} from "@/lib/erp/stock-receipt-idempotency";
+import {
+  upsertStockReceiptMovement,
+} from "@/lib/erp/stock-receipt-command";
+import {
+  hasErpApiErrorCode,
+  isDefinitiveErpApiError,
+} from "@/lib/erp/client-api";
+import { authoritativeStockReceiptConflictCodes } from "@/lib/erp/stock-receipt-errors";
 import type { InventoryPosition } from "@/lib/inventory/valuation";
 import { valueInventory } from "@/lib/inventory/valuation";
 import { notify } from "@/lib/notify";
@@ -93,6 +114,10 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<InventoryPosition | null>(null);
   const [loading, setLoading] = useState(false);
+  const [stockReceiptPending, setStockReceiptPending] = useState(false);
+  const [stockReceiptReadyScope, setStockReceiptReadyScope] = useState<
+    string | null
+  >(null);
 
   // Calculate stock positions
   const positions = valueInventory(workspace.stockMovements);
@@ -156,6 +181,59 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
     memo: "",
     date: new Date().toISOString().split("T")[0],
   });
+  const stockReceiptDraftIdentity = useRef<StockReceiptDraftIdentity>({ pending: null });
+  const stockReceiptSubmitting = useRef(false);
+  const stockReceiptStorage = useRef<StockReceiptPendingStorage | null>(null);
+  const stockReceiptBusinessId = workspace.business.id;
+  const stockReceiptUserId = workspace.user.id;
+  const stockReceiptScopeKey = `${stockReceiptBusinessId}:${stockReceiptUserId}`;
+  const stockReceiptIdentityReady =
+    stockReceiptReadyScope === stockReceiptScopeKey;
+  const stockReceiptScope = {
+    businessId: stockReceiptBusinessId,
+    userId: stockReceiptUserId,
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const scope = {
+        businessId: stockReceiptBusinessId,
+        userId: stockReceiptUserId,
+      };
+
+      try {
+        const storage = window.localStorage;
+        const probeKey = "valuintcorp:stock-receipt:storage-probe";
+        storage.setItem(probeKey, "1");
+        storage.removeItem(probeKey);
+        stockReceiptStorage.current = storage;
+
+        const restored = restoreStockReceiptDraftIdentity(storage, scope);
+        stockReceiptDraftIdentity.current = restored;
+
+        if (restored.pending) {
+          setStockReceipt({
+            ...restored.pending.payload,
+            memo: restored.pending.payload.memo ?? "",
+          });
+          setStockReceiptPending(true);
+          setShowReceiptModal(true);
+        } else {
+          setStockReceiptPending(false);
+        }
+      } catch {
+        stockReceiptStorage.current = null;
+        stockReceiptDraftIdentity.current = { pending: null };
+        setStockReceiptPending(false);
+      } finally {
+        setStockReceiptReadyScope(
+          `${stockReceiptBusinessId}:${stockReceiptUserId}`,
+        );
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [stockReceiptBusinessId, stockReceiptUserId]);
 
   // New adjustment form state
   const [newAdjustment, setNewAdjustment] = useState({
@@ -178,6 +256,7 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   const adjustmentTotalValue = Math.abs(newAdjustment.quantity) * newAdjustment.value;
 
   function handleReceiptChange(field: string, value: string | number) {
+    if (hasPendingStockReceipt(stockReceiptDraftIdentity.current)) return;
     setStockReceipt((prev) => ({ ...prev, [field]: value }));
   }
 
@@ -209,22 +288,142 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   }
 
   async function handleCreateReceipt() {
+    if (stockReceiptSubmitting.current) return;
+
+    const storage = stockReceiptStorage.current;
+
+    if (!stockReceiptIdentityReady || !storage) {
+      notify.error("Stok masuk belum dapat dikirim", {
+        description:
+          "Penyimpanan browser diperlukan untuk menjaga Idempotency-Key saat respons terputus.",
+      });
+      return;
+    }
+
+    stockReceiptSubmitting.current = true;
     setLoading(true);
+    let commandConfirmed = false;
+    let requestStarted = false;
 
     try {
-      const data = await request<{ workspace: ErpWorkspace }>("/api/erp/stock-receipts", {
-        method: "POST",
-        body: JSON.stringify(stockReceipt),
-      });
+      const command = getStockReceiptPendingCommand(
+        stockReceiptDraftIdentity.current,
+        stockReceipt,
+      );
 
-      setWorkspace(data.workspace);
-      const product = workspace.products.find((item) => item.id === stockReceipt.itemId);
-      notify.success("Stok masuk dicatat", { description: product ? product.sku + " +" + stockReceipt.quantity : undefined });
+      if (
+        !persistStockReceiptDraftIdentity(
+          storage,
+          stockReceiptScope,
+          stockReceiptDraftIdentity.current,
+        )
+      ) {
+        releaseStockReceiptAfterDefinitiveFailure(
+          stockReceiptDraftIdentity.current,
+        );
+        setStockReceiptPending(false);
+        notify.error("Stok masuk belum dikirim", {
+          description:
+            "Idempotency-Key tidak dapat disimpan di browser. Periksa izin penyimpanan lalu coba lagi.",
+        });
+        return;
+      }
+
+      setStockReceiptPending(true);
+      requestStarted = true;
+      const rawResponse = await request<unknown>("/api/erp/stock-receipts", {
+        method: "POST",
+        headers: { "Idempotency-Key": command.operationKey },
+        body: JSON.stringify(command.payload),
+      });
+      const confirmedResponse = confirmStockReceiptResponse(
+        stockReceiptDraftIdentity.current,
+        rawResponse,
+        stockReceiptScope.businessId,
+      );
+
+      if (!confirmedResponse) {
+        throw new Error(
+          "Respons sukses tidak lengkap; status penerimaan stok belum dapat dikonfirmasi.",
+        );
+      }
+
+      commandConfirmed = true;
+      clearPersistedStockReceiptDraftIdentity(
+        storage,
+        stockReceiptScope,
+      );
+      setStockReceiptPending(false);
+
+      if ("workspace" in confirmedResponse) {
+        setWorkspace(confirmedResponse.workspace);
+      } else if (confirmedResponse.movement.businessId === workspace.business.id) {
+        setWorkspace({
+          ...workspace,
+          stockMovements: upsertStockReceiptMovement(
+            workspace.stockMovements,
+            confirmedResponse.movement,
+          ),
+        });
+      }
+
+      const product = workspace.products.find(
+        (item) => item.id === command.payload.itemId,
+      );
+      notify.success("Stok masuk dicatat", {
+        description: product
+          ? product.sku + " +" + command.payload.quantity
+          : undefined,
+      });
       setShowReceiptModal(false);
       setStockReceipt((prev) => ({ ...prev, quantity: 1, unitCost: 0, memo: "" }));
     } catch (err) {
-      notify.error("Stok masuk gagal", { description: err instanceof Error ? err.message : "Terjadi kesalahan" });
+      if (commandConfirmed) {
+        notify.error("Stok masuk sudah dicatat", {
+          description:
+            "Command berhasil dikonfirmasi, tetapi tampilan lokal gagal diperbarui. Muat ulang halaman.",
+        });
+      } else {
+        const definitive = isDefinitiveErpApiError(err);
+        const authoritativeConflict = hasErpApiErrorCode(
+          err,
+          authoritativeStockReceiptConflictCodes,
+        );
+        const shouldRelease =
+          requestStarted &&
+          shouldReleaseStockReceiptAfterFailure(
+            stockReceiptDraftIdentity.current,
+            { definitive, authoritativeConflict },
+          );
+
+        if (shouldRelease) {
+          releaseStockReceiptAfterDefinitiveFailure(
+            stockReceiptDraftIdentity.current,
+          );
+          clearPersistedStockReceiptDraftIdentity(
+            storage,
+            stockReceiptScope,
+          );
+          setStockReceiptPending(false);
+        } else if (requestStarted) {
+          markStockReceiptAmbiguous(stockReceiptDraftIdentity.current);
+          persistStockReceiptDraftIdentity(
+            storage,
+            stockReceiptScope,
+            stockReceiptDraftIdentity.current,
+          );
+          setStockReceiptPending(true);
+        }
+
+        const message = err instanceof Error ? err.message : "Terjadi kesalahan";
+        notify.error("Stok masuk gagal", {
+          description: shouldRelease
+            ? message
+            : `${message} Data form dikunci agar konfirmasi ulang memakai permintaan yang sama.`,
+        });
+      }
     } finally {
+      stockReceiptSubmitting.current = false;
       setLoading(false);
     }
   }
@@ -257,7 +456,17 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
         action={
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setShowReceiptModal(true)}
+              onClick={() => {
+                if (!stockReceiptIdentityReady || !stockReceiptStorage.current) {
+                  notify.error("Stok masuk belum tersedia", {
+                    description:
+                      "Aktifkan penyimpanan browser agar retry tidak membuat penerimaan ganda.",
+                  });
+                  return;
+                }
+
+                setShowReceiptModal(true);
+              }}
               className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50"
             >
               <Plus className="size-4" />
@@ -532,16 +741,29 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
       {/* Stock Receipt Modal */}
       <Modal
         isOpen={showReceiptModal}
-        onClose={() => setShowReceiptModal(false)}
+        onClose={() => {
+          if (
+            !hasPendingStockReceipt(stockReceiptDraftIdentity.current) &&
+            !stockReceiptSubmitting.current
+          ) {
+            setShowReceiptModal(false);
+          }
+        }}
         title="Stok Masuk"
       >
         <div className="space-y-4">
           <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Gunakan ini untuk mencatat stok fisik masuk tanpa membuat tagihan supplier. Jika pembelian perlu hutang dan jurnal AP, gunakan menu Bill.</p>
+          {stockReceiptPending ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Status permintaan sebelumnya belum pasti. Form dikunci; kirim ulang data yang sama untuk mengonfirmasi hasilnya.
+            </p>
+          ) : null}
           <FormField label="Produk">
             <select
               value={stockReceipt.itemId}
               onChange={(e) => handleReceiptChange("itemId", e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              disabled={stockReceiptPending || loading}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100"
             >
               <option value="">Pilih Produk</option>
               {workspace.products.filter((p) => p.trackStock && p.isPurchasable !== false && p.isActive !== false).map((product) => (
@@ -557,7 +779,8 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
               <select
                 value={stockReceipt.warehouseId}
                 onChange={(e) => handleReceiptChange("warehouseId", e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                disabled={stockReceiptPending || loading}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100"
               >
                 {workspace.warehouses.filter((wh) => wh.isActive).map((wh) => (
                   <option key={wh.id} value={wh.id}>{wh.name}</option>
@@ -569,7 +792,8 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
                 type="date"
                 value={stockReceipt.date}
                 onChange={(e) => handleReceiptChange("date", e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                disabled={stockReceiptPending || loading}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100"
               />
             </FormField>
           </div>
@@ -582,7 +806,8 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
                 step="0.0001"
                 value={stockReceipt.quantity}
                 onChange={(e) => handleReceiptChange("quantity", Number(e.target.value) || 0)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                disabled={stockReceiptPending || loading}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100"
               />
             </FormField>
             <FormField label="Biaya per unit">
@@ -591,7 +816,8 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
                 min="0"
                 value={stockReceipt.unitCost}
                 onChange={(e) => handleReceiptChange("unitCost", Number(e.target.value) || 0)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                disabled={stockReceiptPending || loading}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100"
               />
             </FormField>
           </div>
@@ -601,13 +827,36 @@ export function StokWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
               value={stockReceipt.memo}
               onChange={(e) => handleReceiptChange("memo", e.target.value)}
               placeholder="Contoh: stok awal, restock manual, koreksi pembelian"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              disabled={stockReceiptPending || loading}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100"
             />
           </FormField>
 
           <div className="flex gap-3 pt-4">
-            <button onClick={() => setShowReceiptModal(false)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Batal</button>
-            <button onClick={handleCreateReceipt} disabled={loading || !stockReceipt.itemId || !stockReceipt.warehouseId || stockReceipt.quantity <= 0} className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">{loading ? "Memproses..." : "Catat Stok Masuk"}</button>
+            <button
+              onClick={() => setShowReceiptModal(false)}
+              disabled={stockReceiptPending || loading}
+              className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Batal
+            </button>
+            <button
+              onClick={handleCreateReceipt}
+              disabled={
+                loading ||
+                (!stockReceiptPending &&
+                  (!stockReceipt.itemId ||
+                    !stockReceipt.warehouseId ||
+                    stockReceipt.quantity <= 0))
+              }
+              className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {loading
+                ? "Memproses..."
+                : stockReceiptPending
+                  ? "Konfirmasi Ulang"
+                  : "Catat Stok Masuk"}
+            </button>
           </div>
         </div>
       </Modal>

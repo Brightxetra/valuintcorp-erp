@@ -8,7 +8,7 @@ export default async function GajiPage() {
   const workspace = await getInitialErpWorkspace({ profile: "payroll" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="payroll" workspace={workspace}>
       <GajiWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

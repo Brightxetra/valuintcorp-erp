@@ -13,7 +13,7 @@ export default async function TagihanDetailPage({ params }: { params: Promise<{ 
   });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="purchases" workspace={workspace}>
       <DocumentDetailWorkspace
         initialWorkspace={workspace}
         documentType="purchase_bill"

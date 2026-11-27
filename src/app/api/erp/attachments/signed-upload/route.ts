@@ -1,7 +1,8 @@
-import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
+import { isApiResponse, requireApiMembership, withDemoHeader } from "@/lib/auth/api";
 import { signedAttachmentUploadSchema } from "@/lib/erp/schemas";
 import { logApiError, logApiInfo, logApiWarning } from "@/lib/observability/logger";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 const bucket = process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments";
 
@@ -20,11 +21,12 @@ function tableForOwner(ownerType: string) {
     purchase_bill: "purchase_bills",
     payment: "payments",
     payroll_run: "payroll_runs",
+    fixed_asset: "fixed_assets",
   }[ownerType];
 }
 
 export async function POST(request: Request) {
-  const context = await requireApiPermission(request, "accounting:write");
+  const context = await requireApiMembership(request);
 
   if (isApiResponse(context)) return context;
 
@@ -33,6 +35,16 @@ export async function POST(request: Request) {
 
   if (!parsed.success) {
     return withDemoHeader(json({ errors: parsed.error.flatten() }, 400), context);
+  }
+
+  const requiredPermission = parsed.data.ownerType === "payroll_run"
+    ? "payroll:run"
+    : "accounting:write";
+  if (!context.permissions.includes(requiredPermission)) {
+    return withDemoHeader(
+      json({ error: `Akses ${requiredPermission} diperlukan untuk upload lampiran ini.` }, 403),
+      context,
+    );
   }
 
   const storagePath = `${context.businessId}/${parsed.data.ownerType}/${parsed.data.ownerId}/${crypto.randomUUID()}${extensionFromFileName(parsed.data.fileName)}`;
@@ -89,7 +101,10 @@ export async function POST(request: Request) {
     return withDemoHeader(json({ error: "Dokumen pemilik attachment tidak ditemukan di tenant ini." }, 404), context);
   }
 
-  const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(storagePath);
+  const { data, error } = await createServiceSupabaseClient()
+    .storage
+    .from(bucket)
+    .createSignedUploadUrl(storagePath);
 
   if (error) {
     logApiError("erp.attachment.signed_upload.failed", error, {

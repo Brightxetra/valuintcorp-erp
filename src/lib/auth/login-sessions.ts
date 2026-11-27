@@ -25,6 +25,7 @@ export interface LoginSessionDevice {
 interface LoginSessionRow {
   id: string;
   auth_user_id: string;
+  supabase_session_id: string;
   session_token_hash: string;
   device_label?: string | null;
   ip_address?: string | null;
@@ -39,6 +40,18 @@ interface LoginSessionRow {
 }
 
 type RawLoginSessionStatus = "active" | "revoked" | "expired" | string | null | undefined;
+
+export type LoginSessionLookup =
+  | {
+      state: "active" | "revoked" | "expired";
+      userId: string;
+      supabaseSessionId: string;
+    }
+  | { state: "missing" | "unavailable" | "invalid" };
+
+export type LoginSessionMutationResult =
+  | { ok: true; count: number }
+  | { ok: false; reason: "unavailable" | "conflict" | "error" };
 
 function serviceOrNull() {
   return isSupabaseServiceConfigured() ? createServiceSupabaseClient() : null;
@@ -55,27 +68,30 @@ export function loginSessionStatus(
 ): LoginSessionDevice["status"] {
   if (status === "revoked") return "revoked";
   if (status === "expired") return "expired";
-  if (status !== "active" && status != null) return "revoked";
+  if (status !== "active") return "revoked";
   if (expiresAt && Date.parse(expiresAt) < timestamp) return "expired";
   return "active";
 }
 
-export async function upsertLoginSession(params: {
+export async function createLoginSession(params: {
   request: Request;
   sessionToken: string;
   userId: string;
+  supabaseSessionId: string;
   rememberMe: boolean;
-}) {
+}): Promise<LoginSessionMutationResult> {
   const service = serviceOrNull();
-  if (!service) return;
+  if (!service) return { ok: false, reason: "unavailable" };
 
   const sessionHash = await hashSessionToken(params.sessionToken);
   const userAgent = params.request.headers.get("user-agent");
   const expiresAt = sessionExpiresAt(params.rememberMe);
 
-  await service.from("user_login_sessions").upsert(
-    {
+  const { data, error } = await service
+    .from("user_login_sessions")
+    .insert({
       auth_user_id: params.userId,
+      supabase_session_id: params.supabaseSessionId,
       session_token_hash: sessionHash,
       remember_me: params.rememberMe,
       device_label: deviceLabelFromUserAgent(userAgent),
@@ -88,23 +104,31 @@ export async function upsertLoginSession(params: {
       revoked_at: null,
       revoked_by: null,
       revoked_reason: null,
-    },
-    { onConflict: "session_token_hash" },
-  );
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (!error && data) return { ok: true, count: 1 };
+  return {
+    ok: false,
+    reason: error?.code === "23505" ? "conflict" : "error",
+  };
 }
 
 export async function touchLoginSession(params: {
   request: Request;
   sessionToken: string | null;
+  userId: string;
+  supabaseSessionId: string;
   rememberMe: boolean;
 }) {
-  if (!params.sessionToken) return;
+  if (!params.sessionToken) return false;
 
   const service = serviceOrNull();
-  if (!service) return;
+  if (!service) return false;
 
   const sessionHash = await hashSessionToken(params.sessionToken);
-  await service
+  const { data, error } = await service
     .from("user_login_sessions")
     .update({
       last_seen_at: new Date().toISOString(),
@@ -113,26 +137,71 @@ export async function touchLoginSession(params: {
       location: locationFromRequest(params.request),
     })
     .eq("session_token_hash", sessionHash)
-    .eq("status", "active");
+    .eq("auth_user_id", params.userId)
+    .eq("supabase_session_id", params.supabaseSessionId)
+    .eq("status", "active")
+    .select("id")
+    .maybeSingle();
+
+  return !error && Boolean(data);
 }
 
-export async function getLoginSessionStatus(sessionToken: string | null) {
-  if (!sessionToken) return "missing" as const;
+function loginSessionLookupFromRow(row: Partial<LoginSessionRow>): LoginSessionLookup {
+  if (
+    typeof row.auth_user_id !== "string" ||
+    !row.auth_user_id ||
+    typeof row.supabase_session_id !== "string" ||
+    !row.supabase_session_id
+  ) {
+    return { state: "invalid" };
+  }
+
+  return {
+    state: loginSessionStatus(row.status, row.expires_at),
+    userId: row.auth_user_id,
+    supabaseSessionId: row.supabase_session_id,
+  };
+}
+
+export async function getLoginSessionBinding(
+  sessionToken: string | null,
+): Promise<LoginSessionLookup> {
+  if (!sessionToken) return { state: "missing" };
 
   const service = serviceOrNull();
-  if (!service) return "active" as const;
+  if (!service) return { state: "unavailable" };
 
   const sessionHash = await hashSessionToken(sessionToken);
   const { data, error } = await service
     .from("user_login_sessions")
-    .select("status, expires_at")
+    .select("auth_user_id, supabase_session_id, status, expires_at")
     .eq("session_token_hash", sessionHash)
     .maybeSingle();
 
-  if (error || !data) return "active" as const;
+  if (error) return { state: "unavailable" };
+  if (!data) return { state: "missing" };
 
-  const row = data as { status?: string | null; expires_at?: string | null };
-  return loginSessionStatus(row.status, row.expires_at);
+  return loginSessionLookupFromRow(data as Partial<LoginSessionRow>);
+}
+
+export async function getLoginSessionBySupabaseSession(
+  userId: string,
+  supabaseSessionId: string,
+): Promise<LoginSessionLookup> {
+  const service = serviceOrNull();
+  if (!service) return { state: "unavailable" };
+
+  const { data, error } = await service
+    .from("user_login_sessions")
+    .select("auth_user_id, supabase_session_id, status, expires_at")
+    .eq("auth_user_id", userId)
+    .eq("supabase_session_id", supabaseSessionId)
+    .maybeSingle();
+
+  if (error) return { state: "unavailable" };
+  if (!data) return { state: "missing" };
+
+  return loginSessionLookupFromRow(data as Partial<LoginSessionRow>);
 }
 
 export async function revokeLoginSessionByToken(sessionToken: string | null, userId?: string | null, reason = "logout") {
@@ -217,9 +286,13 @@ export async function revokeLoginSessionForUser(sessionId: string, userId: strin
   return !error && Boolean(data);
 }
 
-export async function revokeOtherLoginSessionsForUser(userId: string, currentSessionToken: string | null) {
+export async function revokeOtherLoginSessionsForUser(
+  userId: string,
+  currentSessionToken: string | null,
+  reason = "password_changed",
+): Promise<LoginSessionMutationResult> {
   const service = serviceOrNull();
-  if (!service) return 0;
+  if (!service) return { ok: false, reason: "unavailable" };
 
   const currentHash = currentSessionToken ? await hashSessionToken(currentSessionToken) : null;
   let query = service
@@ -228,7 +301,7 @@ export async function revokeOtherLoginSessionsForUser(userId: string, currentSes
       status: "revoked",
       revoked_at: new Date().toISOString(),
       revoked_by: userId,
-      revoked_reason: "password_changed",
+      revoked_reason: reason,
     })
     .eq("auth_user_id", userId)
     .eq("status", "active");
@@ -239,7 +312,7 @@ export async function revokeOtherLoginSessionsForUser(userId: string, currentSes
 
   const { data, error } = await query.select("id");
 
-  if (error || !Array.isArray(data)) return 0;
+  if (error || !Array.isArray(data)) return { ok: false, reason: "error" };
 
-  return data.length;
+  return { ok: true, count: data.length };
 }

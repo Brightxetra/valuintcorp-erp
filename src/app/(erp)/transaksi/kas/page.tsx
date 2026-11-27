@@ -8,7 +8,7 @@ export default async function KasBankPage() {
   const workspace = await getInitialErpWorkspace({ profile: "cash" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="cash" workspace={workspace}>
       <KasWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

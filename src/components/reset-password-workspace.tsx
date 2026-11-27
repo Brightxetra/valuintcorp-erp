@@ -204,11 +204,12 @@ export function ResetPasswordWorkspace() {
       const activeSession = data.session;
       const syncTokens = activeSession ? tokensFromSession(activeSession) : activeResetTokens;
 
-      await supabase.auth.signOut({ scope: "others" }).catch(() => undefined);
-
       const synced = await syncServerSession(null, syncTokens, { rememberMe: false, freshLogin: true });
+      if (!synced) {
+        throw new Error("Password tersimpan, tetapi sesi aman gagal dibuat. Silakan login kembali.");
+      }
       void postResetEvent("completed", syncTokens.email);
-      setNextPath(synced?.defaultPath || (synced?.hasBusiness ? "/dashboard" : "/login"));
+      setNextPath(synced.defaultPath || (synced.hasBusiness ? "/dashboard" : "/login"));
       setPhase("success");
     } catch (caught) {
       registerFailedAttempt("supabase_update_failed");

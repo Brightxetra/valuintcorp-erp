@@ -6,7 +6,11 @@ import { logApiError, logApiInfo } from "@/lib/observability/logger";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 import { permissionCatalog, type Permission } from "@/lib/security/permissions";
-import { findAuthUserByEmail, normalizeInviteEmail } from "@/lib/auth/member-invites";
+import {
+  acceptPendingMemberInvitesForUser,
+  findAuthUserByEmail,
+  normalizeInviteEmail,
+} from "@/lib/auth/member-invites";
 
 const permissionSchema = z.string().refine((value): value is Permission => permissionCatalog.some((entry) => entry.permission === value), "Izin tidak dikenal.");
 
@@ -159,53 +163,6 @@ export async function POST(request: Request) {
   const service = createServiceSupabaseClient();
   const existingAuthUser = await findAuthUserByEmail(service, email);
 
-  if (existingAuthUser) {
-    const { error } = await supabase.from("business_members").upsert(
-      {
-        business_id: context.businessId,
-        auth_user_id: existingAuthUser.id,
-        role: parsed.data.role,
-        access_scope: accessScope,
-        access_permissions: accessPermissions,
-        location_ids: locationIds,
-      },
-      { onConflict: "business_id,auth_user_id" },
-    );
-
-    if (error) {
-      logApiError("erp.member.upsert.failed", error, {
-        businessId: context.businessId,
-        userId: context.userId,
-        route: "/api/erp/members",
-        details: { targetEmail: email, targetUserId: existingAuthUser.id, role: parsed.data.role },
-      });
-      return withDemoHeader(json({ error: error.message }, 422), context);
-    }
-
-    await supabase
-      .from("member_invites")
-      .update({
-        status: "accepted",
-        accepted_by: existingAuthUser.id,
-        accepted_at: new Date().toISOString(),
-      })
-      .eq("business_id", context.businessId)
-      .eq("email", email)
-      .eq("status", "pending");
-
-    logApiInfo("erp.member.existing_user_added", {
-      businessId: context.businessId,
-      userId: context.userId,
-      route: "/api/erp/members",
-      details: { targetEmail: email, targetUserId: existingAuthUser.id, role: parsed.data.role },
-    });
-
-    return withDemoHeader(json({
-      member: { email, existingUser: true },
-      workspace: await loadSupabaseWorkspace(supabase, context),
-    }, 201), context);
-  }
-
   const { data: createdInvite, error } = await supabase.from("member_invites").insert({
     business_id: context.businessId,
     email,
@@ -226,6 +183,36 @@ export async function POST(request: Request) {
       details: { email, role: parsed.data.role },
     });
     return withDemoHeader(json({ error: error.message }, 422), context);
+  }
+
+  if (existingAuthUser) {
+    try {
+      await acceptPendingMemberInvitesForUser(service, existingAuthUser);
+    } catch (acceptanceError) {
+      if (createdInvite?.id) {
+        await supabase.from("member_invites").update({ status: "revoked" }).eq("id", createdInvite.id);
+      }
+
+      logApiError("erp.member.existing_user_acceptance.failed", acceptanceError, {
+        businessId: context.businessId,
+        userId: context.userId,
+        route: "/api/erp/members",
+        details: { targetUserId: existingAuthUser.id, role: parsed.data.role },
+      });
+      return withDemoHeader(json({ error: "Akses anggota gagal diterapkan secara aman." }, 422), context);
+    }
+
+    logApiInfo("erp.member.existing_user_added", {
+      businessId: context.businessId,
+      userId: context.userId,
+      route: "/api/erp/members",
+      details: { targetEmail: email, targetUserId: existingAuthUser.id, role: parsed.data.role },
+    });
+
+    return withDemoHeader(json({
+      member: { email, existingUser: true },
+      workspace: await loadSupabaseWorkspace(supabase, context),
+    }, 201), context);
   }
 
   const invited = await service.auth.admin.inviteUserByEmail(email, {
@@ -303,39 +290,19 @@ export async function PATCH(request: Request) {
   const service = createServiceSupabaseClient();
   const email = normalizeInviteEmail(invite.email);
   const existingAuthUser = await findAuthUserByEmail(service, email);
-  const accessScope = invite.access_scope === "custom" ? "custom" : "role";
-  const accessPermissions = Array.isArray(invite.access_permissions)
-    ? invite.access_permissions.filter((permission): permission is Permission => typeof permission === "string")
-    : [];
-  const locationIds = Array.isArray(invite.location_ids)
-    ? invite.location_ids.filter((locationId): locationId is string => typeof locationId === "string")
-    : [];
 
   if (existingAuthUser) {
-    const { error: memberError } = await supabase.from("business_members").upsert(
-      {
-        business_id: context.businessId,
-        auth_user_id: existingAuthUser.id,
-        role: invite.role,
-        access_scope: accessScope,
-        access_permissions: accessPermissions,
-        location_ids: locationIds,
-      },
-      { onConflict: "business_id,auth_user_id" },
-    );
-
-    if (memberError) {
-      return withDemoHeader(json({ error: memberError.message }, 422), context);
+    try {
+      await acceptPendingMemberInvitesForUser(service, existingAuthUser);
+    } catch (acceptanceError) {
+      logApiError("erp.member.invite_acceptance.failed", acceptanceError, {
+        businessId: context.businessId,
+        userId: context.userId,
+        route: "/api/erp/members",
+        details: { inviteId: invite.id, targetUserId: existingAuthUser.id },
+      });
+      return withDemoHeader(json({ error: "Invite tidak dapat diterima karena otoritas pengundang sudah tidak valid." }, 422), context);
     }
-
-    await supabase
-      .from("member_invites")
-      .update({
-        status: "accepted",
-        accepted_by: existingAuthUser.id,
-        accepted_at: new Date().toISOString(),
-      })
-      .eq("id", invite.id);
 
     return withDemoHeader(json({
       member: { email, existingUser: true },

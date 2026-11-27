@@ -9,8 +9,9 @@ import {
   serverSessionRememberCookie,
   shouldUseDemoFallback,
 } from "@/lib/auth/runtime";
-import { getLoginSessionStatus } from "@/lib/auth/login-sessions";
+import { getLoginSessionBinding } from "@/lib/auth/login-sessions";
 import { isIdleSessionExpired } from "@/lib/auth/session-policy";
+import { verifySupabaseAccessToken } from "@/lib/auth/verified-session";
 import { permissionsForMember } from "@/lib/security/permissions";
 import type { WorkspaceLoadContext } from "@/lib/erp/workspace-repository";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
@@ -75,14 +76,14 @@ function memberWorkspaceAccess(row: MembershipRow) {
   return { permissions, assignedLocationIds: locationIds, accessScope: row.access_scope === "custom" ? "custom" as const : "role" as const };
 }
 export async function getServerAccessToken() {
-
   if (shouldUseDemoFallback()) return null;
   const cookieStore = await cookies();
   const rememberMe = cookieStore.get(serverSessionRememberCookie)?.value === "1";
   const lastActivity = Number(cookieStore.get(serverLastActivityCookie)?.value ?? "");
   const sessionToken = cookieStore.get(serverSessionIdCookie)?.value ?? null;
+  const accessToken = cookieStore.get(serverAccessTokenCookie)?.value ?? null;
 
-  if (!sessionToken) {
+  if (!sessionToken || !accessToken) {
     return null;
   }
 
@@ -90,13 +91,21 @@ export async function getServerAccessToken() {
     return null;
   }
 
-  const sessionStatus = await getLoginSessionStatus(sessionToken);
-
-  if (sessionStatus !== "active" && sessionStatus !== "missing") {
+  const verifiedSession = await verifySupabaseAccessToken(accessToken);
+  if (!verifiedSession) {
     return null;
   }
 
-  return cookieStore.get(serverAccessTokenCookie)?.value ?? null;
+  const binding = await getLoginSessionBinding(sessionToken);
+  if (
+    binding.state !== "active" ||
+    binding.userId !== verifiedSession.identity.userId ||
+    binding.supabaseSessionId !== verifiedSession.identity.sessionId
+  ) {
+    return null;
+  }
+
+  return accessToken;
 }
 
 export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext | null> {

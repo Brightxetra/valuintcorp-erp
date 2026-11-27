@@ -8,7 +8,7 @@ export default async function KatalogProdukPage() {
   const workspace = await getInitialErpWorkspace({ profile: "inventory" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="inventory" workspace={workspace}>
       <KatalogProdukWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

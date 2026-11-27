@@ -8,7 +8,7 @@ export default async function BPJSPage() {
   const workspace = await getInitialErpWorkspace({ profile: "payroll" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="payroll" workspace={workspace}>
       <BPJSWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

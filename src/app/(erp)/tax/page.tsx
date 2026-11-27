@@ -8,7 +8,7 @@ export default async function TaxPage() {
   const workspace = await getInitialErpWorkspace({ profile: "tax" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="tax" workspace={workspace}>
       <TaxWorkspaceV2 initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

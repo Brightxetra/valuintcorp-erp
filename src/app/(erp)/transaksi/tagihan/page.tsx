@@ -8,7 +8,7 @@ export default async function TagihanSupplierPage() {
   const workspace = await getInitialErpWorkspace({ profile: "purchases" });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="purchases" workspace={workspace}>
       <TagihanWorkspace initialWorkspace={workspace} />
     </WorkspacePageProvider>
   );

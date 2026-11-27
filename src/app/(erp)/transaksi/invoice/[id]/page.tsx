@@ -13,7 +13,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   });
 
   return (
-    <WorkspacePageProvider workspace={workspace}>
+    <WorkspacePageProvider profile="sales" workspace={workspace}>
       <DocumentDetailWorkspace
         initialWorkspace={workspace}
         documentType="sales_invoice"
