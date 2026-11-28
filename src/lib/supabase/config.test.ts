@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  getErpAttachmentsBucket,
   getSupabasePublicConfig,
   hasSupabasePublicConfig,
   isSupabasePublicKey,
@@ -11,6 +12,7 @@ const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const originalAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalAnon;
 });
@@ -20,6 +22,15 @@ function legacyKey(role: string) {
 
 
 describe("Supabase config", () => {
+  it.each([
+    ["\uFEFFerp-attachments", "erp-attachments"],
+    ["\r\ncustom-attachments  ", "custom-attachments"],
+    [undefined, "erp-attachments"],
+  ])("normalizes the attachments bucket before storage requests", (value, expectedBucket) => {
+    vi.stubEnv("SUPABASE_ERP_ATTACHMENTS_BUCKET", value);
+    expect(getErpAttachmentsBucket()).toBe(expectedBucket);
+  });
+
   it("removes characters that cannot be used in browser fetch headers", () => {
     const sanitized = sanitizeSupabaseEnvValue(" \u200bsb_publishable__ABC\n🚫DEF\t ");
 

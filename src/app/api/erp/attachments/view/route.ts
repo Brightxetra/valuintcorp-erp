@@ -1,9 +1,10 @@
 import { isApiResponse, requireApiMembership, withDemoHeader } from "@/lib/auth/api";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
+import { getErpAttachmentsBucket } from "@/lib/supabase/config";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const bucket = process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments";
+const bucket = getErpAttachmentsBucket();
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });

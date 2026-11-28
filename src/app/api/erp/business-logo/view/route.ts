@@ -1,7 +1,8 @@
 import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
+import { getErpAttachmentsBucket } from "@/lib/supabase/config";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const bucket = process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments";
+const bucket = getErpAttachmentsBucket();
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });

@@ -179,10 +179,76 @@ test("top-center toast remains visible on short and narrow mobile viewports", as
 });
 
 test("header notification panel remains available", async ({ page }) => {
+  for (const viewport of [
+    { width: 320, height: 480 },
+    { width: 390, height: 844 },
+    { width: 667, height: 375 },
+    { width: 1280, height: 720 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/dashboard");
+    await page.getByRole("button", { name: "Notifikasi" }).click();
+
+    const panel = page.getByRole("region", { name: "Notifikasi dan tugas" });
+    await expect(panel).toBeVisible();
+    const bounds = (await panel.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(12);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width - 12);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height - 12);
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+  }
+});
+
+test("mobile header searches inline and the navigation drawer transitions both ways", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/dashboard");
 
-  await page.getByRole("button", { name: "Notifikasi" }).click();
-  await expect(page.getByText("Notifikasi & tugas", { exact: true })).toBeVisible();
+  const header = page.locator("header").first();
+  await expect(header.getByRole("link", { name: "Valuintcorp", exact: true })).toBeHidden();
+  const footer = page.getByRole("navigation", { name: "Navigasi cepat" });
+  const productLink = footer.getByRole("link", { name: "Produk", exact: true });
+  await expect(productLink).toBeVisible();
+  expect((await productLink.locator("svg").boundingBox())!.y)
+    .toBe((await footer.getByRole("link", { name: "Beranda" }).locator("svg").boundingBox())!.y);
+
+  const drawer = page.locator("#mobile-erp-drawer");
+  await drawer.evaluate((element) => {
+    element.addEventListener("transitionend", (event) => {
+      if (!(event instanceof TransitionEvent) || event.target !== element || event.propertyName !== "transform") return;
+      const x = new DOMMatrix(getComputedStyle(element).transform).m41;
+      element.dataset.transitionCompleted = x === 0 ? "open" : "closed";
+    });
+  });
+  const trigger = header.getByRole("button", { name: "Buka menu" });
+  await trigger.click();
+  await expect(drawer).toHaveAttribute("data-transition-completed", "open");
+  await drawer.getByRole("button", { name: "Tutup", exact: true }).click();
+  await expect(drawer).toHaveAttribute("data-transition-completed", "closed");
+  await expect(drawer).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  const search = header.getByRole("searchbox", { name: "Cari menu atau data" });
+  await search.fill("produk");
+  await expect(header.getByRole("link", { name: /Produk, Bahan & Produksi|Menu & Produk|Katalog Produk/ })).toBeVisible();
+  await search.press("Enter");
+  await expect(page).toHaveURL(/\/produk\/katalog$/);
+  await expect(search).toHaveValue("");
+});
+
+test("desktop company name opens the company switcher", async ({ page }) => {
+  await page.goto("/dashboard");
+  const header = page.locator("header").first();
+  const companyButton = header.getByRole("button", { name: /Ganti perusahaan, aktif/ });
+  await expect(companyButton).toContainText(/\S/);
+  await companyButton.click();
+  await expect(header.getByText("Pilih perusahaan", { exact: true })).toBeVisible();
+  await expect(header.locator('button[aria-current="true"]')).toBeDisabled();
+  await expect(header.getByRole("link", { name: "Perusahaan Saya", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(companyButton).toBeFocused();
+  await expect(companyButton).toHaveAttribute("aria-expanded", "false");
 });
 
 test("saving a business industry uses a Goey success toast instead of an inline banner", async ({ page }) => {

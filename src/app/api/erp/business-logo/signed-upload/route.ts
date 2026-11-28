@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
+import { getErpAttachmentsBucket } from "@/lib/supabase/config";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const bucket = process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments";
+const bucket = getErpAttachmentsBucket();
 
 const signedBusinessLogoUploadSchema = z.object({
   fileName: z.string().min(1),

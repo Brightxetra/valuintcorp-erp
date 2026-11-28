@@ -1,10 +1,11 @@
 import { isApiResponse, requireApiMembership, withDemoHeader } from "@/lib/auth/api";
 import { signedAttachmentUploadSchema } from "@/lib/erp/schemas";
 import { logApiError, logApiInfo, logApiWarning } from "@/lib/observability/logger";
+import { getErpAttachmentsBucket } from "@/lib/supabase/config";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const bucket = process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments";
+const bucket = getErpAttachmentsBucket();
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -123,7 +124,10 @@ export async function POST(request: Request) {
       route: "/api/erp/attachments/signed-upload",
       details: { bucket, storagePath },
     });
-    return withDemoHeader(json({ error: error.message }, 422), context);
+    const message = parsed.data.ownerType === "employee"
+      ? "Penyimpanan foto karyawan tidak dapat diakses. Coba lagi."
+      : error.message;
+    return withDemoHeader(json({ error: message }, 422), context);
   }
 
   logApiInfo("erp.attachment.signed_upload.created", {

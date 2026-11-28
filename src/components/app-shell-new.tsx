@@ -32,9 +32,10 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { cn } from "@/components/ui";
 import { ErpWorkspaceProvider, useErpWorkspace } from "@/components/erp-context";
+import { CompanySwitcher } from "@/components/company-switcher";
 import { notify } from "@/lib/notify";
 import { getMostSpecificActiveHref, pathMatchesHref } from "@/lib/navigation/active-link";
 import { acquireBodyScrollLock } from "@/lib/ui/body-scroll-lock";
@@ -156,9 +157,7 @@ function navigationForWorkspace(workspace: ErpWorkspace): NavGroup[] {
 }
 
 function mobileNavigationForWorkspace(workspace: ErpWorkspace): NavItem[] {
-  return mobileNav
-    .filter((item) => workspace.permissions.includes(item.permission))
-    .map((item) => industryLabel(item, workspace.business.industry));
+  return mobileNav.filter((item) => workspace.permissions.includes(item.permission));
 }
 
 // ============================================================================
@@ -168,41 +167,50 @@ function mobileNavigationForWorkspace(workspace: ErpWorkspace): NavItem[] {
 interface FavoriteItem {
   id: string;
   label: string;
-  icon: React.ElementType;
   href: string;
 }
 
+const favoritesStorageKey = "erp-favorites-nav";
+const favoritesChangedEvent = "valuintcorp:favorites-changed";
+
+function subscribeToFavorites(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(favoritesChangedEvent, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(favoritesChangedEvent, onChange);
+  };
+}
+
 function useFavorites() {
-  const [favorites, setFavorites] = useState<FavoriteItem[]>(() => {
-    if (typeof window === "undefined") return [];
-    const stored = window.localStorage.getItem("erp-favorites-nav");
-    if (stored) {
-      try {
-        return JSON.parse(stored) as FavoriteItem[];
-      } catch {
-        return [];
-      }
+  const stored = useSyncExternalStore(
+    subscribeToFavorites,
+    () => localStorage.getItem(favoritesStorageKey),
+    () => null,
+  );
+  const favorites = useMemo<FavoriteItem[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(stored ?? "[]");
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
     }
-    return [];
-  });
-  const favoritesRef = useRef(favorites);
-
+  }, [stored]);
   const toggleFavorite = useCallback((item: FavoriteItem) => {
-    const exists = favoritesRef.current.some((favorite) => favorite.id === item.id);
+    const exists = favorites.some((favorite) => favorite.id === item.id);
     const next = exists
-      ? favoritesRef.current.filter((favorite) => favorite.id !== item.id)
-      : [...favoritesRef.current, item];
+      ? favorites.filter((favorite) => favorite.id !== item.id)
+      : [...favorites, item];
 
-    favoritesRef.current = next;
-    localStorage.setItem("erp-favorites-nav", JSON.stringify(next));
-    setFavorites(next);
+    localStorage.setItem(favoritesStorageKey, JSON.stringify(next));
+    window.dispatchEvent(new Event(favoritesChangedEvent));
 
     if (exists) {
       notify.info("Dihapus dari favorit", { description: item.label });
     } else {
       notify.success("Ditambahkan ke favorit", { description: item.label });
     }
-  }, []);
+  }, [favorites]);
 
   const isFavorite = useCallback((id: string) => favorites.some((f) => f.id === id), [favorites]);
 
@@ -223,12 +231,20 @@ interface CommandItem {
   shortcut?: string;
 }
 
-function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClose: () => void }) {
+function CommandPalette({ workspace, favoriteControls, onClose, inline = false, expanded = false, onOpen }: {
+  workspace: ErpWorkspace;
+  favoriteControls: ReturnType<typeof useFavorites>;
+  onClose: () => void;
+  inline?: boolean;
+  expanded?: boolean;
+  onOpen?: () => void;
+}) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const inlineSearchRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  const { favorites, toggleFavorite, isFavorite } = favoriteControls;
 
   const commandItems = useMemo<CommandItem[]>(() => {
     const items: CommandItem[] = [
@@ -277,16 +293,23 @@ function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClo
   const groupedItems = useMemo(() => {
     const groups: Record<string, CommandItem[]> = {};
 
-    const favItems = favorites.map((f) => ({ ...f, category: "Favorit" } as CommandItem));
+    const iconsByHref = new Map(
+      [...navigationForWorkspace(workspace).flatMap(({ items }) => items), ...commandItems]
+        .map(({ href, icon }) => [href, icon]),
+    );
+    const favItems: CommandItem[] = favorites.flatMap((favorite) => {
+      const icon = iconsByHref.get(favorite.href);
+      return icon ? [{ ...favorite, icon, category: "Favorit" }] : [];
+    });
     if (favItems.length > 0) groups["Favorit"] = favItems;
 
     commandItems.forEach((item) => {
       if (!groups[item.category]) groups[item.category] = [];
-      groups[item.category].push({ ...item, isFavorite: isFavorite(item.id) } as CommandItem);
+      groups[item.category].push(item);
     });
 
     return Object.entries(groups);
-  }, [commandItems, favorites, isFavorite]);
+  }, [commandItems, favorites, workspace]);
 
   const filteredGroups = useMemo((): { label: string; items: CommandItem[] }[] => {
     if (!query.trim()) {
@@ -307,120 +330,156 @@ function CommandPalette({ workspace, onClose }: { workspace: ErpWorkspace; onClo
 
   const flatItems = useMemo(() => filteredGroups.flatMap((g) => g.items), [filteredGroups]);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { if (!inline) inputRef.current?.focus(); }, [inline]);
   useEffect(() => {
-    const timeout = window.setTimeout(() => setSelectedIndex(0), 0);
-    return () => window.clearTimeout(timeout);
-  }, [query]);
-
+    if (!inline || !expanded) return;
+    function closeOutside(event: PointerEvent) {
+      if (!inlineSearchRef.current?.contains(event.target as Node)) onClose();
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [inline, expanded, onClose]);
   const navigate = useCallback((href: string) => {
+    if (inline) inputRef.current?.blur();
     router.push(href);
     onClose();
     setQuery("");
-  }, [router, onClose]);
+    setSelectedIndex(0);
+  }, [inline, router, onClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (inline && !expanded) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, flatItems.length - 1));
+      setSelectedIndex((i) => Math.max(0, Math.min(i + 1, flatItems.length - 1)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && flatItems[selectedIndex]) {
       navigate(flatItems[selectedIndex].href);
     }
-  }, [flatItems, selectedIndex, navigate]);
+  }, [expanded, flatItems, inline, selectedIndex, navigate]);
+
+  const results = (!inline || expanded) && (
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+      {filteredGroups.length === 0 ? (
+        <div className="py-8 text-center text-slate-500">
+          <p className="text-sm">Tidak ada hasil untuk &quot;{query}&quot;</p>
+        </div>
+      ) : (
+        filteredGroups.map((group) => (
+          <div key={group.label} className="py-1">
+            <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {group.label}
+            </p>
+            {group.items.map((item) => {
+              const flatIndex = flatItems.indexOf(item);
+              const selected = flatIndex === selectedIndex;
+              const Icon = item.icon;
+
+              return (
+                <div
+                  key={item.id}
+                  className={cn(
+                    "group flex items-center gap-2 rounded-xl pr-2 transition-colors",
+                    selected ? "bg-slate-100" : "hover:bg-slate-50"
+                  )}
+                  onMouseEnter={() => setSelectedIndex(flatIndex)}
+                >
+                  <Link
+                    href={item.href}
+                      prefetch={false}
+                    onClick={() => {
+                        if (inline) inputRef.current?.blur();
+                      onClose();
+                      setQuery("");
+                      setSelectedIndex(0);
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-xl py-2 pl-3"
+                  >
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600">
+                      <Icon className="size-5" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-slate-950">{item.label}</span>
+                      {item.description && (
+                        <span className="block truncate text-xs text-slate-500">{item.description}</span>
+                      )}
+                    </span>
+                  </Link>
+                  <div className="flex items-center gap-2">
+                    {!inline && item.shortcut && (
+                      <kbd className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-500">
+                        {item.shortcut}
+                      </kbd>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={
+                        isFavorite(item.id)
+                          ? `Hapus ${item.label} dari favorit`
+                          : `Tambah ${item.label} ke favorit`
+                      }
+                      onClick={() => toggleFavorite({ id: item.id, label: item.label, href: item.href })}
+                      className={cn(
+                        "rounded-lg p-1.5 transition-colors",
+                        isFavorite(item.id)
+                          ? "text-amber-500 hover:bg-amber-50"
+                          : "text-slate-300 hover:bg-slate-100 hover:text-slate-500"
+                      )}
+                    >
+                      <Star className="size-4" fill={isFavorite(item.id) ? "currentColor" : "none"} />
+                    </button>
+                    {selected && <ChevronRight className="size-4 text-slate-400" aria-hidden />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  const searchField = (
+    <div className={cn("flex items-center", inline
+      ? "min-h-10 gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 focus-within:border-slate-400"
+      : "gap-3 border-b border-slate-100 px-4 py-4")}>
+      <Search className="size-4 shrink-0 text-slate-500" aria-hidden />
+      <input
+        ref={inputRef}
+        type="search"
+        aria-label="Cari menu atau data"
+        placeholder={inline ? "Cari…" : "Cari menu, aksi, atau data..."}
+        value={query}
+        onFocus={onOpen}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setSelectedIndex(0);
+          onOpen?.();
+        }}
+        onKeyDown={handleKeyDown}
+        className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-slate-500"
+      />
+      {!inline && <kbd className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">ESC</kbd>}
+    </div>
+  );
+
+  if (inline) {
+    return (
+      <div ref={inlineSearchRef} role="search" className="min-w-0 flex-1 lg:hidden">
+        {searchField}
+        {expanded && <div className="erp-header-panel flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">{results}</div>}
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[max(1rem,12vh)]">
       <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        {/* Search */}
-        <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
-          <Search className="size-5 text-slate-400" />
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Cari menu, aksi, atau data..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent text-base outline-none placeholder:text-slate-400"
-          />
-          <kbd className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">ESC</kbd>
-        </div>
-
-        {/* Results */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {filteredGroups.length === 0 ? (
-            <div className="py-8 text-center text-slate-500">
-              <p className="text-sm">Tidak ada hasil untuk &quot;{query}&quot;</p>
-            </div>
-          ) : (
-            filteredGroups.map((group) => (
-              <div key={group.label} className="py-1">
-                <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  {group.label}
-                </p>
-                {group.items.map((item) => {
-                  const flatIndex = flatItems.indexOf(item);
-                  const selected = flatIndex === selectedIndex;
-                  const Icon = item.icon;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "group flex items-center gap-3 rounded-xl px-3 py-3 transition-colors cursor-pointer",
-                        selected ? "bg-slate-100" : "hover:bg-slate-50"
-                      )}
-                      onClick={() => navigate(item.href)}
-                      onMouseEnter={() => setSelectedIndex(flatIndex)}
-                    >
-                      <div className="flex size-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                        <Icon className="size-5" aria-hidden />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-950">{item.label}</p>
-                        {item.description && (
-                          <p className="truncate text-xs text-slate-500">{item.description}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {item.shortcut && (
-                          <kbd className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-500">
-                            {item.shortcut}
-                          </kbd>
-                        )}
-                        <button
-                          type="button"
-                          aria-label={
-                            isFavorite(item.id)
-                              ? `Hapus ${item.label} dari favorit`
-                              : `Tambah ${item.label} ke favorit`
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite({ id: item.id, label: item.label, icon: item.icon, href: item.href });
-                          }}
-                          className={cn(
-                            "rounded-lg p-1.5 transition-colors",
-                            isFavorite(item.id)
-                              ? "text-amber-500 hover:bg-amber-50"
-                              : "text-slate-300 hover:bg-slate-100 hover:text-slate-500"
-                          )}
-                        >
-                          <Star className="size-4" fill={isFavorite(item.id) ? "currentColor" : "none"} />
-                        </button>
-                        {selected && <ChevronRight className="size-4 text-slate-400" aria-hidden />}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))
-          )}
-        </div>
+        {searchField}
+        {results}
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
@@ -517,12 +576,13 @@ function isActive(pathname: string, href: string) {
   return pathMatchesHref(pathname, href);
 }
 
-function NavLinks({ workspace, onNavigate }: {
+function NavLinks({ workspace, favoriteControls, onNavigate }: {
   workspace: ErpWorkspace;
+  favoriteControls: ReturnType<typeof useFavorites>;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  const { favorites, toggleFavorite, isFavorite } = favoriteControls;
   const navigationGroups = navigationForWorkspace(workspace);
   const visibleNavigationItems = navigationGroups.flatMap((group) => group.items);
   const activeNavigationHref = getMostSpecificActiveHref(
@@ -540,7 +600,7 @@ function NavLinks({ workspace, onNavigate }: {
           <div className="space-y-1">
             {favorites.map((item) => {
               const active = item.href === activeNavigationHref;
-              const Icon = item.icon;
+              const Icon = visibleNavigationItems.find(({ href }) => href === item.href)?.icon ?? Star;
               return (
                 <Link
                   key={item.id}
@@ -607,7 +667,6 @@ function NavLinks({ workspace, onNavigate }: {
                       toggleFavorite({
                         id: favId,
                         label: item.label,
-                        icon: item.icon,
                         href: item.href,
                       });
                     }}
@@ -643,9 +702,14 @@ export function AppShell({ children, workspace }: { children: React.ReactNode; w
 function AppShellChrome({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const favoriteControls = useFavorites();
+  const notificationControl = useRef<HTMLDivElement>(null);
+  const drawerTrigger = useRef<HTMLButtonElement>(null);
+  const drawerClose = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
   const router = useRouter();
   const { workspace, demoMode, demoAccount, runtimeMode } = useErpWorkspace();
@@ -672,6 +736,16 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
     return `${posBranches.length} cabang ditugaskan`;
   }, [posBranches, selectedPosBranch]);
   const mobileItems = useMemo(() => mobileNavigationForWorkspace(workspace).slice(0, 5), [workspace]);
+  const closeMobileSearch = useCallback(() => setMobileSearchOpen(false), []);
+
+  useEffect(() => {
+    if (!notificationOpen) return;
+    function closeOutside(event: PointerEvent) {
+      if (!notificationControl.current?.contains(event.target as Node)) setNotificationOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [notificationOpen]);
 
   useEffect(() => {
     if (!isPosFocusedShell) return undefined;
@@ -714,6 +788,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       // Command Palette: Cmd/Ctrl + K
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
+        setMobileSearchOpen(false);
         setCommandOpen(true);
       }
       // Shortcuts overlay: ?
@@ -726,6 +801,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
         setCommandOpen(false);
         setShortcutsOpen(false);
         setSidebarOpen(false);
+        setMobileSearchOpen(false);
         setNotificationOpen(false);
         setAccountMenuOpen(false);
       }
@@ -737,8 +813,12 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!sidebarOpen) return undefined;
-
-    return acquireBodyScrollLock();
+    drawerClose.current?.focus();
+    const release = acquireBodyScrollLock();
+    return () => {
+      release();
+      drawerTrigger.current?.focus();
+    };
   }, [sidebarOpen]);
 
   useEffect(() => {
@@ -833,7 +913,9 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
 
-            <div className="relative">
+            <div className="flex items-center gap-2">
+              <CompanySwitcher activeId={business.id} name={business.displayName} onOpen={() => setAccountMenuOpen(false)} />
+              <div className="relative">
               <button
                 type="button"
                 onClick={() => setAccountMenuOpen((open) => !open)}
@@ -893,6 +975,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
               ) : null}
+              </div>
             </div>
           </div>
         </header>
@@ -918,27 +1001,27 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
           HEADER - Premium Top Bar
           ============================================================================ */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 lg:px-6">
-          {/* Logo & Business */}
-          <div className="flex min-w-0 items-center gap-4">
-            <button
-              type="button"
-              className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-700 lg:hidden"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Buka menu"
-            >
-              <Menu className="size-5" aria-hidden />
-            </button>
-            <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">
-                ET
-              </div>
-              <div className="min-w-0 hidden sm:block">
-                <span className="block truncate text-sm font-semibold text-slate-950">Valuintcorp</span>
-                <span className="block truncate text-xs text-slate-500">{business.displayName}</span>
-              </div>
-            </Link>
-          </div>
+        <div className="mx-auto flex max-w-[1600px] items-center gap-2 px-3 py-3 lg:gap-4 lg:px-6">
+          <button
+            ref={drawerTrigger}
+            type="button"
+            className="grid size-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 lg:hidden"
+            onClick={() => {
+              setMobileSearchOpen(false);
+              setNotificationOpen(false);
+              setAccountMenuOpen(false);
+              setSidebarOpen(true);
+            }}
+            aria-label="Buka menu"
+            aria-expanded={sidebarOpen}
+            aria-controls="mobile-erp-drawer"
+          >
+            <Menu className="size-5" aria-hidden />
+          </button>
+          <Link href="/dashboard" className="hidden shrink-0 items-center gap-3 lg:flex">
+            <span className="grid size-10 place-items-center rounded-xl bg-slate-900 text-sm font-bold text-white" aria-hidden>ET</span>
+            <span className="text-sm font-semibold text-slate-950">Valuintcorp</span>
+          </Link>
 
           {/* Search Bar - Desktop */}
           <div className="hidden min-w-0 flex-1 items-center justify-center lg:flex">
@@ -956,21 +1039,24 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          {/* Mobile Search Button */}
-          <button
-            type="button"
-            onClick={() => setCommandOpen(true)}
-            className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-700 lg:hidden"
-            aria-label="Search"
-          >
-            <Search className="size-5" aria-hidden />
-          </button>
+          <CommandPalette
+            workspace={workspace}
+            favoriteControls={favoriteControls}
+            inline
+            expanded={mobileSearchOpen}
+            onOpen={() => {
+              setNotificationOpen(false);
+              setAccountMenuOpen(false);
+              setMobileSearchOpen(true);
+            }}
+            onClose={closeMobileSearch}
+          />
 
           {/* Right Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {/* Quick Actions - Desktop */}
             {workspace.permissions.includes("accounting:write") ? (
-              <div className="hidden items-center gap-2 sm:flex">
+              <div className="hidden items-center gap-2 lg:flex">
               <Link
                 href="/sales?action=new"
                 className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
@@ -988,16 +1074,18 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
             ) : null}
 
             {/* Notifications */}
-            <div className="relative">
+            <div ref={notificationControl} className="lg:relative">
               <button
                 type="button"
                 onClick={() => {
                   setNotificationOpen((open) => !open);
                   setAccountMenuOpen(false);
+                  setMobileSearchOpen(false);
                 }}
-                className="relative rounded-xl border border-slate-200 p-2.5 text-slate-600 transition-colors hover:bg-slate-50"
+                className="relative grid size-10 place-items-center rounded-xl border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
                 aria-label="Notifikasi"
                 aria-expanded={notificationOpen}
+                aria-controls={notificationOpen ? "erp-notification-panel" : undefined}
               >
                 <Bell className="size-5" aria-hidden />
                 {taskCount > 0 && (
@@ -1008,7 +1096,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
               </button>
 
               {notificationOpen ? (
-                <div className="absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                <div id="erp-notification-panel" aria-label="Notifikasi dan tugas" role="region" className="erp-header-panel flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-xl lg:left-auto lg:right-0 lg:w-[22.5rem]">
                   <div className="flex items-center justify-between border-b border-slate-100 px-2 pb-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-950">Notifikasi & tugas</p>
@@ -1023,7 +1111,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                     </Link>
                   </div>
 
-                  <div className="max-h-96 overflow-y-auto py-2">
+                  <div className="min-h-0 overflow-y-auto overscroll-contain py-2">
                     {workspace.tasks.length > 0 ? (
                       <div className="space-y-2">
                         {workspace.tasks.slice(0, 6).map((task) => (
@@ -1074,36 +1162,42 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* User & Business - Desktop */}
-            <div className="hidden items-center gap-2 md:flex">
-              <Link href="/perusahaan" className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">
-                <Building2 className="size-4 shrink-0 text-slate-500" aria-hidden />
-                <span className="max-w-48 truncate">{business.displayName}</span>
-              </Link>
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <CompanySwitcher
+                activeId={business.id}
+                name={business.displayName}
+                onOpen={() => {
+                  setNotificationOpen(false);
+                  setAccountMenuOpen(false);
+                  setMobileSearchOpen(false);
+                }}
+              />
+              <div className="hidden items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 xl:flex">
                 <div className={cn("flex size-2 rounded-full", period.locked ? "bg-red-500" : "bg-emerald-500")} aria-hidden />
                 <span className="text-sm text-slate-600">{period.label}</span>
               </div>
             </div>
 
             {/* Account Menu */}
-            <div className="relative">
+            <div className="lg:relative">
               <button
                 type="button"
                 onClick={() => {
                   setAccountMenuOpen((open) => !open);
                   setNotificationOpen(false);
+                  setMobileSearchOpen(false);
                 }}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 p-2 text-slate-600 transition-colors hover:bg-slate-50 md:px-3"
+                className="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-xl border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 lg:px-3"
                 aria-label="Menu akun"
                 aria-expanded={accountMenuOpen}
               >
                 <User className="size-5" aria-hidden />
-                <span className="hidden text-sm font-medium md:inline">Akun</span>
-                <ChevronDown className="hidden size-4 md:inline" aria-hidden />
+                <span className="hidden text-sm font-medium lg:inline">Akun</span>
+                <ChevronDown className="hidden size-4 lg:inline" aria-hidden />
               </button>
 
               {accountMenuOpen ? (
-                <div className="absolute right-0 top-12 z-50 w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                <div className="erp-header-panel overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 shadow-xl lg:left-auto lg:right-0 lg:w-72">
                   <div className="border-b border-slate-100 px-2 pb-3">
                     <p className="truncate text-sm font-semibold text-slate-950">{user.name}</p>
                     <p className="truncate text-xs text-slate-500">{user.email || user.role}</p>
@@ -1205,7 +1299,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                 )}
               </div>
 
-              <NavLinks workspace={workspace} />
+              <NavLinks workspace={workspace} favoriteControls={favoriteControls} />
             </div>
           </aside>
 
@@ -1232,7 +1326,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       {/* ============================================================================
           MOBILE BOTTOM NAVIGATION
           ============================================================================ */}
-      <nav className="erp-mobile-nav fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white lg:hidden">
+      <nav aria-label="Navigasi cepat" className="erp-mobile-nav fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white lg:hidden">
         <div className="grid grid-cols-5">
           {mobileItems.map((item) => {
             const active = isActive(pathname, item.href);
@@ -1242,8 +1336,9 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-w-0 flex-col items-center gap-1 px-1 py-3 text-[11px] font-medium transition-colors",
+                  "flex min-w-0 flex-col items-center justify-center gap-1 px-1 py-3 text-center text-[11px] leading-4 font-medium transition-colors",
                   active ? "text-slate-950" : "text-slate-500"
                 )}
               >
@@ -1258,10 +1353,9 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       {/* ============================================================================
           MOBILE SIDEBAR DRAWER
           ============================================================================ */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-slate-950/50" onClick={() => setSidebarOpen(false)} />
-          <aside className="erp-mobile-drawer absolute left-0 top-0 h-full w-[85vw] max-w-sm overflow-y-auto bg-white shadow-2xl">
+        <div className="erp-mobile-drawer-layer fixed inset-0 z-40 lg:hidden" data-open={sidebarOpen} inert={!sidebarOpen} aria-hidden={!sidebarOpen}>
+          <div className="erp-mobile-drawer-backdrop absolute inset-0 bg-slate-950/50" onClick={() => setSidebarOpen(false)} />
+          <aside id="mobile-erp-drawer" role="dialog" aria-modal={sidebarOpen} aria-label="Menu navigasi" className="erp-mobile-drawer absolute left-0 top-0 h-full w-[85vw] max-w-sm overflow-y-auto overscroll-contain bg-white shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white p-4">
               <div className="flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">
@@ -1273,6 +1367,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
               <button
+                ref={drawerClose}
                 type="button"
                 className="rounded-xl border border-slate-200 p-2 text-slate-600"
                 onClick={() => setSidebarOpen(false)}
@@ -1287,7 +1382,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                 <p className="mt-1 text-xs text-slate-500">{user.role} • {business.displayName}</p>
               </div>
 
-              <NavLinks workspace={workspace} onNavigate={() => setSidebarOpen(false)} />
+              <NavLinks workspace={workspace} favoriteControls={favoriteControls} onNavigate={() => setSidebarOpen(false)} />
 
               {workspace.permissions.includes("accounting:write") ? (
                 <div className="mt-6 space-y-2">
@@ -1313,12 +1408,11 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
             </div>
           </aside>
         </div>
-      )}
 
       {/* ============================================================================
           MODALS
           ============================================================================ */}
-      {commandOpen && <CommandPalette workspace={workspace} onClose={() => setCommandOpen(false)} />}
+      {commandOpen && <CommandPalette workspace={workspace} favoriteControls={favoriteControls} onClose={() => setCommandOpen(false)} />}
       {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
     </div>
   );

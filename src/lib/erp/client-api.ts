@@ -396,6 +396,12 @@ export async function loadBusinessOptions() {
   return erpApiFetch<{ businesses: BusinessOption[]; defaultBusinessId: string | null }>("/api/erp/businesses");
 }
 
+export async function activateBusiness(businessId: string) {
+  const session = await syncServerSession(businessId);
+  if (session?.defaultBusinessId !== businessId) throw new Error("Perusahaan gagal diaktifkan. Coba lagi.");
+  window.location.replace(session.defaultPath || "/dashboard");
+}
+
 export async function loadWorkspaceForBusiness(businessId: string, profile: PublicWorkspaceLoadProfile) {
   await syncServerSession(businessId);
   return erpApiFetch<{ workspace: ErpWorkspace }>(

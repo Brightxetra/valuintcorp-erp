@@ -1,7 +1,8 @@
 import { isApiResponse, requireApiPermission, withDemoHeader } from "@/lib/auth/api";
+import { getErpAttachmentsBucket } from "@/lib/supabase/config";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const bucket = process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments";
+const bucket = getErpAttachmentsBucket();
 
 export async function GET(request: Request) {
   const context = await requireApiPermission(request, "hr:manage");

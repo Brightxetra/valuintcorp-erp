@@ -8,6 +8,10 @@ export interface SupabasePublicConfig {
   anonKey: string;
 }
 
+export function getErpAttachmentsBucket() {
+  return process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET?.trim() || "erp-attachments";
+}
+
 export function sanitizeSupabaseEnvValue(value: string | null | undefined) {
   const compact = value?.trim().replace(HEADER_UNSAFE_CHARACTERS, "") ?? "";
   const sanitized = compact.replace(WRAPPING_QUOTES, "");

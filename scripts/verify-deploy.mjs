@@ -191,10 +191,8 @@ if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_PROJECT_REF) {
   }
 }
 
-if (
-  process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET &&
-  !/^[a-z0-9][a-z0-9._-]*$/i.test(process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET)
-) {
+const attachmentsBucket = processEnvironmentValue("SUPABASE_ERP_ATTACHMENTS_BUCKET");
+if (attachmentsBucket && !/^[a-z0-9][a-z0-9._-]*$/i.test(attachmentsBucket)) {
   issues.push("SUPABASE_ERP_ATTACHMENTS_BUCKET has an invalid name.");
 }
 

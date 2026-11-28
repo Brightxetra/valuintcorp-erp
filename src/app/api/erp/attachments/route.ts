@@ -3,6 +3,7 @@ import { createDemoAttachment } from "@/lib/erp/demo-store";
 import { attachmentSchema } from "@/lib/erp/schemas";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
 import { logApiError, logApiInfo } from "@/lib/observability/logger";
+import { getErpAttachmentsBucket } from "@/lib/supabase/config";
 import { createRequestSupabaseClient } from "@/lib/supabase/server";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
@@ -107,7 +108,7 @@ export async function POST(request: Request) {
     const previousIds = (previousPhotos ?? []).map((item) => String(item.id));
     const previousPaths = (previousPhotos ?? []).map((item) => String(item.storage_path));
     const { error: removeError } = previousPaths.length
-      ? await service.storage.from(process.env.SUPABASE_ERP_ATTACHMENTS_BUCKET || "erp-attachments").remove(previousPaths)
+      ? await service.storage.from(getErpAttachmentsBucket()).remove(previousPaths)
       : { error: null };
 
     if (!removeError && previousIds.length) {
