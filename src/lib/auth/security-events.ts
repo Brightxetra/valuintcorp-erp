@@ -94,7 +94,6 @@ export function fingerprintRequest(request: Request): RequestFingerprint {
     userAgentHash: userAgent ? securityHash(userAgent) : undefined,
   };
 }
-
 function nowMinus(ms: number) {
   return new Date(Date.now() - ms).toISOString();
 }
@@ -224,7 +223,7 @@ export async function evaluatePasswordResetRisk(
   const emailDay = emailRows.length;
   const ipHour = countSince(ipRows, hourMs);
   const ipDay = ipRows.length;
-  const cooldownActive = newestEventAgeMs(emailRows) < passwordResetCooldownMs;
+  const cooldownActive = newestEventAgeMs(emailRows.filter((row) => row.status === "sent")) < passwordResetCooldownMs;
   const hardLimited =
     emailHour >= emailHourlyLimit ||
     emailDay >= emailDailyLimit ||
@@ -250,8 +249,4 @@ export async function evaluatePasswordResetRisk(
     serviceAvailable: true,
     reason,
   };
-}
-
-export function shouldShowCaptcha(risk: Pick<PasswordResetRiskResult, "captchaRequired">) {
-  return risk.captchaRequired && Boolean(process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY);
 }

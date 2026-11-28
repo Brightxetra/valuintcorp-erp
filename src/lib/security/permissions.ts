@@ -20,7 +20,7 @@ export const permissionCatalog: ReadonlyArray<{
   label: string;
   description: string;
 }> = [
-  { permission: "business:read", label: "Dashboard & pengaturan", description: "Melihat ringkasan bisnis dan pengaturan umum." },
+  { permission: "business:read", label: "Dashboard & pengaturan umum", description: "Melihat ringkasan bisnis dan mengelola akun sendiri." },
   { permission: "business:update", label: "Ubah bisnis", description: "Mengubah profil bisnis, lokasi, dan master umum." },
   { permission: "accounting:read", label: "Keuangan", description: "Melihat jurnal dan dokumen keuangan." },
   { permission: "accounting:write", label: "Transaksi", description: "Membuat invoice, tagihan, kas, dan jurnal." },
@@ -30,8 +30,8 @@ export const permissionCatalog: ReadonlyArray<{
   { permission: "payroll:run", label: "Payroll", description: "Menjalankan dan memproses penggajian." },
   { permission: "tax:prepare", label: "Pajak", description: "Mengelola kesiapan dan dokumen pajak." },
   { permission: "admin:manage_users", label: "Team & akses", description: "Mengundang anggota dan mengatur akses." },
-  { permission: "pos:read", label: "POS cabang", description: "Membuka menu POS untuk cabang yang ditugaskan." },
-  { permission: "pos:sell", label: "Kasir POS cabang", description: "Mencatat penjualan Tunai dan QRIS manual di cabang." },
+  { permission: "pos:read", label: "POS cabang · lihat saja", description: "Melihat katalog dan rekap cabang yang ditugaskan." },
+  { permission: "pos:sell", label: "Kasir POS cabang · catat penjualan", description: "Membuka POS dan mencatat penjualan tunai atau QRIS di cabang yang ditugaskan." },
   { permission: "pos:expenses", label: "Supervisor biaya cabang", description: "Melihat rekap POS dan mencatat biaya operasional cabang." },
 ] as const;
 
@@ -48,6 +48,27 @@ export function posExperienceForPermissions(permissions: readonly Permission[]):
   if (permissions.includes("pos:expenses")) return "supervisor";
   if (permissions.includes("pos:sell")) return "cashier";
   return "viewer";
+}
+
+export function canOpenSettings(permissions: readonly Permission[]): boolean {
+  return permissions.some((permission) => permission === "business:read" || permission === "business:update" || permission === "admin:manage_users");
+}
+
+export function landingPathForPermissions(permissions: readonly Permission[]): string {
+  const destinations = [
+    ["business:read", "/dashboard"],
+    ["pos:read", "/pos"],
+    ["accounting:write", "/transaksi/invoice"],
+    ["accounting:read", "/keuangan/jurnal"],
+    ["inventory:manage", "/produk/katalog"],
+    ["hr:manage", "/karyawan"],
+    ["payroll:run", "/karyawan/gaji"],
+    ["reports:export", "/keuangan/laporan"],
+    ["admin:manage_users", "/settings"],
+    ["business:update", "/settings"],
+    ["tax:prepare", "/tax"],
+  ] as const;
+  return destinations.find(([permission]) => permissions.includes(permission))?.[1] ?? "/access-denied";
 }
 
 const permissionsByRole: Record<BusinessRole, Permission[]> = {

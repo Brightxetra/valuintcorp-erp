@@ -586,6 +586,9 @@ export function saveDemoMasterData(
     email: typeof values.email === "string" ? values.email : undefined,
     address: typeof values.address === "string" ? values.address : undefined,
     taxStatus: typeof values.taxStatus === "string" ? values.taxStatus : undefined,
+    monthlyTaxWithholding: typeof values.monthlyTaxWithholding === "number"
+      ? values.monthlyTaxWithholding
+      : workspace.employees.find((item) => item.id === id)?.monthlyTaxWithholding,
     npwp: typeof values.npwp === "string" ? values.npwp : undefined,
     bankName: typeof values.bankName === "string" ? values.bankName : undefined,
     bankAccountNo: typeof values.bankAccountNo === "string" ? values.bankAccountNo : undefined,

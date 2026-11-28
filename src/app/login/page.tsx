@@ -1,8 +1,8 @@
-import { redirect } from "next/navigation";
+import { EmailAuthCallback } from "@/components/email-auth-callback";
 import { LoginWorkspace } from "@/components/erp-workspaces";
 import { getServerAccessToken, getServerAuthenticatedUser, getServerWorkspaceContext } from "@/lib/auth/server-session";
 import { destinationAfterLogin } from "@/lib/erp/login-routing";
-import { isPosOnlyPermissionSet, permissionsForRole } from "@/lib/security/permissions";
+import { landingPathForPermissions, permissionsForRole } from "@/lib/security/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ function firstSearchParam(value: string | string[] | undefined) {
 
 function loginMode(value: string | string[] | undefined) {
   const mode = firstSearchParam(value);
-  return mode === "register" || mode === "forgot" ? mode : "login";
+  return mode === "register" || mode === "forgot" || mode === "magic" ? mode : "login";
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -32,14 +32,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
     if (context) {
       const permissions = context.permissions ?? permissionsForRole(context.role);
-      const defaultPath = isPosOnlyPermissionSet(permissions) ? "/pos" : undefined;
-      redirect(destinationAfterLogin(nextPath, true, defaultPath));
+      const defaultPath = landingPathForPermissions(permissions);
+      return <EmailAuthCallback destination={destinationAfterLogin(nextPath, true, defaultPath)} />;
     }
 
     const user = await getServerAuthenticatedUser();
 
     if (user) {
-      redirect(destinationAfterLogin(nextPath, false));
+      return <EmailAuthCallback destination={destinationAfterLogin(nextPath, false)} />;
     }
   }
 

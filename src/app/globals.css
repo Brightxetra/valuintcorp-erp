@@ -56,6 +56,24 @@ body {
   animation: directory-reveal 180ms ease-out;
 }
 
+.onboarding-aside {
+  background-color: #0f172a;
+  background-image:
+    linear-gradient(rgb(148 180 212 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(148 180 212 / 0.07) 1px, transparent 1px),
+    radial-gradient(ellipse at bottom right, #065f58, transparent 68%);
+  background-size: 36px 36px, 36px 36px, 100% 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .onboarding-enter { animation: onboarding-enter 320ms ease-out both; }
+}
+
+@keyframes onboarding-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;

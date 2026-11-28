@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(16);
+select plan(17);
 
 select is(
   current_user::text,
@@ -70,6 +70,7 @@ with current_tables(table_oid) as (
   join pg_namespace namespace on namespace.oid = relation.relnamespace
   where namespace.nspname = 'public'
     and relation.relkind in ('r', 'p')
+    and relation.relname not in ('business_ownership_transfers', 'company_data_operations')
 ), table_privileges(privilege_name) as (
   values
     ('SELECT'::text),
@@ -90,6 +91,16 @@ select is(
   ),
   0::bigint,
   'service_role retains the verified production table privilege matrix'
+);
+
+select ok(
+  has_table_privilege('authenticated', 'public.business_ownership_transfers', 'SELECT')
+  and not has_table_privilege('authenticated', 'public.business_ownership_transfers', 'INSERT,UPDATE,DELETE')
+  and not has_table_privilege('authenticated', 'public.company_data_operations', 'SELECT,INSERT,UPDATE,DELETE')
+  and has_table_privilege('service_role', 'public.company_data_operations', 'SELECT')
+  and has_column_privilege('service_role', 'public.company_data_operations', 'storage_paths', 'UPDATE')
+  and not has_column_privilege('service_role', 'public.company_data_operations', 'action', 'UPDATE'),
+  'new company lifecycle tables expose only participant reads and server storage bookkeeping'
 );
 
 with read_only_tables(table_name) as (

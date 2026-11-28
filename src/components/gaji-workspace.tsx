@@ -72,6 +72,7 @@ type PayrollPreview = {
   components: PayrollComponent[];
   grossPay: number;
   deductions: number;
+  taxWithheld: number;
   bpjsEmployee: number;
   bpjsEmployer: number;
   netPay: number;
@@ -90,6 +91,7 @@ function payrollPreview(employee: Employee, policy: BpjsPolicy): PayrollPreview 
     components: calculation.components,
     grossPay: calculation.grossPay,
     deductions: calculation.deductions,
+    taxWithheld: calculation.taxWithheld,
     bpjsEmployee: calculation.bpjs.totalEmployee,
     bpjsEmployer: calculation.bpjs.totalEmployer,
     netPay: calculation.netPay,
@@ -151,9 +153,10 @@ function EmployeePayrollDetail({
               <span className="font-medium text-red-600">-{money(preview.deductions - preview.bpjsEmployee)}</span>
             </div>
             <div className="flex justify-between text-sm"><span className="text-slate-600">BPJS karyawan</span><span className="font-medium text-red-600">-{money(preview.bpjsEmployee)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-slate-600">PPh 21</span><span className="font-medium text-red-600">-{money(preview.taxWithheld)}</span></div>
             <div className="flex justify-between border-t border-slate-200 pt-2 font-semibold text-slate-950">
               <span>Total Potongan</span>
-              <span className="text-red-600">-{money(preview.deductions)}</span>
+              <span className="text-red-600">-{money(preview.deductions + preview.taxWithheld)}</span>
             </div>
           </div>
         </div>
@@ -232,7 +235,7 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
   });
   const canPost = Boolean(currentPolicy && selectedPeriod && previews.length && previewErrors.length === 0 && previews.length <= 100);
   const totalGajiKotor = previews.reduce((sum, preview) => sum + preview.grossPay, 0);
-  const totalPotongan = previews.reduce((sum, preview) => sum + preview.deductions, 0);
+  const totalPotongan = previews.reduce((sum, preview) => sum + preview.deductions + preview.taxWithheld, 0);
   const totalGajiBersih = previews.reduce((sum, preview) => sum + preview.netPay, 0);
 
   async function postSelectedPayroll() {
@@ -306,7 +309,7 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
         <PayrollSummaryCard
           title="Estimasi Gaji Bersih"
           value={money(totalGajiBersih)}
-          subtitle="Setelah komponen dan BPJS"
+          subtitle="Setelah komponen, BPJS, dan PPh 21"
           icon={Check}
           tone="emerald"
         />
@@ -425,7 +428,7 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
                   <p className="text-xl font-bold text-slate-950">{money(totalGajiKotor)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-slate-600">Total potongan komponen + BPJS</p>
+                  <p className="text-sm text-slate-600">Total potongan komponen, BPJS, dan PPh 21</p>
                   <p className="text-xl font-bold text-red-600">-{money(totalPotongan)}</p>
                 </div>
                 <div className="sm:col-span-2">
@@ -487,8 +490,8 @@ export function GajiWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorks
           <div>
             <p className="font-medium text-blue-800">Cara Kerja Perhitungan Gaji</p>
             <ul className="mt-2 space-y-1 text-sm text-blue-700">
-              <li>• Gaji pokok + tunjangan transport & makan = Total Gaji Kotor</li>
-              <li>• Potongan: komponen karyawan dan BPJS sesuai kepesertaan serta policy bisnis</li>
+              <li>• Gaji pokok dan komponen pendapatan membentuk gaji kotor</li>
+              <li>• Potongan mencakup komponen karyawan, BPJS, dan nominal PPh 21 pada Data Karyawan</li>
               <li>• Gaji Bersih = Total Gaji Kotor - Total Potongan</li>
               <li>• Iuran BPJS perusahaan dihitung terpisah sesuai policy bisnis</li>
               <li>• Setelah disimpan, otomatis membuat jurnal di akun keuangan</li>

@@ -1,105 +1,25 @@
 import { redirect } from "next/navigation";
-import { getServerAccessToken, getServerAuthenticatedUser, getServerWorkspaceContext, createServerSupabaseClient } from "@/lib/auth/server-session";
+import { getServerAccessToken, getServerWorkspaceContext, createServerSupabaseClient } from "@/lib/auth/server-session";
 import { shouldUseDemoFallback } from "@/lib/auth/runtime";
-import { createDemoErpWorkspace } from "@/lib/erp/demo-workspace";
 import { getDemoErpStore } from "@/lib/erp/demo-store";
-import { refreshErpWorkspace } from "@/lib/erp/operations";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { isPosOnlyPermissionSet, permissionsForRole } from "@/lib/security/permissions";
 import { loadSupabaseWorkspace, type WorkspaceLoadOptions } from "@/lib/erp/workspace-repository";
-import { requiredPermissionForWorkspaceProfile } from "@/lib/erp/workspace-profiles";
+import { canOpenWorkspaceProfile } from "@/lib/erp/workspace-profiles";
 
-function createOnboardingWorkspace(user: NonNullable<Awaited<ReturnType<typeof getServerAuthenticatedUser>>>): ErpWorkspace {
-  const base = createDemoErpWorkspace();
-  const emptyWorkspace = refreshErpWorkspace({
-    ...base,
-    user: {
-      id: user.userId,
-      name: user.userName ?? user.userEmail ?? "Supabase user",
-      email: user.userEmail ?? "",
-      role: "owner",
-    },
-    business: {
-      ...base.business,
-      id: "00000000-0000-0000-0000-000000000000",
-      legalName: "Setup Bisnis",
-      displayName: "Setup Bisnis",
-      ownerName: user.userName ?? user.userEmail ?? "Owner",
-      industry: "general",
-      taxId: undefined,
-    },
-    locations: [],
-    featureFlags: [],
-    transactionSources: [],
-    memberInvites: [],
-    customers: [],
-    suppliers: [],
-    products: [],
-    productStructures: [],
-    demandForecasts: [],
-    mrpRuns: [],
-    mrpRecommendations: [],
-    productionOrders: [],
-    warehouses: [],
-    salesInvoices: [],
-    purchaseBills: [],
-    payments: [],
-    paymentAllocations: [],
-    stockMovements: [],
-    stockTransfers: [],
-    stockAdjustments: [],
-    employees: [],
-    attendance: [],
-    payrollRuns: [],
-    journals: [],
-    importBatches: [],
-    rawImportBatches: [],
-    rawTransactions: [],
-    rawTransactionLines: [],
-    rawPayments: [],
-    settlementRecords: [],
-    dailyTransactionSummaries: [],
-    locationMetrics: [],
-    attachments: [],
-    activities: [],
-  });
+export async function getInitialErpWorkspace(options: WorkspaceLoadOptions = {}): Promise<ErpWorkspace> {
+  if (shouldUseDemoFallback()) return getDemoErpStore();
 
-  return emptyWorkspace;
-}
-
-export async function getInitialErpWorkspace(
-  options: WorkspaceLoadOptions & { allowOnboardingFallback?: boolean } = {},
-): Promise<ErpWorkspace> {
-  const context = await getServerWorkspaceContext();
   const accessToken = await getServerAccessToken();
+  if (!accessToken) redirect("/login");
 
-  if (context && accessToken) {
-    const requiredPermission = requiredPermissionForWorkspaceProfile(options.profile ?? "full");
-    const permissions = context.permissions ?? permissionsForRole(context.role);
-    if (requiredPermission && !permissions.includes(requiredPermission)) {
-      if (isPosOnlyPermissionSet(permissions)) {
-        redirect("/pos");
-      }
+  const context = await getServerWorkspaceContext();
+  if (!context) redirect("/onboarding");
 
-      redirect("/access-denied");
-    }
-    try {
-      return await loadSupabaseWorkspace(createServerSupabaseClient(accessToken), context, options);
-    } catch {
-      if (!shouldUseDemoFallback()) {
-        redirect("/login");
-      }
-    }
+  const permissions = context.permissions ?? permissionsForRole(context.role);
+  if (!canOpenWorkspaceProfile(options.profile ?? "full", permissions)) {
+    redirect(isPosOnlyPermissionSet(permissions) ? "/pos" : "/access-denied");
   }
 
-  if (!shouldUseDemoFallback()) {
-    if (options.allowOnboardingFallback && accessToken) {
-      const user = await getServerAuthenticatedUser();
-      if (user) return createOnboardingWorkspace(user);
-    }
-
-    redirect("/login");
-  }
-
-  return getDemoErpStore();
+  return loadSupabaseWorkspace(createServerSupabaseClient(accessToken), context, options);
 }

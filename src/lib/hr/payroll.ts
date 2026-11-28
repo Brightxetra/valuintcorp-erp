@@ -28,7 +28,7 @@ function resolveComponentAmount(
 export function calculateEmployeePayroll(
   employee: Employee,
   policy: BpjsPolicy = defaultBpjsPolicy,
-  taxWithheld = 0,
+  taxWithheld = employee.monthlyTaxWithholding ?? 0,
 ): EmployeePayrollCalculation {
   const compensationComponents = (employee.compensationComponents ?? []).map((component) => ({
     id: component.id,
@@ -44,7 +44,7 @@ export function calculateEmployeePayroll(
     ...(bpjs.kesehatanEmployee > 0 ? [{ id: "bpjs-health", name: "BPJS Kesehatan karyawan", amount: bpjs.kesehatanEmployee, type: "deduction" as const, calculation: "fixed" as const }] : []),
     ...(bpjs.jhtEmployee > 0 ? [{ id: "bpjs-jht", name: "BPJS JHT karyawan", amount: bpjs.jhtEmployee, type: "deduction" as const, calculation: "fixed" as const }] : []),
     ...(bpjs.jpnEmployee > 0 ? [{ id: "bpjs-jpn", name: "BPJS JP karyawan", amount: bpjs.jpnEmployee, type: "deduction" as const, calculation: "fixed" as const }] : []),
-    ...(taxWithheld > 0 ? [{ name: "Potongan pajak", amount: taxWithheld, type: "deduction" as const, calculation: "fixed" as const }] : []),
+    ...(taxWithheld > 0 ? [{ id: "payroll-tax", name: "Potongan PPh 21", amount: taxWithheld, type: "deduction" as const, calculation: "fixed" as const }] : []),
     ...(bpjs.totalEmployer > 0 ? [{ name: "BPJS perusahaan", amount: bpjs.totalEmployer, type: "employer_contribution" as const, calculation: "fixed" as const }] : []),
   ];
   const grossPay = employee.baseSalary + compensationComponents

@@ -413,8 +413,8 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
         ) : null}
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_410px]">
-        <section className="flex min-h-[calc(100dvh-13rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className={cn("grid gap-4", canSell && "xl:grid-cols-[minmax(0,1fr)_410px]")}>
+        <section className={cn("flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm", canSell && "min-h-[calc(100dvh-13rem)]")}>
           <div className="border-b border-slate-200 p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -482,13 +482,12 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                                 {product.availableQuantity === null ? "Non-stok" : `${product.availableQuantity} ${product.unit}`}
                               </p>
                             </div>
-                            {quantity ? (
+                            {canSell && (quantity ? (
                               <div className="flex items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
                                 <button
                                   type="button"
                                   aria-label={`Kurangi ${product.name}`}
                                   onClick={() => changeQuantity(product, -1)}
-                                  disabled={!canSell}
                                   className="flex size-10 items-center justify-center text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                                 >
                                   <Minus className="size-4" aria-hidden />
@@ -498,7 +497,7 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                                   type="button"
                                   aria-label={`Tambah ${product.name}`}
                                   onClick={() => changeQuantity(product, 1)}
-                                  disabled={soldOut || !canSell}
+                                  disabled={soldOut}
                                   className="flex size-10 items-center justify-center bg-slate-950 text-white disabled:opacity-40"
                                 >
                                   <Plus className="size-4" aria-hidden />
@@ -509,12 +508,12 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
                                 type="button"
                                 aria-label={`Tambah ${product.name}`}
                                 onClick={() => changeQuantity(product, 1)}
-                                disabled={soldOut || !canSell}
+                                disabled={soldOut}
                                 className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Tambah
                               </button>
-                            )}
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -526,7 +525,7 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
           </div>
         </section>
 
-        <aside className="flex max-h-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:sticky xl:top-[5.25rem] xl:max-h-[calc(100dvh-5.75rem)]">
+        {canSell && <aside className="flex max-h-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:sticky xl:top-[5.25rem] xl:max-h-[calc(100dvh-5.75rem)]">
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
             <div>
               <h2 className="text-lg font-semibold tracking-tight text-slate-950">Order</h2>
@@ -668,14 +667,14 @@ export function PosWorkspace({ initialWorkspace }: { initialWorkspace: ErpWorksp
 
             <button
               type="button"
-              disabled={!canSell || !cartItems.length || loading}
+              disabled={!cartItems.length || loading}
               onClick={() => void submitSale()}
               className="mt-4 min-h-12 w-full rounded-xl bg-emerald-600 px-4 text-base font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {loading ? "Memproses..." : canSell ? "Bayar & posting" : "Akses input POS tidak tersedia"}
+              {loading ? "Memproses..." : "Bayar & posting"}
             </button>
           </div>
-        </aside>
+        </aside>}
       </div>
 
       {showBackOfficeSections ? (

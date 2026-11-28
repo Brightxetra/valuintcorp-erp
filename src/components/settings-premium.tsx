@@ -22,6 +22,7 @@ import {
   Shield,
   ShoppingBag,
   Truck,
+  Trash2,
   Upload,
   Users,
   Warehouse,
@@ -30,12 +31,14 @@ import {
 import { ActionButton, SelectField, StatusPill, TextField, cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
 import { ChangePasswordCard } from "@/components/change-password-card";
+import { CompanyDataDialog } from "@/components/company-data-dialog";
+import { OwnershipTransferButton } from "@/components/ownership-transfers";
 import { MobileDialog as Modal } from "@/components/mobile-dialog";
 import { SecuritySubmenuTabs, type SecuritySubmenu } from "@/components/security-submenu-tabs";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { permissionCatalog } from "@/lib/security/permissions";
-import { clearServerSession, signOutLocalBrowserSession, syncServerSession } from "@/lib/erp/client-api";
+import { permissionCatalog, type Permission } from "@/lib/security/permissions";
+import { clearServerSession, signOutLocalBrowserSession, storeBusinessNotice, syncServerSession } from "@/lib/erp/client-api";
 import { notify } from "@/lib/notify";
 import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 
@@ -49,7 +52,8 @@ type SettingsCategory =
   | "locations"
   | "onboarding"
   | "security"
-  | "integrations";
+  | "integrations"
+  | "reset";
 
 type SettingsTab = "overview" | "business" | "team" | "data" | "security" | "integrations";
 
@@ -300,6 +304,7 @@ function memberSecondaryLabel(member: NonNullable<ErpWorkspace["members"]>[numbe
 }
 
 function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvite, resendInvite }: SettingsPanelProps) {
+  const { demoMode, demoAccount } = useErpWorkspace();
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -330,7 +335,10 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
           <h2 className="text-xl font-semibold text-slate-950">Team & Akses</h2>
           <p className="text-sm text-slate-500">{workspace.business.displayName}</p>
         </div>
-        <ActionButton type="button" disabled={pending} onClick={() => openEditor()}><Plus className="size-4" /> Undang anggota</ActionButton>
+        <div className="flex flex-wrap gap-2">
+          {!demoMode && !demoAccount && workspace.user.role === "owner" && <OwnershipTransferButton workspace={workspace} />}
+          <ActionButton type="button" disabled={pending} onClick={() => openEditor()}><Plus className="size-4" /> Undang anggota</ActionButton>
+        </div>
       </div>
 
       <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -365,25 +373,20 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
             <p className="mt-1 text-xs text-slate-500">Jika email sudah terdaftar di Supabase, anggota langsung ditambahkan. Jika belum, sistem mengirim email invite otomatis.</p>
           </div>
         )}
-        <SelectField name="role" label="Peran" value={role} onChange={(event) => {
-          setRole(event.target.value);
-          if (event.target.value === "owner" || event.target.value === "system_admin") setAccessScope("role");
-        }}>
+        <SelectField name="role" label="Peran" value={role} onChange={(event) => setRole(event.target.value)}>
           <option value="staff">Staff</option>
           <option value="finance_admin">Finance/Admin</option>
           <option value="hr">HR</option>
           <option value="external_advisor">External advisor</option>
-          <option value="owner">Owner</option>
-          {editingMember?.role === "system_admin" && <option value="system_admin">System admin</option>}
         </SelectField>
         <SelectField name="accessScope" label="Mode akses" value={accessScope} onChange={(event) => setAccessScope(event.target.value)}>
           <option value="role">Ikuti peran</option>
-          {role !== "owner" && role !== "system_admin" && <option value="custom">Izin pilihan</option>}
+          <option value="custom">Izin pilihan</option>
         </SelectField>
         <fieldset hidden={accessScope !== "custom"} disabled={accessScope !== "custom"} className="sm:col-span-2">
           <legend className="text-sm font-semibold text-slate-800">Izin anggota</legend>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {permissionCatalog.map((entry) => <label key={entry.permission} className="flex gap-2 rounded-lg border border-slate-100 p-2 text-sm"><input name="permissions" value={entry.permission} type="checkbox" defaultChecked={editingMember?.accessScope === "custom" && editingMember.accessPermissions.includes(entry.permission)} className="mt-0.5 size-4" /><span><strong className="block text-slate-800">{entry.label}</strong><span className="text-xs text-slate-500">{entry.description}</span></span></label>)}
+            {permissionCatalog.filter((entry) => workspace.permissions.includes(entry.permission)).map((entry) => <label key={entry.permission} className="flex gap-2 rounded-lg border border-slate-100 p-2 text-sm"><input name="permissions" value={entry.permission} type="checkbox" defaultChecked={editingMember?.accessScope === "custom" && editingMember.accessPermissions.includes(entry.permission)} className="mt-0.5 size-4" /><span><strong className="block text-slate-800">{entry.label}</strong><span className="text-xs text-slate-500">{entry.description}</span></span></label>)}
           </div>
         </fieldset>
         <fieldset className="sm:col-span-2">
@@ -407,8 +410,8 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
               </div>
               <div className="flex items-center gap-2">
                 <StatusPill tone={member.accessScope === "custom" ? "cyan" : "gray"}>{member.role}</StatusPill>
-                <button type="button" aria-label={`Ubah akses ${memberDisplayName(member, workspace)}`} disabled={pending} onClick={() => openEditor(member)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Ubah akses</button>
-                {member.authUserId !== workspace.user.id && member.role !== "owner" ? (
+                {member.authUserId !== workspace.user.id && member.role !== "owner" && member.role !== "system_admin" ? <>
+                  <button type="button" aria-label={`Ubah akses ${memberDisplayName(member, workspace)}`} disabled={pending} onClick={() => openEditor(member)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700">Ubah akses</button>
                   <button
                     type="button"
                     aria-label={`Hapus anggota ${memberDisplayName(member, workspace)}`}
@@ -421,7 +424,7 @@ function MembersPanel({ workspace, pending, saveMember, deleteMember, cancelInvi
                     <XCircle className="size-4" aria-hidden />
                     Hapus
                   </button>
-                ) : null}
+                </> : null}
               </div>
             </div>
           ))}
@@ -1335,6 +1338,8 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
   const [pending, setPending] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const canReset = workspace.user.role === "owner" && !demoMode && !demoAccount;
 
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "overview", label: "Overview" },
@@ -1357,6 +1362,7 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     { id: "onboarding", tab: "business", title: "Setup & Onboarding", description: "Apply template atau buat bisnis baru", icon: Settings },
     { id: "security", tab: "security", title: "Security", description: "Device login, password, dan force logout", icon: Shield },
     { id: "integrations", tab: "integrations", title: "Integrasi", description: "Supabase dan modul aktif", icon: Globe },
+    { id: "reset", tab: "data", title: "Reset seluruh data", description: "Hapus data operasional perusahaan ini", icon: Trash2 },
   ], [workspace]);
 
   useEffect(() => {
@@ -1682,11 +1688,17 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     logoUploading,
   };
 
-  const visibleTabs = tabs.filter((tab) => tab.id !== "team" || canManageUsers);
-  const visibleCategories = (activeTab === "overview" ? categories : categories.filter((category) => category.tab === activeTab)).filter((category) => category.id !== "team" || canManageUsers);
+  const categoryPermissions: Record<Exclude<SettingsCategory, "reset">, Permission> = {
+    business: "business:update", tax: "tax:prepare", team: "admin:manage_users", customers: "accounting:write",
+    suppliers: "accounting:write", warehouses: "inventory:manage", locations: "business:update",
+    onboarding: "business:update", security: "business:read", integrations: "business:update",
+  };
+  const allowedCategories = categories.filter(({ id }) => id === "reset" ? canReset : workspace.permissions.includes(categoryPermissions[id]));
+  const visibleTabs = tabs.filter((tab) => tab.id === "overview" || allowedCategories.some(({ tab: categoryTab }) => categoryTab === tab.id));
+  const visibleCategories = allowedCategories.filter((category) => activeTab === "overview" || category.tab === activeTab);
 
   function renderContent() {
-    if (!selectedCategory) {
+    if (!selectedCategory || !allowedCategories.some(({ id }) => id === selectedCategory)) {
       return (
         <div className="space-y-6">
           <div>
@@ -1707,6 +1719,17 @@ export function SettingsPremium({ initialWorkspace }: { initialWorkspace: ErpWor
     if (selectedCategory === "locations") return <LocationsPanel {...panelProps} />;
     if (selectedCategory === "onboarding") return <OnboardingSettingsPanel {...panelProps} />;
     if (selectedCategory === "security") return <SecurityPanel />;
+    if (selectedCategory === "reset") return (
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold">Reset seluruh data</h2>
+        <p className="text-sm text-slate-600">Mulai ulang data operasional {workspace.business.displayName}. Konfirmasi dengan password akun Anda.</p>
+        <button type="button" onClick={() => setResetOpen(true)} className="min-h-10 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800">Reset seluruh data</button>
+        {resetOpen && <CompanyDataDialog company={workspace.business} action="reset" onClose={() => setResetOpen(false)} onComplete={() => {
+          storeBusinessNotice("Data perusahaan berhasil direset");
+          window.location.replace("/settings");
+        }} />}
+      </section>
+    );
     return <IntegrationsPanel workspace={workspace} />;
   }
 

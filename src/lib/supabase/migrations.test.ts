@@ -205,6 +205,8 @@ describe("Supabase migration contract", () => {
       "20261125044421_employee_photo_and_compensation.sql",
       "20261125050031_payroll_calculation_authority.sql",
       "20261125065030_company_reporting.sql",
+      "20261127044511_company_lifecycle_and_access.sql",
+      "20261127044516_employee_payroll_tax.sql",
     ]);
   });
 
@@ -1222,7 +1224,7 @@ describe("Supabase migration contract", () => {
     );
 
     expect(rehearsal).toContain(
-      "begin; create extension if not exists pgtap with schema extensions; select plan(26);",
+      "begin; create extension if not exists pgtap with schema extensions; select plan(27);",
     );
     expect(rehearsal).toContain(
       "a default finance administrator cannot create a self-promoting owner invite",
@@ -1307,7 +1309,7 @@ describe("Supabase migration contract", () => {
     const rehearsal = normalizeSql(readFileSync(aclRehearsalFile, "utf8"));
 
     expect(rehearsal).toContain(
-      "begin; create extension if not exists pgtap with schema extensions; select plan(16);",
+      "begin; create extension if not exists pgtap with schema extensions; select plan(17);",
     );
     expect(rehearsal).toContain("current_user::text, 'postgres'");
     expect(rehearsal).toContain("has_table_privilege");
@@ -1343,7 +1345,8 @@ describe("Supabase migration contract", () => {
     }
 
     expect(apiContents).not.toContain(`.rpc("create_business_with_owner",`);
-    expect(apiContents).toContain(`.rpc("create_business_with_owner_for_actor"`);
+    expect(apiContents).toContain(`"create_business_with_owner_for_actor"`);
+    expect(apiContents).toContain(`"bootstrap_first_business"`);
     expect(helper).toContain("createServiceSupabaseClient");
     expect(helper).toContain("actorUserId");
   });

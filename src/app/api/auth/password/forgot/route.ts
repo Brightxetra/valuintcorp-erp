@@ -5,8 +5,8 @@ import {
   evaluatePasswordResetRisk,
   passwordResetGenericMessage,
   recordAuthSecurityEvent,
-  shouldShowCaptcha,
 } from "@/lib/auth/security-events";
+import { passwordRecoveryPath } from "@/lib/auth/email-callback";
 import { isSupabaseEnvConfigured, shouldUseDemoFallback } from "@/lib/auth/runtime";
 import { authenticationConfigurationUnavailableResponse } from "@/lib/auth/configuration-response";
 import { logApiWarning } from "@/lib/observability/logger";
@@ -25,10 +25,6 @@ function json(body: unknown, status = 200) {
 
 function genericResponse(extra: Record<string, unknown> = {}) {
   return json({ ok: true, message: passwordResetGenericMessage, ...extra });
-}
-
-function resetRedirectUrl(request: Request) {
-  return new URL("/auth/reset-password", request.url).toString();
 }
 
 function createPasswordResetClient() {
@@ -75,9 +71,9 @@ export async function POST(request: Request) {
   }
 
   const risk = await evaluatePasswordResetRisk(request, parsed.data.email);
-  const captchaRequired = shouldShowCaptcha(risk);
+  const captchaRequired = Boolean(process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY);
 
-  if (!risk.serviceAvailable) {
+  if (!risk.serviceAvailable || risk.reason === "rate_limit_lookup_failed") {
     logApiWarning("password_reset_service_role_missing", {
       route: request.url,
       action: "password_reset_request",
@@ -90,7 +86,7 @@ export async function POST(request: Request) {
       email: parsed.data.email,
       reason: risk.reason,
     });
-    return genericResponse({ captchaRequired });
+    return authenticationConfigurationUnavailableResponse();
   }
 
   if (risk.hardLimited) {
@@ -146,7 +142,7 @@ export async function POST(request: Request) {
   }
 
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: resetRedirectUrl(request),
+    redirectTo: new URL(passwordRecoveryPath, request.url).toString(),
     ...(parsed.data.captchaToken ? { captchaToken: parsed.data.captchaToken } : {}),
   });
 
@@ -157,13 +153,13 @@ export async function POST(request: Request) {
       request,
       email: parsed.data.email,
       reason: "supabase_reset_error",
-      metadata: { message: error.message },
+      metadata: { code: error.code, status: error.status },
     });
     logApiWarning("password_reset_send_failed", {
       route: request.url,
       action: "password_reset_request",
       status: "failed",
-      details: { message: error.message },
+      details: { code: error.code, status: error.status },
     });
     return genericResponse({ captchaRequired });
   }

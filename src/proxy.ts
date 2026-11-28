@@ -188,5 +188,8 @@ export const config = {
     "/produk/:path*",
     "/karyawan/:path*",
     "/keuangan/:path*",
+    "/pos/:path*",
+    "/perusahaan/:path*",
+    "/access-denied/:path*",
   ],
 };

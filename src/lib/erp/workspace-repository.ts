@@ -631,6 +631,7 @@ function mapEmployees(rows: Row[]): Employee[] {
     email: optionalText(row, "email"),
     address: optionalText(row, "address"),
     taxStatus: optionalText(row, "tax_status"),
+    monthlyTaxWithholding: numberValue(row, "monthly_tax_withholding"),
     npwp: optionalText(row, "npwp"),
     bankName: optionalText(row, "bank_name"),
     bankAccountNo: optionalText(row, "bank_account_no"),

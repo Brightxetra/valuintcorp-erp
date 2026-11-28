@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { createClient } from "@supabase/supabase-js";
 import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
 import {
@@ -76,7 +77,7 @@ function memberWorkspaceAccess(row: MembershipRow) {
   );
   return { permissions, assignedLocationIds: locationIds, accessScope: row.access_scope === "custom" ? "custom" as const : "role" as const };
 }
-export async function getServerAccessToken() {
+export const getServerAccessToken = cache(async () => {
   if (shouldUseDemoFallback()) return null;
   const cookieStore = await cookies();
   const rememberMe = cookieStore.get(serverSessionRememberCookie)?.value === "1";
@@ -107,9 +108,9 @@ export async function getServerAccessToken() {
   }
 
   return accessToken;
-}
+});
 
-export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext | null> {
+export const getServerWorkspaceContext = cache(async (): Promise<WorkspaceLoadContext | null> => {
   const accessToken = await getServerAccessToken();
 
   if (!accessToken) return null;
@@ -157,7 +158,8 @@ export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext 
     }
   }
 
-  if (membershipError || !Array.isArray(memberships) || memberships.length === 0) {
+  if (membershipError) throw new Error("Keanggotaan perusahaan gagal dimuat.", { cause: membershipError });
+  if (!Array.isArray(memberships) || memberships.length === 0) {
     return null;
   }
 
@@ -175,7 +177,7 @@ export async function getServerWorkspaceContext(): Promise<WorkspaceLoadContext 
         ? userData.user.user_metadata.name
         : userData.user.email ?? undefined,
   };
-}
+});
 
 export async function getServerAuthenticatedUser() {
   const accessToken = await getServerAccessToken();

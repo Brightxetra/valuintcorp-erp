@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { ArrowLeft, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react";
 import { ActionButton, TextField } from "@/components/ui";
 import { passwordMinimumLength } from "@/lib/auth/password-policy";
-import { clearServerSession, syncServerSession } from "@/lib/erp/client-api";
+import { signOutLocalBrowserSession, syncServerSession } from "@/lib/erp/client-api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { readEmailCallback, redeemEmailCallback } from "@/lib/auth/email-callback";
+import { isPasswordRecoveryAuthentication, verifiedSupabaseSessionIdentity } from "@/lib/auth/token";
 
 type ResetPhase = "loading" | "password" | "success" | "error";
 const maxResetAttempts = 5;
@@ -17,33 +19,6 @@ interface ResetSessionTokens {
   refreshToken: string;
   userId: string;
   email: string;
-}
-
-function callbackParamsFromLocation() {
-  const url = new URL(window.location.href);
-  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
-  return { url, hashParams, searchParams: url.searchParams };
-}
-
-function callbackErrorMessage(hashParams: URLSearchParams, searchParams: URLSearchParams) {
-  return (
-    hashParams.get("error_description") ||
-    searchParams.get("error_description") ||
-    hashParams.get("error") ||
-    searchParams.get("error")
-  );
-}
-
-async function waitForSession() {
-  const supabase = createBrowserSupabaseClient();
-
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const { data } = await supabase.auth.getSession();
-    if (data.session) return data.session;
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-  }
-
-  return null;
 }
 
 function tokensFromSession(session: Session): ResetSessionTokens {
@@ -74,6 +49,7 @@ export function ResetPasswordWorkspace() {
   const [pending, setPending] = useState(false);
   const [nextPath, setNextPath] = useState("/login");
   const [attemptCount, setAttemptCount] = useState(0);
+  const started = useRef(false);
 
   const title = useMemo(() => {
     if (phase === "success") return "Password berhasil direset";
@@ -83,76 +59,34 @@ export function ResetPasswordWorkspace() {
   }, [phase]);
 
   useEffect(() => {
-    let cancelled = false;
+    if (started.current) return;
+    started.current = true;
+    const url = new URL(window.location.href);
+    const callback = readEmailCallback(url);
+    window.history.replaceState(null, "", url.pathname);
 
     async function initializeRecoverySession() {
       try {
-        const { url, hashParams, searchParams } = callbackParamsFromLocation();
-        const callbackError = callbackErrorMessage(hashParams, searchParams);
-
-        if (callbackError) {
-          throw new Error(callbackError);
+        if (!callback.error && !callback.tokenHash && !callback.code && !callback.accessToken) {
+          throw new Error("Link reset password tidak ditemukan. Minta tautan baru dari halaman masuk.");
         }
-
-        const callbackType = hashParams.get("type") || searchParams.get("type");
-
-        if (callbackType && callbackType !== "recovery") {
-          throw new Error("Link ini bukan link reset password.");
+        const { data, error } = await redeemEmailCallback(callback, ["recovery"]);
+        const session = data.session;
+        const identity = session && verifiedSupabaseSessionIdentity(session.access_token, session.user.id);
+        if (error || !session || !isPasswordRecoveryAuthentication(identity?.authenticationMethod, callback.type === "recovery")) {
+          throw new Error("Tautan reset tidak valid atau sudah digunakan. Minta tautan baru dari halaman masuk.");
         }
-
-        const accessToken = hashParams.get("access_token");
-        const refreshToken = hashParams.get("refresh_token");
-        const authCode = searchParams.get("code");
-
-        if ((!accessToken || !refreshToken) && !authCode) {
-          throw new Error("Link reset password tidak ditemukan. Minta link baru dari menu Security atau halaman login.");
-        }
-
-        const supabase = createBrowserSupabaseClient();
-        await clearServerSession();
-
-        let session: Session | null = null;
-
-        if (accessToken && refreshToken) {
-          const { data, error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-
-          if (setSessionError) throw setSessionError;
-          session = data.session;
-        } else if (authCode) {
-          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(authCode);
-          if (exchangeError) throw exchangeError;
-          session = data.session;
-        }
-
-        session = session ?? await waitForSession();
-
-        if (!session?.access_token || !session.refresh_token || !session.user?.id) {
-          throw new Error("Sesi reset password tidak bisa dibuat. Buka ulang link email atau minta link baru.");
-        }
-
-        if (!cancelled) {
-          window.history.replaceState(null, "", url.pathname);
-          setSessionTokens(tokensFromSession(session));
-          setPhase("password");
-        }
+        setSessionTokens(tokensFromSession(session));
+        setPhase("password");
       } catch (caught) {
-        if (!cancelled) {
-          const message = caught instanceof Error ? caught.message : "Reset password gagal diproses.";
-          void postResetEvent("invalid_callback", undefined, message);
-          setError(message);
-          setPhase("error");
-        }
+        void postResetEvent("invalid_callback", undefined, "recovery_callback_failed");
+        setError(caught instanceof Error ? caught.message : "Reset password gagal diproses.");
+        setPhase("error");
       }
     }
 
     void initializeRecoverySession();
 
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   async function savePassword(formData: FormData) {
@@ -196,6 +130,13 @@ export function ResetPasswordWorkspace() {
 
     try {
       const supabase = createBrowserSupabaseClient();
+      const { data: current } = await supabase.auth.getSession();
+      const resetIdentity = verifiedSupabaseSessionIdentity(activeResetTokens.accessToken, activeResetTokens.userId);
+      const currentIdentity = current.session ? verifiedSupabaseSessionIdentity(current.session.access_token, activeResetTokens.userId) : null;
+      if (!resetIdentity || currentIdentity?.sessionId !== resetIdentity.sessionId) {
+        setPhase("error");
+        throw new Error("Sesi reset sudah berubah. Minta tautan reset baru.");
+      }
       const { error: updateError } = await supabase.auth.updateUser({ password });
 
       if (updateError) throw updateError;
@@ -204,12 +145,13 @@ export function ResetPasswordWorkspace() {
       const activeSession = data.session;
       const syncTokens = activeSession ? tokensFromSession(activeSession) : activeResetTokens;
 
-      const synced = await syncServerSession(null, syncTokens, { rememberMe: false, freshLogin: true });
-      if (!synced) {
-        throw new Error("Password tersimpan, tetapi sesi aman gagal dibuat. Silakan login kembali.");
-      }
+      const synced = await syncServerSession(null, syncTokens, { rememberMe: false, freshLogin: true, passwordResetCompleted: true });
       void postResetEvent("completed", syncTokens.email);
-      setNextPath(synced.defaultPath || (synced.hasBusiness ? "/dashboard" : "/login"));
+      if (!synced) {
+        await signOutLocalBrowserSession();
+        setError("Password tersimpan. Silakan masuk lagi untuk melanjutkan.");
+      }
+      setNextPath(synced ? synced.defaultPath || (synced.hasBusiness ? "/dashboard" : "/onboarding") : "/login");
       setPhase("success");
     } catch (caught) {
       registerFailedAttempt("supabase_update_failed");
@@ -241,7 +183,7 @@ export function ResetPasswordWorkspace() {
                 {phase === "password"
                   ? "Buat password baru untuk akun ini dari link reset yang dikirim ke email."
                   : phase === "success"
-                    ? "Password baru sudah tersimpan dan sesi perangkat lain di Supabase dikeluarkan."
+                      ? "Password baru sudah tersimpan."
                     : phase === "error"
                       ? "Link reset tidak bisa digunakan atau sudah kedaluwarsa."
                       : "Mohon tunggu, kami sedang memproses link reset password."}
@@ -277,7 +219,7 @@ export function ResetPasswordWorkspace() {
           {phase === "success" ? (
             <div className="space-y-4">
               <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
-                Password sudah diganti. Gunakan password baru untuk login di perangkat lain.
+                {error || "Gunakan password baru untuk masuk di perangkat lain."}
               </div>
               <Link
                 href={nextPath}
@@ -292,10 +234,10 @@ export function ResetPasswordWorkspace() {
             <div className="space-y-4">
               <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>
               <Link
-                href="/login"
+                href="/login?mode=forgot"
                 className="inline-flex w-full items-center justify-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
-                Kembali ke login
+                Minta tautan reset baru
               </Link>
             </div>
           ) : null}

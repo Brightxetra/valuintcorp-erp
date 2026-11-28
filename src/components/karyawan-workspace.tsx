@@ -10,6 +10,7 @@ import type { ErpWorkspace } from "@/lib/erp/types";
 import type { BpjsParticipation, CompensationComponent, Employee } from "@/lib/domain/types";
 import { getContractTypeLabel } from "@/lib/translations";
 import { money } from "@/lib/format";
+import { calculateEmployeePayroll } from "@/lib/hr/payroll";
 import { downloadCsvFile } from "@/lib/exports/csv";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
@@ -28,6 +29,7 @@ type EmployeeFormState = {
   email: string;
   address: string;
   taxStatus: string;
+  monthlyTaxWithholding: string;
   npwp: string;
   bankName: string;
   bankAccountNo: string;
@@ -70,6 +72,7 @@ function employeeToForm(employee?: Employee, workspace?: ErpWorkspace): Employee
     email: employee?.email ?? "",
     address: employee?.address ?? "",
     taxStatus: employee?.taxStatus ?? "",
+    monthlyTaxWithholding: String(employee?.monthlyTaxWithholding ?? 0),
     npwp: employee?.npwp ?? "",
     bankName: employee?.bankName ?? "",
     bankAccountNo: employee?.bankAccountNo ?? "",
@@ -84,6 +87,7 @@ function formToPayload(form: EmployeeFormState) {
   return {
     ...form,
     baseSalary: Number(form.baseSalary || 0),
+    monthlyTaxWithholding: Number(form.monthlyTaxWithholding || 0),
     bpjsParticipation: form.bpjsParticipation,
     compensationComponents: form.compensationComponents,
   };
@@ -216,10 +220,11 @@ function DataDiriTab({ employee }: { employee: Employee }) {
       </section>
 
       <section className="rounded-lg border border-slate-200 p-4">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Pajak</h3>
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Pajak karyawan</h3>
         <div className="space-y-4">
           <InfoItem label="NPWP" value={employee.npwp} />
           <InfoItem label="Status pajak/PTKP" value={employee.taxStatus} />
+          <InfoItem label="Potongan PPh 21 bulanan" value={money(employee.monthlyTaxWithholding ?? 0)} />
         </div>
       </section>
 
@@ -236,16 +241,46 @@ function DataDiriTab({ employee }: { employee: Employee }) {
 }
 
 function GajiTab({ employee, workspace }: { employee: Employee; workspace: ErpWorkspace }) {
-  const payrollRuns = workspace.payrollRuns.filter((run) => run.employeeId === employee.id);
+  const payrollRuns = workspace.payrollRuns.filter((run) => run.employeeId === employee.id).sort((a, b) => b.period.localeCompare(a.period));
+  let preview: ReturnType<typeof calculateEmployeePayroll> | undefined;
+  if (employee.contractType !== "daily") {
+    try { preview = calculateEmployeePayroll(employee, workspace.bpjsPolicy); } catch { /* Keep the component settings visible when the net amount is invalid. */ }
+  }
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-lg bg-emerald-50 p-4"><p className="text-xs text-emerald-600">Gaji pokok</p><p className="mt-1 text-xl font-bold text-emerald-700">{money(employee.baseSalary)}</p></div>
         <div className="rounded-lg bg-purple-50 p-4"><p className="text-xs text-purple-600">Kontrak</p><p className="mt-1 text-xl font-bold text-purple-700">{getContractTypeLabel(employee.contractType)}</p></div>
+        {preview && <div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-600">Estimasi gaji bersih</p><p className="mt-1 text-xl font-bold">{money(preview.netPay)}</p></div>}
       </div>
+      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold text-slate-900">Komponen gaji saat ini</h3>
+        {employee.compensationComponents?.length ? (
+          <dl className="divide-y divide-slate-100">
+            {employee.compensationComponents.map((component) => (
+              <div key={component.id} className="flex items-start justify-between gap-3 py-2 text-sm">
+                <dt className="min-w-0 break-words">{component.name}<span className="block text-xs text-slate-500">{component.type === "earning" ? "Pendapatan" : "Potongan"}{component.calculation === "percentage" ? ` · ${component.amount}% dari gaji pokok` : ""}</span></dt>
+                <dd className="shrink-0 font-medium">{money(component.calculation === "percentage" ? Math.round(employee.baseSalary * component.amount / 100) : component.amount)}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : <p className="text-sm text-slate-600">Belum ada komponen tambahan.</p>}
+        {!preview && employee.contractType !== "daily" && <p className="text-sm text-red-700">Periksa nominal potongan dan pengaturan gaji sebelum memproses payroll.</p>}
+      </section>
       {payrollRuns.length > 0 ? (
         <div className="space-y-2">
-          {payrollRuns.map((run) => <div key={run.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3"><div><p className="font-medium">Gaji {run.period}</p><p className="text-sm text-slate-500">Payroll run</p></div><p className="font-medium text-emerald-700">{money(run.netPay)}</p></div>)}
+          <h3 className="text-sm font-semibold text-slate-900">Riwayat gaji</h3>
+          {payrollRuns.map((run) => (
+            <details key={run.id} className="rounded-lg border border-slate-200 p-3">
+              <summary className="cursor-pointer text-sm font-medium">Gaji {run.period}<span className="float-right text-emerald-700">{money(run.netPay)}</span></summary>
+              <dl className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-sm">
+                {run.components.map((component, index) => <div key={`${component.id ?? component.name}-${index}`} className="flex justify-between gap-3"><dt>{component.name}</dt><dd className="shrink-0">{money(component.amount)}</dd></div>)}
+                <div className="flex justify-between gap-3 border-t border-slate-100 pt-2"><dt>Gaji bruto</dt><dd>{money(run.grossPay)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Potongan sebelum PPh 21</dt><dd>{money(run.deductions)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>PPh 21</dt><dd>{money(run.taxWithheld)}</dd></div>
+              </dl>
+            </details>
+          ))}
         </div>
       ) : <EmptyState title="Belum ada riwayat gaji" description="Gaji akan muncul setelah proses hitung gaji diposting." />}
     </div>
@@ -361,9 +396,14 @@ function EmployeeFormDialog({ open, employee, form, setForm, onClose, onSubmit, 
           <label className="block md:col-span-2"><span className="text-sm font-medium text-slate-700">Alamat</span><textarea value={form.address} onChange={(e) => update("address", e.target.value)} className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" /></label>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <fieldset className="grid gap-4 rounded-lg border border-slate-200 p-4 md:grid-cols-2">
+          <legend className="px-1 text-sm font-semibold text-slate-900">Pajak karyawan</legend>
           <TextField label="NPWP" value={form.npwp} onChange={(e) => update("npwp", e.target.value)} />
           <TextField label="Status pajak/PTKP" value={form.taxStatus} onChange={(e) => update("taxStatus", e.target.value)} placeholder="TK/0, K/1, dll." />
+          <TextField label="Potongan PPh 21 bulanan (Rp)" type="number" min="0" max="100000000" step="1" value={form.monthlyTaxWithholding} onChange={(e) => update("monthlyTaxWithholding", e.target.value)} />
+          <p className="self-end text-xs text-slate-600">Isi nominal yang sudah ditetapkan oleh tim pajak. Nominal ini dipakai pada payroll berikutnya.</p>
+        </fieldset>
+        <div className="grid gap-4 md:grid-cols-2">
           <TextField label="Bank" value={form.bankName} onChange={(e) => update("bankName", e.target.value)} />
           <TextField label="Nomor rekening" value={form.bankAccountNo} onChange={(e) => update("bankAccountNo", e.target.value)} />
           <TextField label="Atas nama rekening" value={form.bankAccountName} onChange={(e) => update("bankAccountName", e.target.value)} />

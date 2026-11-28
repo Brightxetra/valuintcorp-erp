@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { isApiResponse, requireAuthenticatedUser } from "@/lib/auth/api";
+import { passwordRecoveryPath } from "@/lib/auth/email-callback";
 import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
 function json(body: unknown, status = 200) {
@@ -18,9 +20,7 @@ function createPasswordResetClient() {
   });
 }
 
-function resetRedirectUrl(request: Request) {
-  return new URL("/auth/reset-password", request.url).toString();
-}
+const schema = z.object({ captchaToken: z.string().min(10).optional() });
 
 export async function POST(request: Request) {
   const user = await requireAuthenticatedUser(request);
@@ -35,9 +35,15 @@ export async function POST(request: Request) {
     return json({ error: "Email akun tidak tersedia untuk pengiriman link reset password." }, 422);
   }
 
+  const parsed = schema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success || (process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY && !parsed.data.captchaToken)) {
+    return json({ error: "Selesaikan verifikasi hCaptcha terlebih dahulu." }, 400);
+  }
+
   const supabase = createPasswordResetClient();
   const { error } = await supabase.auth.resetPasswordForEmail(user.userEmail, {
-    redirectTo: resetRedirectUrl(request),
+    redirectTo: new URL(passwordRecoveryPath, request.url).toString(),
+    ...(parsed.data.captchaToken ? { captchaToken: parsed.data.captchaToken } : {}),
   });
 
   if (error) {

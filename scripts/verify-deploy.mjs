@@ -396,7 +396,7 @@ requireFileSnippet("supabase/tests/stock_receipt_service_rpc.test.sql", "rollbac
 requireFileSnippet("supabase/tests/inventory_mutation_hardening.test.sql", "select plan(12)");
 requireFileSnippet("supabase/tests/inventory_mutation_hardening.test.sql", "moving an inbound row cannot leave its OLD inventory key negative");
 requireFileSnippet("supabase/tests/inventory_mutation_hardening.test.sql", "rollback;");
-requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "select plan(26)");
+requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "select plan(27)");
 requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "acceptance fails after the inviter loses user-management authority");
 requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "legitimate acceptance creates exactly one membership");
 requireFileSnippet("supabase/tests/member_invite_authority.test.sql", "rollback;");

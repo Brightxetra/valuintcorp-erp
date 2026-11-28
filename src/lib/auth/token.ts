@@ -86,6 +86,11 @@ export function isRecentSupabaseAuthentication(
   );
 }
 
+export function isPasswordRecoveryAuthentication(method: string | null | undefined, recoveryFlow: boolean) {
+  // GoTrue issues the OTP authentication method for implicit and token-hash email links.
+  return method === "recovery" || (method === "otp" && recoveryFlow);
+}
+
 export function accessTokenCookieMaxAge(token: string, fallbackSeconds = 60 * 60) {
   const seconds = secondsUntilJwtExpiry(token);
 

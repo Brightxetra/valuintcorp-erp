@@ -189,6 +189,7 @@ export interface Employee {
   email?: string;
   address?: string;
   taxStatus?: string;
+  monthlyTaxWithholding?: number;
   npwp?: string;
   bankName?: string;
   bankAccountNo?: string;

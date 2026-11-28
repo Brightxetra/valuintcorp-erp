@@ -41,8 +41,8 @@ import { getMostSpecificActiveHref, pathMatchesHref } from "@/lib/navigation/act
 import { acquireBodyScrollLock } from "@/lib/ui/body-scroll-lock";
 import type { ErpWorkspace } from "@/lib/erp/types";
 import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
-import { posExperienceForPermissions, type Permission } from "@/lib/security/permissions";
-import { browserIdleSessionExpired, clearServerSession, signOutLocalBrowserSession, touchServerSessionActivity } from "@/lib/erp/client-api";
+import { canOpenSettings, landingPathForPermissions, posExperienceForPermissions, type Permission } from "@/lib/security/permissions";
+import { browserIdleSessionExpired, clearServerSession, signOutLocalBrowserSession, takeBusinessNotice, touchServerSessionActivity } from "@/lib/erp/client-api";
 import { getAccessiblePosBranches } from "@/lib/pos/branches";
 import { posLocationStorageKey, readStoredPosLocationId } from "@/lib/pos/preferences";
 
@@ -100,6 +100,10 @@ const navGroups = [
     ],
   },
   {
+    label: "Pajak",
+    items: [{ href: "/tax", label: "Pajak Bisnis", icon: Landmark, permission: "tax:prepare" as Permission }],
+  },
+  {
     label: "📋 Pengaturan",
     items: [
       { href: "/settings", label: "Pengaturan", icon: Settings, permission: "business:read" as Permission },
@@ -145,19 +149,24 @@ function industryLabel(item: NavItem, industry: string): NavItem {
 }
 
 function navigationForWorkspace(workspace: ErpWorkspace): NavGroup[] {
-  const hasPermission = (item: NavItem) => workspace.permissions.includes(item.permission);
   return navGroups
     .map((group) => ({
       ...group,
       items: group.items
-        .filter(hasPermission)
+        .filter((item) => canShowNavigation(item.href, item.permission, workspace))
         .map((item) => industryLabel(item, workspace.business.industry)),
     }))
     .filter((group) => group.items.length > 0);
 }
 
+function canShowNavigation(href: string, permission: Permission, workspace: ErpWorkspace) {
+  if (href === "/settings") return canOpenSettings(workspace.permissions);
+  if (href === "/tax" && canonicalIndustryTemplateId(workspace.business.industry) !== "general") return false;
+  return workspace.permissions.includes(permission);
+}
+
 function mobileNavigationForWorkspace(workspace: ErpWorkspace): NavItem[] {
-  return mobileNav.filter((item) => workspace.permissions.includes(item.permission));
+  return mobileNav.filter((item) => canShowNavigation(item.href, item.permission, workspace));
 }
 
 // ============================================================================
@@ -287,7 +296,7 @@ function CommandPalette({ workspace, favoriteControls, onClose, inline = false, 
       if (item.id.includes("sales") || item.id.includes("purchases") || item.id.includes("invoice") || item.id.includes("bill")) return "accounting:write";
       return "business:read";
     };
-    return items.filter((item) => workspace.permissions.includes(permissionForItem(item)));
+    return items.filter((item) => canShowNavigation(item.href, permissionForItem(item), workspace));
   }, [workspace]);
 
   const groupedItems = useMemo(() => {
@@ -692,8 +701,9 @@ function NavLinks({ workspace, favoriteControls, onNavigate }: {
 // ============================================================================
 
 export function AppShell({ children, workspace }: { children: React.ReactNode; workspace: ErpWorkspace }) {
+  const accessKey = [workspace.business.id, workspace.business.industry, workspace.user.role, ...workspace.permissions].join(":");
   return (
-    <ErpWorkspaceProvider key={workspace.business.id} initialWorkspace={workspace}>
+    <ErpWorkspaceProvider key={accessKey} initialWorkspace={workspace}>
       <AppShellChrome>{children}</AppShellChrome>
     </ErpWorkspaceProvider>
   );
@@ -727,7 +737,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       ? "Supervisor cabang"
       : posExperience === "cashier"
         ? "Kasir cabang"
-        : "Akses POS cabang";
+        : "POS cabang · lihat saja";
   const selectedPosBranch = posBranches.find((branch) => branch.id === posLocationId) ?? posBranches[0];
   const branchSummary = useMemo(() => {
     if (selectedPosBranch) return selectedPosBranch.name;
@@ -820,6 +830,11 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
       drawerTrigger.current?.focus();
     };
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    const message = takeBusinessNotice();
+    if (message) notify.success(message);
+  }, []);
 
   useEffect(() => {
     if (demoMode) return undefined;
@@ -1018,7 +1033,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
           >
             <Menu className="size-5" aria-hidden />
           </button>
-          <Link href="/dashboard" className="hidden shrink-0 items-center gap-3 lg:flex">
+          <Link href={landingPathForPermissions(workspace.permissions)} className="hidden shrink-0 items-center gap-3 lg:flex">
             <span className="grid size-10 place-items-center rounded-xl bg-slate-900 text-sm font-bold text-white" aria-hidden>ET</span>
             <span className="text-sm font-semibold text-slate-950">Valuintcorp</span>
           </Link>
@@ -1074,7 +1089,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
             ) : null}
 
             {/* Notifications */}
-            <div ref={notificationControl} className="lg:relative">
+            {workspace.permissions.includes("business:read") && <div ref={notificationControl} className="lg:relative">
               <button
                 type="button"
                 onClick={() => {
@@ -1159,7 +1174,7 @@ function AppShellChrome({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
               ) : null}
-            </div>
+            </div>}
 
             {/* User & Business - Desktop */}
             <div className="flex items-center gap-2">

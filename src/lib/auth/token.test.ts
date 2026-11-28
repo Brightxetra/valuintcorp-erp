@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   accessTokenCookieMaxAge,
+  isPasswordRecoveryAuthentication,
   isRecentSupabaseAuthentication,
   secondsUntilJwtExpiry,
   shouldRefreshAccessToken,
@@ -19,6 +20,13 @@ function tokenWithExpiry(exp: number) {
 }
 
 describe("auth token helpers", () => {
+  it("recognizes recovery email links that Supabase authenticates as OTP", () => {
+    expect(isPasswordRecoveryAuthentication("otp", true)).toBe(true);
+    expect(isPasswordRecoveryAuthentication("recovery", false)).toBe(true);
+    expect(isPasswordRecoveryAuthentication("otp", false)).toBe(false);
+    expect(isPasswordRecoveryAuthentication("password", true)).toBe(false);
+  });
+
   it("reads JWT expiry from an access token", () => {
     const token = tokenWithExpiry(1_700_000_600);
 

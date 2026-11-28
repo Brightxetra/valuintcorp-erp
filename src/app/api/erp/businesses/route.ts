@@ -7,11 +7,12 @@ import type { BusinessIndustry, BusinessRole } from "@/lib/domain/types";
 import { canonicalIndustryTemplateId, industryForTemplate } from "@/lib/erp/industry-templates";
 
 const createBusinessSchema = z.object({
-  legalName: z.string().min(2),
-  displayName: z.string().min(2),
+  legalName: z.string().trim().min(2).max(160),
+  displayName: z.string().trim().min(2).max(160),
   industry: z.enum(["umkm", "general"]),
-  ownerName: z.string().min(2),
-  taxId: z.string().optional(),
+  ownerName: z.string().trim().min(2).max(160),
+  taxId: z.string().trim().max(40).optional(),
+  firstBusiness: z.boolean().optional(),
 });
 
 type BusinessRow = {
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
 
   const service = createServiceSupabaseClient();
   const industry = industryForTemplate(parsed.data.industry);
-  const { data, error } = await service.rpc("create_business_with_owner_for_actor", {
+  const { data, error } = await service.rpc(parsed.data.firstBusiness ? "bootstrap_first_business" : "create_business_with_owner_for_actor", {
     legal_name: parsed.data.legalName,
     display_name: parsed.data.displayName,
     industry,
@@ -138,6 +139,8 @@ export async function POST(request: Request) {
   if (error) {
     return json({ error: error.message }, 422);
   }
+
+  if (typeof data !== "string") return json({ error: "Identitas perusahaan belum tersedia." }, 500);
 
   return json({ businessId: data }, 201);
 }

@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, Download, Plus } from "lucide-react";
+import { ArrowRight, Building2, Download, Plus, Trash2 } from "lucide-react";
+import { CompanyDataDialog } from "@/components/company-data-dialog";
+import { OwnershipRequests } from "@/components/ownership-transfers";
 import { useErpWorkspace } from "@/components/erp-context";
 import { MobileDialog } from "@/components/mobile-dialog";
 import { ActionButton, PageHeader, SelectField, StatusPill, TextField } from "@/components/ui";
-import { loadBusinessOptions, syncServerSession, type BusinessOption } from "@/lib/erp/client-api";
+import { activateBusiness, loadBusinessOptions, storeBusinessNotice, syncServerSession, type BusinessOption } from "@/lib/erp/client-api";
 import { canonicalIndustryLabel, canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 import { downloadCsvFile } from "@/lib/exports/csv";
 import { money } from "@/lib/format";
@@ -106,13 +107,14 @@ function CompanyReportSection({ businesses }: { businesses: BusinessOption[] }) 
 }
 
 export function CompaniesWorkspace() {
-  const { workspace, request, demoMode } = useErpWorkspace();
-  const router = useRouter();
+  const { workspace, request, demoMode, demoAccount } = useErpWorkspace();
   const [businesses, setBusinesses] = useState<BusinessOption[]>();
   const [editorOpen, setEditorOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const canCreate = !demoMode && (workspace.user.role === "owner" || workspace.user.role === "system_admin");
+  const [deleting, setDeleting] = useState<BusinessOption>();
+  const [createdBusinessId, setCreatedBusinessId] = useState<string>();
+  const canCreate = !demoMode && !demoAccount && (workspace.user.role === "owner" || workspace.user.role === "system_admin");
   const canReport = canonicalIndustryTemplateId(workspace.business.industry) === "general"
     && workspace.permissions.includes("reports:export") && workspace.permissions.includes("accounting:read");
 
@@ -124,20 +126,11 @@ export function CompaniesWorkspace() {
     return () => { active = false; };
   }, []);
 
-  async function switchCompany(businessId: string) {
-    const session = await syncServerSession(businessId);
-    if (session?.defaultBusinessId !== businessId) {
-      throw new Error("Perusahaan gagal diaktifkan.");
-    }
-    if (session.defaultPath) router.replace(session.defaultPath);
-    router.refresh();
-  }
-
   async function openCompany(businessId: string) {
     setPending(true);
     setError("");
     try {
-      await switchCompany(businessId);
+      await activateBusiness(businessId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Perusahaan gagal diaktifkan.");
       setPending(false);
@@ -148,17 +141,30 @@ export function CompaniesWorkspace() {
     setPending(true);
     setError("");
     try {
-      const { businessId } = await request<{ businessId: string }>("/api/erp/businesses", {
-        method: "POST",
-        businessId: null,
-        body: JSON.stringify(Object.fromEntries(formData)),
-      });
-      setEditorOpen(false);
-      await switchCompany(businessId);
+      let businessId = createdBusinessId;
+      if (!businessId) {
+        ({ businessId } = await request<{ businessId: string }>("/api/erp/businesses", {
+          method: "POST",
+          businessId: null,
+          body: JSON.stringify(Object.fromEntries(formData)),
+        }));
+        setCreatedBusinessId(businessId);
+      }
+      await activateBusiness(businessId, "Perusahaan berhasil ditambahkan");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Perusahaan gagal dibuat.");
       setPending(false);
     }
+  }
+
+  async function finishDeletion() {
+    storeBusinessNotice("Perusahaan berhasil dihapus");
+    if (deleting?.id !== workspace.business.id) {
+      window.location.reload();
+      return;
+    }
+    const session = await syncServerSession();
+    window.location.replace(session ? session.defaultPath || (session.hasBusiness ? "/perusahaan" : "/onboarding") : "/login?next=/perusahaan");
   }
 
   return (
@@ -184,22 +190,35 @@ export function CompaniesWorkspace() {
                 Buka <ArrowRight className="size-4" />
               </ActionButton>
             )}
+            {!demoMode && !demoAccount && business.role === "owner" && (
+              <button type="button" disabled={pending} aria-label={`Hapus perusahaan ${business.displayName}`} onClick={() => setDeleting(business)} className="grid size-10 place-items-center rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
+                <Trash2 className="size-4" aria-hidden />
+              </button>
+            )}
           </li>
         ))}
       </ul>
+      {!demoMode && businesses && <OwnershipRequests userId={workspace.user.id} businesses={businesses} />}
       {canReport && businesses && businesses.length >= 2 && <CompanyReportSection businesses={businesses} />}
-      <MobileDialog isOpen={editorOpen} title="Tambah perusahaan" onClose={() => { if (!pending) setEditorOpen(false); }}>
+      {deleting && <CompanyDataDialog key={deleting.id} company={deleting} action="delete" onClose={() => setDeleting(undefined)} onComplete={finishDeletion} />}
+      <MobileDialog isOpen={editorOpen} title="Tambah perusahaan" onClose={() => {
+        if (pending) return;
+        if (createdBusinessId) { window.location.reload(); return; }
+        setEditorOpen(false);
+      }}>
         <form className="grid gap-4" action={createCompany}>
+          <fieldset disabled={pending || Boolean(createdBusinessId)} className="grid gap-4">
           <TextField name="displayName" label="Nama tampilan" required minLength={2} />
           <TextField name="legalName" label="Nama legal" required minLength={2} />
-          <TextField name="ownerName" label="Nama pemilik" required minLength={2} defaultValue={workspace.user.name} />
+          <TextField name="ownerName" label="Nama pemilik" required minLength={2} />
           <TextField name="taxId" label="NPWP" />
           <SelectField name="industry" label="Template" defaultValue="general">
             <option value="general">General</option>
             <option value="umkm">UMKM</option>
           </SelectField>
-          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-          <ActionButton disabled={pending}>{pending ? "Menyimpan…" : "Buat perusahaan"}</ActionButton>
+          </fieldset>
+          {error && <p role="alert" className="text-sm text-red-700">{createdBusinessId ? `Perusahaan sudah ditambahkan. ${error}` : error}</p>}
+          <ActionButton disabled={pending}>{pending ? "Menyimpan…" : createdBusinessId ? "Buka perusahaan" : "Buat perusahaan"}</ActionButton>
         </form>
       </MobileDialog>
     </section>

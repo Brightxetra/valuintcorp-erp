@@ -40,6 +40,7 @@ import { useErpWorkspace } from "@/components/erp-context";
 import type { ErpDocumentStatus, ErpWorkspace, PaymentDirection } from "@/lib/erp/types";
 import { outstandingPurchase, outstandingSales } from "@/lib/erp/operations";
 import { destinationAfterLogin, sanitizeLoginNextPath } from "@/lib/erp/login-routing";
+import { emailCallbackDestination, emailCallbackPath } from "@/lib/auth/email-callback";
 import { valueInventory } from "@/lib/inventory/valuation";
 import { canonicalIndustryTemplateId } from "@/lib/erp/industry-templates";
 import { money, percent } from "@/lib/format";
@@ -62,7 +63,7 @@ function currentLoginNextPath() {
   return new URLSearchParams(window.location.search).get("next");
 }
 
-type LoginMode = "login" | "register" | "forgot";
+type LoginMode = "login" | "register" | "forgot" | "magic";
 
 type LoginWorkspaceProps = {
   initialMode?: LoginMode;
@@ -1865,89 +1866,6 @@ export function SettingsWorkspace({ initialWorkspace }: { initialWorkspace: ErpW
   );
 }
 
-export function OnboardingWorkspaceV2({ initialWorkspace }: { initialWorkspace: ErpWorkspace }) {
-  const { refreshWorkspace, request, demoMode, setActiveBusinessId } = useErpWorkspace(initialWorkspace);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  async function createBusiness(formData: FormData) {
-    setPending(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const body = await request<{ businessId: string }>("/api/erp/businesses", {
-        method: "POST",
-        businessId: null,
-        body: JSON.stringify({
-          legalName: String(formData.get("legalName")),
-          displayName: String(formData.get("displayName")),
-          industry: String(formData.get("industry")),
-          ownerName: String(formData.get("ownerName")),
-          taxId: String(formData.get("taxId")),
-        }),
-      });
-
-      if (body.businessId) {
-        setActiveBusinessId(body.businessId);
-        await syncServerSession(body.businessId);
-      }
-
-      await refreshWorkspace();
-      setSuccess(demoMode ? "Demo mode aktif; bisnis demo digunakan." : "Bisnis dibuat, template diterapkan, dan bootstrap awal dijalankan.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Onboarding bisnis gagal.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <>
-      <WorkspaceHeader
-        title="Onboarding bisnis"
-        description="Buat tenant produksi dengan role owner, template industri, modul aktif, COA, periode awal, pajak, gudang, lokasi default, dan sequence dokumen."
-      />
-      <WorkspaceFeedback error={error} success={success} />
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <Panel title="Buat bisnis baru">
-          <form action={createBusiness} className="grid gap-3 sm:grid-cols-2">
-            <TextField name="displayName" label="Nama display" defaultValue="Rasa Rapi" required />
-            <TextField name="legalName" label="Nama legal" defaultValue="CV Rasa Rapi" required />
-            <TextField name="ownerName" label="Nama owner" defaultValue="Ayu Lestari" required />
-            <TextField name="taxId" label="NPWP" />
-            <SelectField name="industry" label="Template industri">
-              <option value="umkm">UMKM</option>
-              <option value="general">General</option>
-            </SelectField>
-            <div className="flex items-end">
-              <ActionButton disabled={pending}>Buat bisnis</ActionButton>
-            </div>
-          </form>
-        </Panel>
-        <Panel title="Setup yang otomatis dibuat">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              ["Chart of accounts", "Akun kas, AR, AP, inventory, revenue, COGS, payroll, pajak."],
-              ["Periode awal", "Periode bulan berjalan dibuat open untuk posting awal."],
-              ["Pajak UMKM", "Default PPh final UMKM 0.5% dan status Coretax not started."],
-              ["Gudang default", "Gudang UTAMA dibuat untuk SKU pertama dan stok."],
-              ["Lokasi dan modul", "Template industri mengaktifkan modul dan lokasi awal untuk cabang/outlet."],
-              ["Raw transaction layer", "POS/marketplace/bank CSV masuk raw layer sebelum summary posting."],
-            ].map(([title, description]) => (
-              <div key={title} className="rounded-lg border border-slate-200 p-3">
-                <p className="font-medium text-slate-950">{title}</p>
-                <p className="mt-1 text-sm text-slate-500">{description}</p>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      </div>
-    </>
-  );
-}
-
 export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: LoginWorkspaceProps = {}) {
   const router = useRouter();
   const captchaRef = useRef<HCaptchaInstance | null>(null);
@@ -1956,7 +1874,6 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [resetCaptchaRequired, setResetCaptchaRequired] = useState(false);
   const demoFallback = shouldUseDemoFallbackBrowser();
   const supabaseConfigured = isSupabaseBrowserEnabled();
   const runtimeMisconfigured = !demoFallback && !supabaseConfigured;
@@ -1964,76 +1881,25 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
   const [checkingSession, setCheckingSession] = useState(supabaseEnabled);
   const hcaptchaSiteKey = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY;
   const captchaConfigured = supabaseEnabled && Boolean(hcaptchaSiteKey);
-  const authCaptchaVisible = captchaConfigured && mode !== "forgot";
-  const resetCaptchaVisible = captchaConfigured && mode === "forgot" && resetCaptchaRequired;
-  const captchaVisible = authCaptchaVisible || resetCaptchaVisible;
-  const loginPanelTitle = mode === "forgot" ? "Reset password akun" : "Masuk ke Valuintcorp ERP";
+  const captchaVisible = captchaConfigured;
+  const loginPanelTitle = mode === "forgot" ? "Reset password akun" : mode === "magic" ? "Masuk lewat email" : "Masuk ke Valuintcorp ERP";
   const loginPanelDescription =
     mode === "forgot"
       ? "Masukkan email akun untuk menerima instruksi reset password."
-      : "Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.";
+      : mode === "magic" ? "Kami akan mengirim tautan masuk sekali pakai ke email akun Anda."
+        : "Gunakan akun terdaftar atau buat akun baru untuk mulai menyiapkan bisnis pertama.";
 
   useEffect(() => {
     let cancelled = false;
-    const currentUrl = typeof window === "undefined" ? null : new URL(window.location.href);
-    const hashParams = new URLSearchParams(currentUrl?.hash.startsWith("#") ? currentUrl.hash.slice(1) : currentUrl?.hash ?? "");
-    const callbackType = hashParams.get("type") || currentUrl?.searchParams.get("type");
-    const hasSupabaseCallback =
-      Boolean(currentUrl?.hash.includes("access_token=")) ||
-      Boolean(currentUrl?.hash.includes("refresh_token=")) ||
-      currentUrl?.searchParams.has("code") === true;
-
-    if (hasSupabaseCallback && (callbackType === "invite" || callbackType === "recovery") && currentUrl) {
-      const callbackUrl = new URL(callbackType === "recovery" ? "/auth/reset-password" : "/auth/invite", window.location.origin);
-      currentUrl.searchParams.forEach((value, key) => {
-        callbackUrl.searchParams.set(key, value);
-      });
-      callbackUrl.hash = currentUrl.hash;
-      window.location.replace(callbackUrl.toString());
-      return () => {
-        cancelled = true;
-      };
+    const callback = emailCallbackDestination(new URL(window.location.href));
+    if (callback) {
+      window.location.replace(callback);
+      return;
     }
-
     if (!supabaseEnabled) return undefined;
 
     async function clearStaleLoginSession() {
       try {
-        if (hasSupabaseCallback) {
-          const supabase = createBrowserSupabaseClient();
-          let session = (await supabase.auth.getSession()).data.session;
-
-          for (let attempt = 0; !session && attempt < 8; attempt += 1) {
-            await new Promise((resolve) => window.setTimeout(resolve, 250));
-            session = (await supabase.auth.getSession()).data.session;
-          }
-
-          if (!session) {
-            if (!cancelled) {
-              setError("Link invite tidak bisa dipulihkan. Coba buka ulang link email atau minta owner mengirim invite baru.");
-              setCheckingSession(false);
-            }
-            return;
-          }
-
-          const synced = await syncServerSession(null, {
-            accessToken: session.access_token,
-            refreshToken: session.refresh_token,
-            userId: session.user.id,
-          }, { rememberMe: false, freshLogin: true });
-
-          if (!cancelled) {
-            if (synced) {
-              setSuccess("Invite berhasil diterima.");
-              router.replace(destinationAfterLogin(currentLoginNextPath(), synced.hasBusiness, synced.defaultPath ?? undefined));
-            } else {
-              setError("Invite berhasil dibuka, tetapi sesi server belum tersimpan. Coba login manual sekali.");
-              setCheckingSession(false);
-            }
-          }
-          return;
-        }
-
         const reason =
           typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("reason");
 
@@ -2074,7 +1940,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
     return () => {
       cancelled = true;
     };
-  }, [router, supabaseEnabled]);
+  }, [supabaseEnabled]);
 
   function switchAuthMode(nextMode: LoginMode) {
     if (pending) return;
@@ -2120,7 +1986,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
 
       const supabase = createBrowserSupabaseClient();
       const verificationUrl =
-        typeof window === "undefined" ? undefined : new URL("/login", window.location.origin);
+        typeof window === "undefined" ? undefined : new URL(emailCallbackPath, window.location.origin);
       const nextParam =
         typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
 
@@ -2223,6 +2089,21 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
     }
 
     try {
+      if (mode === "magic") {
+        const redirect = new URL(emailCallbackPath, window.location.origin);
+        const nextPath = currentLoginNextPath();
+        if (nextPath) redirect.searchParams.set("next", nextPath);
+        const { error } = await createBrowserSupabaseClient().auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: false, emailRedirectTo: redirect.toString(), ...(captchaToken ? { captchaToken } : {}) },
+        });
+        if (error && error.code !== "otp_disabled" && error.code !== "user_not_found") {
+          throw new Error("Tautan masuk gagal dikirim. Coba lagi beberapa saat.");
+        }
+        setSuccess("Jika email terdaftar, tautan masuk akan dikirim.");
+        return;
+      }
+
       const response = await fetch("/api/auth/password/forgot", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2233,7 +2114,8 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
       });
       const body = await response.json().catch(() => ({} as Record<string, unknown>));
 
-      setResetCaptchaRequired(Boolean(body.captchaRequired));
+      if (!response.ok) throw new Error("Layanan kirim tautan reset sedang tidak tersedia. Coba lagi beberapa saat.");
+      if (body.captchaRequired && !captchaToken) throw new Error("Selesaikan verifikasi hCaptcha sebelum meminta tautan reset.");
 
       setSuccess(
         typeof body.message === "string"
@@ -2241,9 +2123,6 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
           : "Jika email terdaftar, instruksi reset akan dikirim.",
       );
 
-      if (body.captchaRequired && !captchaToken) {
-        setError("Verifikasi tambahan diperlukan sebelum request berikutnya diproses.");
-      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Request reset password gagal diproses.");
     } finally {
@@ -2295,7 +2174,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
           Kembali ke website
         </a>
         <Panel title={loginPanelTitle} description={loginPanelDescription}>
-          {mode === "forgot" ? null : (
+          {mode === "forgot" || mode === "magic" ? null : (
             <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
               <button
                 type="button"
@@ -2317,7 +2196,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
               </button>
             </div>
           )}
-          {mode === "forgot" ? (
+          {mode === "forgot" || mode === "magic" ? (
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -2325,9 +2204,6 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
               }}
               className="space-y-3"
             >
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-600">
-                Masukkan email akun. Jika email terdaftar, instruksi reset akan dikirim.
-              </div>
               <TextField name="email" label="Email" type="email" autoComplete="email" required />
               {captchaVisible ? (
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
@@ -2355,7 +2231,7 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
                     Mengirim request...
                   </>
                 ) : (
-                  "Request reset password"
+                  mode === "magic" ? "Kirim tautan masuk" : "Request reset password"
                 )}
               </ActionButton>
               <a
@@ -2424,6 +2300,11 @@ export function LoginWorkspace({ initialMode = "login", loginNextPath = null }: 
                 >
                   Lupa password?
                 </a>
+              ) : null}
+              {mode === "login" && supabaseEnabled ? (
+                <button type="button" onClick={() => switchAuthMode("magic")} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  Masuk lewat tautan email
+                </button>
               ) : null}
               <WorkspaceFeedback error={error} success={success} />
               <ActionButton className="w-full" disabled={pending} aria-busy={pending}>

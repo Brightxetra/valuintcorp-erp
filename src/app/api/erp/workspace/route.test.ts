@@ -116,7 +116,7 @@ describe("workspace route profile authorization", () => {
     ["hr", "hr:manage"],
     ["payroll", "payroll:run"],
     ["assets", "accounting:read"],
-    ["settings", "business:read"],
+    ["settings", null],
     ["onboarding", "business:update"],
     ["pos", "pos:read"],
   ] as const)("maps public profile %s to permission %s", async (profile, permission) => {
@@ -138,5 +138,14 @@ describe("workspace route profile authorization", () => {
       expect(requireApiPermissionMock).not.toHaveBeenCalled();
     }
     expect(loadSupabaseWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("limits Settings to members with account, business or team settings permissions", async () => {
+    requireApiMembershipMock.mockResolvedValueOnce({ ...productionContext, permissions: ["inventory:manage"] });
+    expect((await GET(workspaceRequest("settings"))).status).toBe(403);
+    expect(loadSupabaseWorkspaceMock).not.toHaveBeenCalled();
+
+    requireApiMembershipMock.mockResolvedValueOnce({ ...productionContext, permissions: ["admin:manage_users"] });
+    expect((await GET(workspaceRequest("settings"))).status).toBe(200);
   });
 });

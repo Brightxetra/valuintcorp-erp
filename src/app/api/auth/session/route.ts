@@ -21,7 +21,7 @@ import {
   revokeOtherLoginSessionsForUser,
   touchLoginSession,
 } from "@/lib/auth/login-sessions";
-import { isRecentSupabaseAuthentication } from "@/lib/auth/token";
+import { isPasswordRecoveryAuthentication, isRecentSupabaseAuthentication } from "@/lib/auth/token";
 import {
   isIdleSessionExpired,
   nowSeconds,
@@ -34,7 +34,7 @@ import {
 } from "@/lib/auth/session-policy";
 import { createServiceSupabaseClient, isSupabaseServiceConfigured } from "@/lib/supabase/service";
 import { acceptPendingMemberInvitesForUser } from "@/lib/auth/member-invites";
-import { isPosOnlyPermissionSet, permissionsForMember, type Permission } from "@/lib/security/permissions";
+import { landingPathForPermissions, permissionsForMember, type Permission } from "@/lib/security/permissions";
 import { verifySupabaseAccessToken } from "@/lib/auth/verified-session";
 
 const optionalSessionTokenSchema = z.preprocess(
@@ -47,6 +47,7 @@ const syncSessionSchema = z.object({
   refreshToken: optionalSessionTokenSchema,
   businessId: z.string().uuid().optional(),
   rememberMe: z.boolean().optional(),
+  passwordResetCompleted: z.boolean().optional(),
 });
 
 function setSessionCookies(
@@ -98,6 +99,11 @@ function permissionsForSessionMembership(membership: {
       ? membership.access_permissions.filter((permission): permission is Permission => typeof permission === "string")
       : [],
   );
+}
+
+function defaultMembershipPath(membership: Parameters<typeof permissionsForSessionMembership>[0]) {
+  const path = landingPathForPermissions(permissionsForSessionMembership(membership));
+  return path === "/dashboard" ? null : path;
 }
 
 export async function POST(request: Request) {
@@ -171,7 +177,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (verifiedSession.identity.authenticationMethod === "recovery") {
+    if (isPasswordRecoveryAuthentication(verifiedSession.identity.authenticationMethod, parsed.data.passwordResetCompleted === true)) {
       const { error: authRevocationError } = await serviceSupabase.auth.admin.signOut(
         parsed.data.accessToken,
         "others",
@@ -227,8 +233,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User is not a member of this business." }, { status: 403, headers: { "cache-control": "no-store" } });
     }
 
-    const permissions = permissionsForSessionMembership(membership);
-    defaultPath = isPosOnlyPermissionSet(permissions) ? "/pos" : null;
+    defaultPath = defaultMembershipPath(membership);
   } else {
     const { data: membership, error: membershipError } = await membershipSupabase
       .from("business_members")
@@ -245,8 +250,7 @@ export async function POST(request: Request) {
     defaultBusinessId = membership?.business_id ?? null;
 
     if (membership?.business_id) {
-      const permissions = permissionsForSessionMembership(membership);
-      defaultPath = isPosOnlyPermissionSet(permissions) ? "/pos" : null;
+      defaultPath = defaultMembershipPath(membership);
     }
   }
 

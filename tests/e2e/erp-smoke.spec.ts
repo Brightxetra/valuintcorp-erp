@@ -80,8 +80,11 @@ test("demo fallback login reaches the dashboard workspace", async ({ page }) => 
 test("onboarding workspace renders in demo fallback mode", async ({ page }) => {
   await page.goto("/onboarding");
 
-  await expect(page.getByRole("heading", { name: "Onboarding bisnis" })).toBeVisible();
-  await expect(page.getByText("Setup yang otomatis dibuat")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Buat bisnis", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Nama bisnis", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Nama legal", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Nama pemilik", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("radio", { name: /^UMKM/ })).not.toBeChecked();
 });
 
 test("core ERP menu navigation stays responsive in demo fallback mode", async ({ page }) => {

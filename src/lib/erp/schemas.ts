@@ -333,6 +333,7 @@ export const employeeSchema = z.object({
   email: optionalText,
   address: optionalText,
   taxStatus: optionalText,
+  monthlyTaxWithholding: z.coerce.number().int().min(0).max(100_000_000).optional(),
   npwp: optionalText,
   bankName: optionalText,
   bankAccountNo: optionalText,

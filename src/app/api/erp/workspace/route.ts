@@ -2,6 +2,7 @@ import { isApiResponse, requireApiMembership, requireApiPermission, withDemoHead
 import { getDemoErpStore } from "@/lib/erp/demo-store";
 import { loadSupabaseWorkspace } from "@/lib/erp/workspace-repository";
 import {
+  canOpenWorkspaceProfile,
   parsePublicWorkspaceProfile,
   requiredPermissionForWorkspaceProfile,
 } from "@/lib/erp/workspace-profiles";
@@ -17,13 +18,17 @@ export async function GET(request: Request) {
     return json({ error: "Workspace profile tidak dikenal atau tidak diizinkan." }, 400);
   }
 
-  const permission = requiredPermissionForWorkspaceProfile(profile);
+  const permission = profile === "settings" ? null : requiredPermissionForWorkspaceProfile(profile);
   const context = permission
     ? await requireApiPermission(request, permission)
     : await requireApiMembership(request);
 
   if (isApiResponse(context)) {
     return context;
+  }
+
+  if (profile === "settings" && !canOpenWorkspaceProfile(profile, context.permissions)) {
+    return json({ error: "Akses pengaturan belum diberikan." }, 403);
   }
 
   if (context.demoMode) {

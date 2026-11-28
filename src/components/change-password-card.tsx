@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import HCaptcha, { type HCaptcha as HCaptchaInstance } from "@hcaptcha/react-hcaptcha";
 import { KeyRound, Mail, Save, ShieldCheck } from "lucide-react";
 import { ActionButton, TextField, cn } from "@/components/ui";
 import { useErpWorkspace } from "@/components/erp-context";
@@ -25,6 +26,9 @@ export function ChangePasswordCard({ className }: { className?: string }) {
   const [pending, setPending] = useState(false);
   const [resetPending, setResetPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const resetCaptcha = useRef<HCaptchaInstance | null>(null);
+  const [resetCaptchaToken, setResetCaptchaToken] = useState<string | null>(null);
+  const siteKey = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY;
 
   async function adoptFreshSession(session: NonNullable<ChangePasswordResponse["session"]>) {
     const supabase = createBrowserSupabaseClient();
@@ -123,6 +127,7 @@ export function ChangePasswordCard({ className }: { className?: string }) {
       const body = await request<{ ok: boolean; email?: string }>("/api/auth/password/reset-request", {
         method: "POST",
         businessId: null,
+        body: JSON.stringify({ captchaToken: resetCaptchaToken ?? undefined }),
       });
 
       notify.success("Link reset password dikirim", {
@@ -133,6 +138,8 @@ export function ChangePasswordCard({ className }: { className?: string }) {
       setError(message);
       notify.error("Link reset password gagal dikirim", { description: message });
     } finally {
+      setResetCaptchaToken(null);
+      resetCaptcha.current?.resetCaptcha();
       setResetPending(false);
     }
   }
@@ -213,13 +220,14 @@ export function ChangePasswordCard({ className }: { className?: string }) {
             type="button"
             variant="secondary"
             onClick={() => void requestPasswordReset()}
-            disabled={resetPending || demoMode}
+            disabled={resetPending || demoMode || Boolean(siteKey && !resetCaptchaToken)}
             className="shrink-0"
           >
             <Mail className="size-4" aria-hidden />
             {resetPending ? "Mengirim..." : "Kirim link reset password"}
           </ActionButton>
         </div>
+        {siteKey && !demoMode && <div className="mt-3 overflow-hidden"><HCaptcha ref={resetCaptcha} sitekey={siteKey} onVerify={setResetCaptchaToken} onExpire={() => setResetCaptchaToken(null)} onError={() => { setResetCaptchaToken(null); setError("Verifikasi hCaptcha gagal. Coba lagi."); }} /></div>}
       </div>
     </section>
   );

@@ -1,19 +1,17 @@
-import { WorkspacePageProvider } from "@/components/workspace-page-provider";
-import { OnboardingWorkspaceV2 } from "@/components/erp-workspaces";
-import { getInitialErpWorkspace } from "@/lib/erp/workspace-loader";
+import { redirect } from "next/navigation";
+import { BusinessOnboarding } from "@/components/business-onboarding";
+import { shouldUseDemoFallback } from "@/lib/auth/runtime";
+import { getServerAccessToken, getServerWorkspaceContext } from "@/lib/auth/server-session";
+import { landingPathForPermissions, permissionsForRole } from "@/lib/security/permissions";
 
 export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {
-  const workspace = await getInitialErpWorkspace({ allowOnboardingFallback: true, profile: "onboarding" });
-
-  return (
-    <main className="min-h-screen overflow-x-clip bg-slate-50 px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-slate-950 lg:px-6">
-      <div className="mx-auto max-w-[1200px]">
-        <WorkspacePageProvider profile="onboarding" workspace={workspace}>
-          <OnboardingWorkspaceV2 initialWorkspace={workspace} />
-        </WorkspacePageProvider>
-      </div>
-    </main>
-  );
+  const demoMode = shouldUseDemoFallback();
+  if (!demoMode) {
+    if (!(await getServerAccessToken())) redirect("/login");
+    const context = await getServerWorkspaceContext();
+    if (context) redirect(landingPathForPermissions(context.permissions ?? permissionsForRole(context.role)));
+  }
+  return <BusinessOnboarding demoMode={demoMode} />;
 }

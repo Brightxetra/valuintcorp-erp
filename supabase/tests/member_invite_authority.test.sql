@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(26);
+select plan(27);
 
 select ok(
   has_function_privilege(
@@ -371,7 +371,6 @@ values (
   '20000000-0000-4000-8000-00000000c003',
   statement_timestamp() + interval '14 days'
 );
-
 reset role;
 update public.business_members
 set access_permissions = array['business:read']
@@ -426,6 +425,15 @@ select set_config(
 );
 set local role authenticated;
 
+select throws_ok($$
+  insert into public.member_invites (business_id, email, role, status, invited_by, expires_at)
+  values ('10000000-0000-4000-8000-00000000c001', 'privileged@example.test', 'owner',
+    'pending', '20000000-0000-4000-8000-00000000c001', statement_timestamp() + interval '14 days')
+$$, '42501', 'new row violates row-level security policy "privileged roles cannot be invited" for table "member_invites"',
+  'an owner can only propose another owner through the transfer workflow');
+
+-- Simulate a privileged invite from before the transfer workflow was introduced.
+reset role;
 insert into public.member_invites (
   id, business_id, email, role, status, invited_by, expires_at
 )
@@ -438,6 +446,7 @@ values (
   '20000000-0000-4000-8000-00000000c001',
   statement_timestamp() + interval '14 days'
 );
+set local role authenticated;
 
 select throws_ok(
   $command$

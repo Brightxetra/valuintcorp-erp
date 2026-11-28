@@ -61,7 +61,11 @@ export async function POST(request: Request) {
     return withDemoHeader(json({ errors: parsed.error.flatten() }, 400), context);
   }
 
-  const accessScope = parsed.data.role === "owner" || parsed.data.role === "system_admin" ? "role" : parsed.data.accessScope;
+  if (parsed.data.role === "owner" || parsed.data.role === "system_admin") {
+    return withDemoHeader(json({ error: "Peran pemilik dikelola melalui transfer kepemilikan." }, 403), context);
+  }
+
+  const accessScope = parsed.data.accessScope;
   const permissionSet = new Set(parsed.data.permissions);
   if (permissionSet.has("pos:sell") || permissionSet.has("pos:expenses")) permissionSet.add("pos:read");
   const accessPermissions = accessScope === "custom" ? [...permissionSet] : [];
@@ -393,19 +397,24 @@ export async function DELETE(request: Request) {
     return withDemoHeader(json({ error: "Anda tidak bisa menghapus akses akun sendiri dari panel ini." }, 400), context);
   }
 
-  if (member.role === "owner") {
+  if (member.role === "owner" || member.role === "system_admin") {
     return withDemoHeader(json({ error: "Owner bisnis tidak bisa dihapus dari panel ini." }, 400), context);
   }
 
-  const { error } = await supabase
+  const { data: removed, error } = await supabase
     .from("business_members")
     .delete()
     .eq("business_id", context.businessId)
-    .eq("id", parsed.data.memberId);
+    .eq("id", parsed.data.memberId)
+    .not("role", "in", "(owner,system_admin)")
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     return withDemoHeader(json({ error: error.message }, 422), context);
   }
+
+  if (!removed) return withDemoHeader(json({ error: "Akses anggota sudah berubah. Muat ulang daftar anggota." }, 409), context);
 
   if (isSupabaseServiceConfigured()) {
     await createServiceSupabaseClient()

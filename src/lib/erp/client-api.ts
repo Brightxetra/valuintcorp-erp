@@ -44,6 +44,7 @@ export interface SessionSyncTokens {
 export interface SessionSyncOptions {
   rememberMe?: boolean;
   freshLogin?: boolean;
+  passwordResetCompleted?: boolean;
 }
 
 export class ErpApiError extends Error {
@@ -214,6 +215,7 @@ export async function syncServerSession(
     refreshToken?: string;
     businessId?: string;
     rememberMe?: boolean;
+    passwordResetCompleted?: boolean;
   } = {
     accessToken,
   };
@@ -227,6 +229,7 @@ export async function syncServerSession(
   }
 
   payload.rememberMe = rememberMe;
+  if (options.passwordResetCompleted) payload.passwordResetCompleted = true;
 
   try {
     const response = await fetch("/api/auth/session", {
@@ -393,13 +396,26 @@ export async function erpApiDownload(endpoint: string, businessId: string | null
 }
 
 export async function loadBusinessOptions() {
-  return erpApiFetch<{ businesses: BusinessOption[]; defaultBusinessId: string | null }>("/api/erp/businesses");
+  return erpApiFetch<{ businesses: BusinessOption[]; defaultBusinessId: string | null }>("/api/erp/businesses", { businessId: null });
 }
 
-export async function activateBusiness(businessId: string) {
+const businessNoticeKey = "valuintcorp-business-notice";
+
+export async function activateBusiness(businessId: string, successMessage?: string) {
   const session = await syncServerSession(businessId);
   if (session?.defaultBusinessId !== businessId) throw new Error("Perusahaan gagal diaktifkan. Coba lagi.");
+  if (successMessage) storeBusinessNotice(successMessage);
   window.location.replace(session.defaultPath || "/dashboard");
+}
+
+export function storeBusinessNotice(message: string) {
+  window.sessionStorage.setItem(businessNoticeKey, message);
+}
+
+export function takeBusinessNotice() {
+  const message = window.sessionStorage.getItem(businessNoticeKey);
+  if (message) window.sessionStorage.removeItem(businessNoticeKey);
+  return message;
 }
 
 export async function loadWorkspaceForBusiness(businessId: string, profile: PublicWorkspaceLoadProfile) {

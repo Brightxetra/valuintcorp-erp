@@ -6,6 +6,6 @@ let browserClient: ReturnType<typeof createClient> | null = null;
 export function createBrowserSupabaseClient() {
   const { url, anonKey } = requireSupabasePublicConfig("Supabase browser client");
 
-  browserClient ??= createClient(url, anonKey);
+  browserClient ??= createClient(url, anonKey, { auth: { detectSessionInUrl: false } });
   return browserClient;
 }

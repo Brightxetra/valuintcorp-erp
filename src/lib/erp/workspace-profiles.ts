@@ -1,5 +1,5 @@
 import type { WorkspaceLoadProfile } from "@/lib/erp/workspace-repository";
-import type { Permission } from "@/lib/security/permissions";
+import { canOpenSettings, type Permission } from "@/lib/security/permissions";
 
 export const workspaceProfilePermissions = {
   full: "business:read",
@@ -47,6 +47,12 @@ const publicWorkspaceProfileSet = new Set<string>(publicWorkspaceProfiles);
 
 export function requiredPermissionForWorkspaceProfile(profile: WorkspaceLoadProfile): Permission | null {
   return workspaceProfilePermissions[profile];
+}
+
+export function canOpenWorkspaceProfile(profile: WorkspaceLoadProfile, permissions: readonly Permission[]) {
+  if (profile === "settings") return canOpenSettings(permissions);
+  const permission = requiredPermissionForWorkspaceProfile(profile);
+  return permission === null || permissions.includes(permission);
 }
 
 export function parsePublicWorkspaceProfile(value: string | null): PublicWorkspaceLoadProfile | null {

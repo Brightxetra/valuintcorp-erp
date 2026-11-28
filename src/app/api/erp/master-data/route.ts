@@ -145,6 +145,7 @@ function toDb(resource: MasterResource, values: Record<string, unknown>, busines
       email: values.email ?? null,
       address: values.address ?? null,
       tax_status: values.taxStatus ?? null,
+      ...(values.monthlyTaxWithholding === undefined ? {} : { monthly_tax_withholding: values.monthlyTaxWithholding }),
       npwp: values.npwp ?? null,
       bank_name: values.bankName ?? null,
       bank_account_no: values.bankAccountNo ?? null,
